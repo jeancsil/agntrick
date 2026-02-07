@@ -24,7 +24,8 @@ install: ## Install all dependencies using uv
 	@$(UV) --directory $(PROJECT_DIR) sync
 
 run: ## Run the agentic-run simple command
-	@$(UV) --project $(PROJECT_DIR) run agentic-run simple -i "Tell me a joke"
+#	@$(UV) --project $(PROJECT_DIR) run agentic-run simple --input "Tell me a joke"
+ 	@$(UV) --project $(PROJECT_DIR) run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
 
 test: ## Run pytest in the project directory
 	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/

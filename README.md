@@ -27,6 +27,17 @@ The following Makefile targets are available:
 - `make clean`: Clean up temporary files and caches.
 - `make lint`: Run linting and formatting checks.
 
+
+### Usage with UV
+The pattern is:  
+`uv run agentic-run **agent_name** --input "your prompt"`
+
+E.g:  
+```bash
+uv run agentic-run simple --input "Tell me a joke"
+uv run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
+```
+
 ### Project Structure
 
 ```
