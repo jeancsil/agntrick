@@ -25,12 +25,13 @@ install: ## Install all dependencies using uv
 
 run: ## Run the agentic-run simple command
 #	@$(UV) --project $(PROJECT_DIR) run agentic-run simple --input "Tell me a joke"
- 	@$(UV) --project $(PROJECT_DIR) run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
+	@$(UV) --project $(PROJECT_DIR) run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
 
 test: ## Run pytest in the project directory
 	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/
 
 lint: ## Run ruff linting with auto-fix
+	@$(UV) --project $(PROJECT_DIR) run mypy $(PROJECT_DIR)/src/
 	@$(UV) --project $(PROJECT_DIR) run ruff check --fix .
 
 format: ## Run ruff code formatting
