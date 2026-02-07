@@ -42,10 +42,21 @@ The following Makefile targets are available:
 The pattern is:  
 `uv run agentic-run **agent_name** --input "your prompt"`
 
-E.g:  
+### Available Agents
+
+| Agent | Description | Tools / Integration |
+|-------|-------------|---------------------|
+| `simple` | A basic conversational agent. | - |
+| `chef` | Personal chef that suggests recipes based on ingredients. | Web Search |
+| `travel` | Travel assistant for flight search and planning. | **Kiwi MCP** (Flight Search) |
+
+#### Examples:  
 ```bash
-uv run agentic-run simple --input "Tell me a joke"
+# Chef Agent
 uv run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
+
+# Travel Agent (using Kiwi MCP)
+uv run agentic-run travel --input "From BCN to Lisbon any date in June or July during 5 days."
 ```
 
 ### Project Structure
