@@ -42,4 +42,5 @@ MANIFEST
 htmlcov/
 
 # Logging
-logs/
+agentic-framework/logs/
+!agentic-framework/logs/.gitkeep
