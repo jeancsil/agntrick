@@ -47,9 +47,7 @@ def list():
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Enable verbose logging."
-    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ):
     """
     Agentic Framework CLI. Use `list` to see available agents,
@@ -58,25 +56,18 @@ def main(
     configure_logging(verbose)
     logging.info("Starting CLI")
     if ctx.invoked_subcommand is None:
-        console.print(
-            "[bold yellow]No command provided. "
-            + "Use --help to see available commands.[/bold yellow]"
-        )
+        console.print("[bold yellow]No command provided. " + "Use --help to see available commands.[/bold yellow]")
 
 
 def create_agent_command(agent_name: str):
     def command(
-        input_text: str = typer.Option(
-            ..., "--input", "-i", help="Input text for the agent."
-        ),
+        input_text: str = typer.Option(..., "--input", "-i", help="Input text for the agent."),
     ):
         """Run the {agent_name} agent."""
 
         agent_cls = AgentRegistry.get(agent_name)
         if not agent_cls:
-            console.print(
-                f"[bold red]Error:[/bold red] Agent '{agent_name}' not found."
-            )
+            console.print(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found.")
             raise typer.Exit(code=1)
 
         console.print(f"[bold blue]Running agent:[/bold blue] {agent_name}...")
