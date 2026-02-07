@@ -25,14 +25,8 @@ jobs:
       - name: Install dependencies
         run: uv --directory agentic-framework sync
       
-      - name: Run Ruff linter
-        run: uv --directory agentic-framework run ruff check .
-      
-      - name: Run Ruff formatter
-        run: uv --directory agentic-framework run ruff format --check .
-      
-      - name: Run mypy
-        run: uv --directory agentic-framework run mypy src/
+      - name: Run checks
+        run: make check
 
   test:
     runs-on: ubuntu-latest
@@ -56,11 +50,11 @@ jobs:
         run: uv --directory agentic-framework sync
       
       - name: Run tests
-        run: uv --directory agentic-framework run pytest tests/ -v --cov=src/agentic_framework --cov-report=xml --cov-report=term
+        run: make test
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         if: matrix.python-version == '3.12'
         with:
-          file: ./coverage.xml
+          file: ./agentic-framework/coverage.xml
           fail_ci_if_error: false

@@ -1,8 +1,9 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, cast
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
@@ -45,28 +46,27 @@ class ChefAgent(Agent):
             checkpointer=InMemorySaver(),
         )
 
-    # def web_search(self, query: str) -> Dict[str, Any]:
-    #     """Search the web for information"""
-    #     return self.tavily_client.search(query)
-
-    def run(self, input_data: Union[str, List[BaseMessage]], config: Dict[str, Any] = None) -> Union[str, BaseMessage]:
+    async def run(
+        self,
+        input_data: Union[str, List[BaseMessage]],
+        config: Dict[str, Any] | None = None,
+    ) -> Union[str, BaseMessage]:
         """
         Run the agent with the given input string.
         """
+        if config is None:
+            config = {"configurable": {"thread_id": "1"}}
+
+        messages: List[BaseMessage]
         if isinstance(input_data, str):
             messages = [HumanMessage(content=input_data)]
         else:
             messages = input_data
 
-        if config is None:
-            config = {"configurable": {"thread_id": "1"}}
-
         if self.graph:
-            # LangGraph returns a dictionary with 'messages'
-            result = self.graph.invoke({"messages": messages}, config=config)
-            # The last message is the response from the agent
-            last_message = result["messages"][-1]
-            return str(last_message.content)
+            result = await self.graph.ainvoke(cast(Any, {"messages": messages}), config=cast(RunnableConfig, config))
+
+            return str(result["messages"][-1].content)
 
         raise NotImplementedError("ChefAgent requires langgraph")
 

@@ -27,18 +27,21 @@ run: ## Run the agentic-run simple command
 #	@$(UV) --project $(PROJECT_DIR) run agentic-run simple --input "Tell me a joke"
 	@$(UV) --project $(PROJECT_DIR) run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
 
-test: ## Run pytest in the project directory
-	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/
+test: ## Run tests with coverage
+	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/ -v --cov=$(PROJECT_DIR)/src --cov-report=xml --cov-report=term
 
 lint: ## Run ruff linting with auto-fix
 	@$(UV) --project $(PROJECT_DIR) run mypy $(PROJECT_DIR)/src/
-	@$(UV) --project $(PROJECT_DIR) run ruff check --fix .
+	@$(UV) --project $(PROJECT_DIR) run ruff check --fix $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
+	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
 format: ## Run ruff code formatting
-	@$(UV) --project $(PROJECT_DIR) run ruff format .
+	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
-check: lint ## Run lint, format check, and mypy type checking
-	@$(UV) --project $(PROJECT_DIR) run ruff format --check .
+check: ## Run lint, format check, and mypy type checking (no fixes)
+	@$(UV) --project $(PROJECT_DIR) run mypy $(PROJECT_DIR)/src/
+	@$(UV) --project $(PROJECT_DIR) run ruff check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
+	@$(UV) --project $(PROJECT_DIR) run ruff format --check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
 clean: ## Deep clean temporary files and virtual environment
 	rm -rf $(PROJECT_DIR)/.venv

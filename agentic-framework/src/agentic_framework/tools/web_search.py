@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from tavily import TavilyClient
+from tavily import TavilyClient  # type: ignore[import-untyped]
 
 from agentic_framework.interfaces.base import Tool
 

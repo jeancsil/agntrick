@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, Dict, List, Union
 
 from dotenv import load_dotenv
@@ -64,13 +63,16 @@ class TravelAgent(Agent):
             )
 
     async def run(
-        self, input_data: Union[str, List[BaseMessage]], config: Dict[str, Any] = None
+        self,
+        input_data: Union[str, List[BaseMessage]],
+        config: Dict[str, Any] | None = None,
     ) -> Union[str, BaseMessage]:
         """
         Run the agent with the given input string.
         """
         await self._ensure_initialized()  # Lazy init
 
+        messages: List[BaseMessage]
         if isinstance(input_data, str):
             messages = [HumanMessage(content=input_data)]
         else:
@@ -89,4 +91,4 @@ class TravelAgent(Agent):
         raise NotImplementedError("TravelAgent requires langgraph")
 
     def get_tools(self) -> List[Any]:
-        return self.tools
+        return self.tools if self.tools is not None else []

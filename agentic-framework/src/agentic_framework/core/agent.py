@@ -1,4 +1,4 @@
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,12 +21,16 @@ class SimpleAgent(Agent):
         )
         self.chain = self.prompt | self.model
 
-    def run(self, input_data: Union[str, List[BaseMessage]]) -> Union[str, BaseMessage]:
+    async def run(
+        self,
+        input_data: Union[str, List[BaseMessage]],
+        config: Dict[str, Any] | None = None,
+    ) -> Union[str, BaseMessage]:
         """
         Run the agent with the given input string.
         """
         if isinstance(input_data, str):
-            response = self.chain.invoke({"input": input_data})
+            response = await self.chain.ainvoke({"input": input_data})
             return str(response.content)
 
         raise NotImplementedError("SimpleAgent currently only supports string input.")
