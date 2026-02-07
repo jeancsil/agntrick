@@ -40,7 +40,14 @@ check: lint ## Run lint, format check, and mypy type checking
 
 clean: ## Deep clean temporary files and virtual environment
 	rm -rf $(PROJECT_DIR)/.venv
-	rm -rf $(PROJECT_DIR)/.pytest_cache
-	rm -rf $(PROJECT_DIR)/.ruff_cache
+	rm -rf $(PROJECT_DIR)/../.pytest_cache/
+	rm -rf $(PROJECT_DIR)/../.mypy_cache/
+	rm -rf $(PROJECT_DIR)/.mypy_cache/
+	rm -rf $(PROJECT_DIR)/.ruff_cache/
+	rm -rf $(PROJECT_DIR)/.benchmarks/
+	rm -rf $(PROJECT_DIR)/src/agentic_framework.egg-info/
+	rm -rf $(PROJECT_DIR)/../.benchmarks/
+	rm -rf $(PROJECT_DIR)/../.ruff_cache/
+
 	find $(PROJECT_DIR) -type d -name "__pycache__" -exec rm -rf {} +
 	find $(PROJECT_DIR) -type f -name "*.pyc" -delete
