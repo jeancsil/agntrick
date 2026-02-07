@@ -49,9 +49,7 @@ class ChefAgent(Agent):
     #     """Search the web for information"""
     #     return self.tavily_client.search(query)
 
-    def run(
-        self, input_data: Union[str, List[BaseMessage]], config: Dict[str, Any] = None
-    ) -> Union[str, BaseMessage]:
+    def run(self, input_data: Union[str, List[BaseMessage]], config: Dict[str, Any] = None) -> Union[str, BaseMessage]:
         """
         Run the agent with the given input string.
         """

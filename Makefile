@@ -1,45 +1,46 @@
-
-.PHONY: install run test clean lint check format
+.PHONY: help install run test clean lint check format
+.DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
 UV ?= uv
-PYTHON ?= $(UV) run python
-PYTEST ?= $(UV) run pytest
-RUFF ?= $(UV) run ruff
+PYTHON ?= $(UV) --directory $(PROJECT_DIR) run python
+PYTEST ?= $(UV) --directory $(PROJECT_DIR) run pytest
+RUFF ?= $(UV) --directory $(PROJECT_DIR) run ruff
 
-# Default target
-all: install test
+# Project directory
+PROJECT_DIR = agentic-framework
 
-# Install all dependencies (production + development)
-install:
-	$(UV) sync
+## -- Help System --
 
-# Run the project
-run:
-	$(UV) run agentic-run simple -i "Tell me a joke"
+help: ## Show this help message
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-# Run tests
-test:
-	$(PYTEST) tests/
+## -- Commands --
 
-# Clean temporary files
-clean:
-	rm -rf .venv
-	rm -rf __pycache__
-	rm -rf .pytest_cache
-	rm -rf .ruff_cache
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+install: ## Install all dependencies using uv
+	@$(UV) --directory $(PROJECT_DIR) sync
 
-# Lint code using ruff
-lint:
-	$(RUFF) check --fix .
+run: ## Run the agentic-run simple command
+	@$(UV) --project $(PROJECT_DIR) run agentic-run simple -i "Tell me a joke"
 
-# Format code using ruff
-format:
-	$(RUFF) format .
+test: ## Run pytest in the project directory
+	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/
 
-# Check code (lint + format check + type check)
-check: lint
-	$(RUFF) format --check .
-	$(UV) run mypy src/
+lint: ## Run ruff linting with auto-fix
+	@$(UV) --project $(PROJECT_DIR) run ruff check --fix .
+
+format: ## Run ruff code formatting
+	@$(UV) --project $(PROJECT_DIR) run ruff format .
+
+check: lint ## Run lint, format check, and mypy type checking
+	@$(UV) --project $(PROJECT_DIR) run ruff format --check .
+
+clean: ## Deep clean temporary files and virtual environment
+	rm -rf $(PROJECT_DIR)/.venv
+	rm -rf $(PROJECT_DIR)/.pytest_cache
+	rm -rf $(PROJECT_DIR)/.ruff_cache
+	find $(PROJECT_DIR) -type d -name "__pycache__" -exec rm -rf {} +
+	find $(PROJECT_DIR) -type f -name "*.pyc" -delete
