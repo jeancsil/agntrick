@@ -90,6 +90,7 @@ def create_agent_command(agent_name: str):
             async def _run():
                 if allowed_mcp:
                     provider = MCPProvider(server_names=allowed_mcp)
+                    # tool_session defaults to fail_fast=True now
                     async with provider.tool_session() as mcp_tools:
                         agent = agent_cls(initial_mcp_tools=mcp_tools)
                         return await agent.run(input_text)
@@ -116,12 +117,47 @@ def create_agent_command(agent_name: str):
         except typer.Exit:
             raise
         except Exception as e:
+            from agentic_framework.mcp import MCPConnectionError
+
+            if isinstance(e, MCPConnectionError):
+                console.print(f"[bold red]MCP Connectivity Error:[/bold red] {e}")
+
+                # Special handling for ExceptionGroup (Python 3.11+) or TaskGroup errors
+                cause = e.cause
+                if hasattr(cause, "exceptions"):  # ExceptionGroup
+                    for idx, sub_e in enumerate(cause.exceptions):
+                        console.print(f"[red]  sub-exception {idx + 1}: {sub_e}[/red]")
+                elif e.__cause__:
+                    console.print(f"[red]  cause: {e.__cause__}[/red]")
+
+                console.print(
+                    "\n[yellow]Suggestion:[/yellow] Ensure the MCP server URL is correct and you have network access."
+                )
+                if "web-fetch" in e.server_name:
+                    console.print(
+                        "[yellow]Note:[/yellow] web-fetch requires a valid remote URL. Check agentic_framework/mcp/config.py"
+                    )
+
+                raise typer.Exit(code=1)
+
             console.print(f"[bold red]Error running agent:[/bold red] {e}")
-            cause: BaseException | None = e
-            while getattr(cause, "__cause__", None) is not None:
-                cause = cause.__cause__  # type: ignore[union-attr]
-                console.print(f"[red]  cause: {cause}[/red]")
-            console.print("[dim]" + traceback.format_exc() + "[/dim]")
+
+            # Print chained exceptions
+            current_cause: BaseException | None = e
+            while (
+                getattr(current_cause, "__cause__", None) is not None
+                or getattr(current_cause, "__context__", None) is not None
+            ):
+                current_cause = current_cause.__cause__ or current_cause.__context__
+                if current_cause:
+                    console.print(f"[red]  cause: {current_cause}[/red]")
+
+            # Print traceback in verbose mode
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                console.print("[dim]" + traceback.format_exc() + "[/dim]")
+            else:
+                console.print("[dim]Run with --verbose to see full traceback.[/dim]")
+
             raise typer.Exit(code=1)
 
     command.__doc__ = f"Run the {agent_name} agent."
@@ -133,10 +169,10 @@ def create_agent_command(agent_name: str):
 
 # Discover and register all agent CLI commands
 AgentRegistry.discover_agents()
-for agent_name in AgentRegistry.list_agents():
+for name in AgentRegistry.list_agents():
     # Create a command function for this agent
-    cmd_func = create_agent_command(agent_name)
-    app.command(name=agent_name)(cmd_func)
+    cmd_func = create_agent_command(name)
+    app.command(name=name)(cmd_func)
 
 
 if __name__ == "__main__":

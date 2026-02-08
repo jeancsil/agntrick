@@ -18,6 +18,10 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "url": "https://agent.tinyfish.ai/mcp",
         "transport": "sse",
     },
+    "web-fetch": {
+        "url": "https://remote.mcpservers.org/fetch/mcp",
+        "transport": "http",
+    },
     "tavily": {
         "url": "https://mcp.tavily.com/mcp",
         "transport": "sse",
@@ -38,6 +42,13 @@ def _resolve_server_config(server_name: str, raw: Dict[str, Any]) -> Dict[str, A
             base = (raw.get("url") or "").rstrip("/")
             sep = "&" if "?" in base else "?"
             out["url"] = f"{base}{sep}tavilyApiKey={key}"
+    elif server_name == "tinyfish":
+        key = os.environ.get("TINYFISH_API_KEY")
+        if not key:
+            logging.warning("TINYFISH_API_KEY not found in environment. TinyFish MCP may fail to connect.")
+        else:
+            out["headers"] = out.get("headers", {})
+            out["headers"]["X-API-Key"] = key
     return out
 
 

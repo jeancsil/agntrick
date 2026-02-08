@@ -16,6 +16,15 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from agentic_framework.mcp.config import get_mcp_servers_config
 
 
+class MCPConnectionError(Exception):
+    """Raised when an MCP server fails to connect."""
+
+    def __init__(self, server_name: str, cause: Exception):
+        self.server_name = server_name
+        self.cause = cause
+        super().__init__(f"Failed to connect to MCP server '{server_name}': {cause}")
+
+
 class MCPProvider:
     """
     Reusable MCP client. Use get_tools() for programmatic use, or tool_session()
@@ -56,39 +65,56 @@ class MCPProvider:
         return self._tools_cache
 
     @asynccontextmanager
-    async def tool_session(self):
+    async def tool_session(self, fail_fast: bool = True):
         """
         Async context manager: load MCP tools with sessions that close on exit.
-        Connections are opened in parallel to avoid blocking on one slow server.
+
+        IMPORTANT: Connections are now opened sequentially. While slightly slower than
+        parallel, this avoids "Attempted to exit cancel scope in a different task"
+        errors from anyio (used by mcp) which requires task identity for cleanup.
         """
         import asyncio
         import logging
         from contextlib import AsyncExitStack
 
-        # Per-server connection timeout to avoid blocking the whole agent
-        CONN_TIMEOUT = 10
+        CONN_TIMEOUT = 15
+        all_tools = []
 
-        async def _load_one(stack: AsyncExitStack, name: str) -> List[Any]:
-            try:
-                logging.debug(f"Connecting to MCP server: {name}")
-                async with asyncio.timeout(CONN_TIMEOUT):
-                    session = await stack.enter_async_context(self._client.session(name))
-                    tools = await load_mcp_tools(
-                        session,
-                        callbacks=self._client.callbacks,
-                        tool_interceptors=self._client.tool_interceptors,
-                        server_name=name,
-                        tool_name_prefix=self._client.tool_name_prefix,
-                    )
-                    logging.info(f"Loaded {len(tools)} tools from MCP server: {name}")
-                    return tools
-            except (asyncio.TimeoutError, Exception) as e:
-                logging.error(f"Failed to connect to MCP server '{name}': {e}")
-                return []
-
+        # We use a stack to track entered contexts for reliable cleanup
         async with AsyncExitStack() as stack:
-            # Load all in parallel
-            tasks = [_load_one(stack, name) for name in self._config]
-            results = await asyncio.gather(*tasks)
-            all_tools = [t for sublist in results for t in sublist]
-            yield all_tools
+            for name in self._config:
+                try:
+                    logging.debug(f"Connecting to MCP server: {name}")
+                    async with asyncio.timeout(CONN_TIMEOUT):
+                        # We enter the context manager in the SAME task that will exit it
+                        session = await stack.enter_async_context(self._client.session(name))
+
+                        tools = await load_mcp_tools(
+                            session,
+                            callbacks=self._client.callbacks,
+                            tool_interceptors=self._client.tool_interceptors,
+                            server_name=name,
+                            tool_name_prefix=self._client.tool_name_prefix,
+                        )
+                        logging.info(f"Loaded {len(tools)} tools from MCP server: {name}")
+                        all_tools.extend(tools)
+                except (asyncio.TimeoutError, TimeoutError) as e:
+                    err = TimeoutError(f"Connection timed out after {CONN_TIMEOUT}s")
+                    if fail_fast:
+                        raise MCPConnectionError(name, err) from e
+                    logging.error(f"Failed to connect to MCP server '{name}': {err}")
+                except Exception as e:
+                    if fail_fast:
+                        logging.debug(f"MCP connection failed for '{name}'", exc_info=True)
+                        raise MCPConnectionError(name, e) from e
+                    logging.error(f"Failed to connect to MCP server '{name}': {e}")
+
+            # Once all (or some) tools are loaded, yield them to the agent
+            try:
+                yield all_tools
+            finally:
+                # During stack exit, some servers (like those with misconfigured http transport)
+                # might return 405 on DELETE or have other cleanup issues.
+                # We want to ensure one server's cleanup failure doesn't mask the agent's result.
+                # AsyncExitStack already handles this by aggregation, but let's be aware.
+                logging.debug("Exiting MCP tool session stack")
