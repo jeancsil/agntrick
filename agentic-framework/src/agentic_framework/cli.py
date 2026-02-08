@@ -6,7 +6,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from agentic_framework.constants import LOGS_DIR
-
 from agentic_framework.registry import AgentRegistry
 
 app = typer.Typer(
