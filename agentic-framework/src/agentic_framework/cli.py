@@ -1,12 +1,21 @@
 import asyncio
 import logging
+import traceback
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 
 from agentic_framework.constants import LOGS_DIR
+from agentic_framework.mcp import MCPProvider
 from agentic_framework.registry import AgentRegistry
+
+# Load environment variables once at the entry point
+load_dotenv()
+
+# Max time for the full agent run (MCP connection + LLM + tools). Prevents indefinite hang.
+RUN_TIMEOUT_SECONDS = 90
 
 app = typer.Typer(
     name="agentic-framework",
@@ -54,12 +63,18 @@ def main(
     configure_logging(verbose)
     logging.info("Starting CLI")
     if ctx.invoked_subcommand is None:
-        console.print("[bold yellow]No command provided. " + "Use --help to see available commands.[/bold yellow]")
+        console.print("[bold yellow]No command provided. Use --help to see available commands.[/bold yellow]")
 
 
 def create_agent_command(agent_name: str):
     def command(
         input_text: str = typer.Option(..., "--input", "-i", help="Input text for the agent."),
+        timeout_sec: int = typer.Option(
+            RUN_TIMEOUT_SECONDS,
+            "--timeout",
+            "-t",
+            help="Max run time in seconds (MCP + LLM + tools).",
+        ),
     ):
         """Run the {agent_name} agent."""
 
@@ -70,10 +85,26 @@ def create_agent_command(agent_name: str):
 
         console.print(f"[bold blue]Running agent:[/bold blue] {agent_name}...")
         try:
-            # Instantiate agent
-            agent = agent_cls()
+            allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
 
-            result = asyncio.run(agent.run(input_text))
+            async def _run():
+                if allowed_mcp:
+                    provider = MCPProvider(server_names=allowed_mcp)
+                    async with provider.tool_session() as mcp_tools:
+                        agent = agent_cls(initial_mcp_tools=mcp_tools)
+                        return await agent.run(input_text)
+                else:
+                    agent = agent_cls()
+                    return await agent.run(input_text)
+
+            try:
+                result = asyncio.run(asyncio.wait_for(_run(), timeout=float(timeout_sec)))
+            except asyncio.TimeoutError:
+                console.print(
+                    f"[bold red]Error running agent:[/bold red] Run timed out after {timeout_sec}s. "
+                    "Check MCP server connectivity or use --timeout to increase."
+                )
+                raise typer.Exit(code=1)
 
             console.print(
                 Panel(
@@ -82,13 +113,15 @@ def create_agent_command(agent_name: str):
                 )
             )
 
+        except typer.Exit:
+            raise
         except Exception as e:
             console.print(f"[bold red]Error running agent:[/bold red] {e}")
-            # Verbose logging is configured in main callback,
-            # but exception printing needs explicit handling if we want full trace
-            # Since logging is configured, exceptions logged via logger.exception would
-            # show up if verbose.
-            # Here we just print the error message nicely.
+            cause: BaseException | None = e
+            while getattr(cause, "__cause__", None) is not None:
+                cause = cause.__cause__  # type: ignore[union-attr]
+                console.print(f"[red]  cause: {cause}[/red]")
+            console.print("[dim]" + traceback.format_exc() + "[/dim]")
             raise typer.Exit(code=1)
 
     command.__doc__ = f"Run the {agent_name} agent."
@@ -98,7 +131,7 @@ def create_agent_command(agent_name: str):
     return command
 
 
-# Discover agent modules (loads them so @AgentRegistry.register runs), then register CLI commands
+# Discover and register all agent CLI commands
 AgentRegistry.discover_agents()
 for agent_name in AgentRegistry.list_agents():
     # Create a command function for this agent

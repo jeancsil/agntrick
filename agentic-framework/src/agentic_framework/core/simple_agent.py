@@ -8,13 +8,14 @@ from agentic_framework.interfaces.base import Agent
 from agentic_framework.registry import AgentRegistry
 
 
-@AgentRegistry.register("simple")
+@AgentRegistry.register("simple", mcp_servers=None)
 class SimpleAgent(Agent):
     """
     A simple agent implementation using LangChain.
+    No MCP access (mcp_servers=None in registry).
     """
 
-    def __init__(self, model_name: str = "gpt-5-nano", temperature: float = 0.0):
+    def __init__(self, model_name: str = "gpt-5-nano", temperature: float = 0.0, **kwargs):
         self.model = ChatOpenAI(model=model_name, temperature=temperature)
         self.prompt = ChatPromptTemplate.from_messages(
             [("system", "You are a helpful assistant."), ("user", "{input}")]

@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Union
 
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
@@ -10,17 +9,12 @@ from agentic_framework.interfaces.base import Agent
 from agentic_framework.mcp import MCPProvider
 from agentic_framework.registry import AgentRegistry
 
-load_dotenv()
 
-# Default MCP servers for the travel agent (flight search only).
-TRAVEL_AGENT_MCP_SERVERS = ["kiwi-com-flight-search"]
-
-
-@AgentRegistry.register("travel")
+@AgentRegistry.register("travel", mcp_servers=["kiwi-com-flight-search"])
 class TravelAgent(Agent):
     """
     A travel agent implementation using LangGraph (React).
-    Uses an injectable MCPProvider for tools (default: Kiwi flight search).
+    MCP tools come from injectable MCPProvider (allowed servers defined in registry).
     """
 
     def __init__(
@@ -28,15 +22,12 @@ class TravelAgent(Agent):
         model_name: str = "gpt-5-nano",
         temperature: float = 0.1,
         mcp_provider: MCPProvider | None = None,
-        mcp_server_names: List[str] | None = None,
+        initial_mcp_tools: List[Any] | None = None,
+        **kwargs,
     ):
         self.model = ChatOpenAI(model=model_name, temperature=temperature)
-
-        if mcp_provider is not None:
-            self._mcp_provider = mcp_provider
-        else:
-            self._mcp_provider = MCPProvider(server_names=mcp_server_names or TRAVEL_AGENT_MCP_SERVERS)
-
+        self._mcp_provider = mcp_provider
+        self._initial_mcp_tools = initial_mcp_tools
         self.tools = None
         self.graph = None
 
@@ -59,7 +50,13 @@ class TravelAgent(Agent):
         """
 
         if self.tools is None:
-            self.tools = await self._mcp_provider.get_tools()
+            if self._initial_mcp_tools is not None:
+                mcp_tools = list(self._initial_mcp_tools)
+            elif self._mcp_provider:
+                mcp_tools = await self._mcp_provider.get_tools()
+            else:
+                mcp_tools = []
+            self.tools = mcp_tools
             self.graph = create_agent(
                 model=self.model,
                 tools=self.tools,
