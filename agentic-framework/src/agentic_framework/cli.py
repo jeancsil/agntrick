@@ -135,7 +135,8 @@ def create_agent_command(agent_name: str):
                 )
                 if "web-fetch" in e.server_name:
                     console.print(
-                        "[yellow]Note:[/yellow] web-fetch requires a valid remote URL. Check agentic_framework/mcp/config.py"
+                        "[yellow]Note:[/yellow] web-fetch requires a valid remote URL. "
+                        "Check agentic_framework/mcp/config.py"
                     )
 
                 raise typer.Exit(code=1)
@@ -143,14 +144,16 @@ def create_agent_command(agent_name: str):
             console.print(f"[bold red]Error running agent:[/bold red] {e}")
 
             # Print chained exceptions
-            current_cause: BaseException | None = e
-            while (
-                getattr(current_cause, "__cause__", None) is not None
-                or getattr(current_cause, "__context__", None) is not None
-            ):
-                current_cause = current_cause.__cause__ or current_cause.__context__
-                if current_cause:
-                    console.print(f"[red]  cause: {current_cause}[/red]")
+            exc_ptr: BaseException | None = e
+            while exc_ptr is not None:
+                # Use a local variable with explicit type to satisfy mypy
+                chained_cause: BaseException | None = getattr(exc_ptr, "__cause__", None) or getattr(
+                    exc_ptr, "__context__", None
+                )
+                if chained_cause is None:
+                    break
+                console.print(f"[red]  cause: {chained_cause}[/red]")
+                exc_ptr = chained_cause
 
             # Print traceback in verbose mode
             if logging.getLogger().isEnabledFor(logging.DEBUG):
