@@ -22,8 +22,9 @@ help: ## Show this help message
 
 install: ## Install all dependencies using uv
 	@$(UV) --directory $(PROJECT_DIR) sync
+	@git config --local core.hooksPath .githooks
 
-run: ## Run the agentic-run simple command
+run: ## Run the agentic-run simple command to exemplify the CLI
 #	@$(UV) --project $(PROJECT_DIR) run agentic-run simple --input "Tell me a joke"
 	@$(UV) --project $(PROJECT_DIR) run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
 
