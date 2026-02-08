@@ -1,5 +1,1 @@
-from .agent import SimpleAgent
-from .chef_agent import ChefAgent
-from .travel_agent import TravelAgent
-
-__all__ = ["SimpleAgent", "ChefAgent", "TravelAgent"]
+# Agent modules are discovered via AgentRegistry.discover_agents() (pkgutil.iter_modules).

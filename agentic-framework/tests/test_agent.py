@@ -1,10 +1,10 @@
 from unittest.mock import patch
 
-from agentic_framework.core.agent import SimpleAgent
+from agentic_framework.core.simple_agent import SimpleAgent
 
 
 def test_simple_agent_initialization():
-    with patch("agentic_framework.core.agent.ChatOpenAI") as MockChatOpenAI:
+    with patch("agentic_framework.core.simple_agent.ChatOpenAI") as MockChatOpenAI:
         # Configure the mock
         MockChatOpenAI.return_value
 

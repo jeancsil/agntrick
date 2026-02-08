@@ -6,14 +6,13 @@ from rich.console import Console
 from rich.panel import Panel
 
 from agentic_framework.constants import LOGS_DIR
-from agentic_framework.core.agent import SimpleAgent  # noqa: F401
-from agentic_framework.core.chef_agent import ChefAgent  # noqa: F401
+
 from agentic_framework.registry import AgentRegistry
 
 app = typer.Typer(
     name="agentic-framework",
     help="A CLI for running agents in the Agentic Framework.",
-    add_completion=False,
+    add_completion=True,
 )
 console = Console()
 
@@ -75,10 +74,7 @@ def create_agent_command(agent_name: str):
             # Instantiate agent
             agent = agent_cls()
 
-            # if inspect.iscoroutinefunction(agent.run):
             result = asyncio.run(agent.run(input_text))
-            # else:
-            #     result = agent.run(input_text)
 
             console.print(
                 Panel(
@@ -103,7 +99,8 @@ def create_agent_command(agent_name: str):
     return command
 
 
-# Dynamically register commands for each agent
+# Discover agent modules (loads them so @AgentRegistry.register runs), then register CLI commands
+AgentRegistry.discover_agents()
 for agent_name in AgentRegistry.list_agents():
     # Create a command function for this agent
     cmd_func = create_agent_command(agent_name)
