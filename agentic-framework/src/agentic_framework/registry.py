@@ -6,7 +6,7 @@ from agentic_framework.interfaces.base import Agent
 
 # Package to scan for agent modules; imported lazily in discover_agents() to avoid circular
 # import (agent modules do "from agentic_framework.registry import AgentRegistry").
-# Must be a package whose __init__.py does NOT import agent modules (core/__init__.py is empty).
+# Must be a package whose __init__.py does NOT import concrete agent modules.
 _AGENTS_PACKAGE_NAME = "agentic_framework.core"
 
 

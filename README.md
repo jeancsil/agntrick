@@ -48,6 +48,34 @@ uv --project agentic-framework run agentic-run list
 | `chef` | recipe suggestions from ingredients | `tavily` |
 | `travel` | flight planning assistant | `kiwi-com-flight-search` |
 | `news` | AI news assistant | `web-fetch` |
+| `travel-coordinator` | orchestrates 3 specialists (flights + city intel + reviewer) | `kiwi-com-flight-search`, `web-fetch` |
+
+## Coordinator Example (3 Agents + 2 MCP Servers)
+
+Run:
+
+```bash
+uv --project agentic-framework run agentic-run travel-coordinator -i "Plan a 5-day trip from Lisbon to Berlin in May."
+```
+
+This example uses two remote MCP servers that are publicly configured in this project:
+`kiwi-com-flight-search` and `web-fetch`.
+
+How it works:
+
+1. `FlightSpecialistAgent` uses MCP tools to gather flight options.
+2. `CityIntelAgent` receives the flight report and adds destination intelligence.
+3. `TravelReviewerAgent` receives both reports and returns the final itinerary brief.
+
+The coordinator implementation lives in:
+
+- `agentic-framework/src/agentic_framework/core/travel_coordinator_agent.py`
+
+Why this matters:
+
+- You can build orchestration logic in a new agent file.
+- You can compose many specialist agents without touching the framework base.
+- You can choose per-agent MCP access in registry metadata only.
 
 ## Architecture (Beginner-Friendly)
 
@@ -87,6 +115,19 @@ Optional local tools:
 def local_tools(self):
     return [my_langchain_tool]
 ```
+
+## Build Complex Coordinators (No Base Changes)
+
+Use this repeatable pattern for multi-agent systems:
+
+1. Create small specialist classes that subclass `LangGraphMCPAgent`.
+2. Create one coordinator class that implements `Agent` directly.
+3. Register only the coordinator in `AgentRegistry` with allowed MCP servers.
+4. In coordinator `run()`, call specialists in stages and pass each stage output to the next.
+5. Keep coordinator logic explicit in Python (handoff format, retries, branch rules).
+6. Add unit tests that assert call order and stage-to-stage context propagation.
+
+This is the same pattern used by `travel-coordinator` and scales to routers, supervisors, and team-of-agents designs.
 
 After adding the file under `src/agentic_framework/core/`, the CLI command appears automatically:
 

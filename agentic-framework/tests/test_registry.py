@@ -10,6 +10,7 @@ def test_registry_discovers_core_agents():
     assert "chef" in agents
     assert "travel" in agents
     assert "news" in agents
+    assert "travel-coordinator" in agents
 
 
 def test_registry_register_get_and_mcp_servers():
