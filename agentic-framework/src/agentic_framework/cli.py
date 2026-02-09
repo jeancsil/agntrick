@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import traceback
+from typing import Any, Type
 
 import typer
 from dotenv import load_dotenv
@@ -8,13 +9,11 @@ from rich.console import Console
 from rich.panel import Panel
 
 from agentic_framework.constants import LOGS_DIR
-from agentic_framework.mcp import MCPProvider
+from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
 
-# Load environment variables once at the entry point
 load_dotenv()
 
-# Max time for the full agent run (MCP connection + LLM + tools). Prevents indefinite hang.
 RUN_TIMEOUT_SECONDS = 90
 
 app = typer.Typer(
@@ -25,41 +24,84 @@ app = typer.Typer(
 console = Console()
 
 
-def configure_logging(verbose: bool):
-    handlers = []
-    handlers.append(logging.FileHandler(str(LOGS_DIR / "agent.log")))
-    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
+def configure_logging(verbose: bool) -> None:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level="DEBUG" if verbose else "INFO",
-        format=log_format,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="[%X]",
-        handlers=handlers,
+        handlers=[logging.FileHandler(str(LOGS_DIR / "agent.log"))],
         force=True,
     )
 
 
-@app.command()
-def list():
+def _print_chained_causes(error: BaseException) -> None:
+    exc_ptr: BaseException | None = error
+    while exc_ptr is not None:
+        chained_cause: BaseException | None = getattr(exc_ptr, "__cause__", None) or getattr(
+            exc_ptr, "__context__", None
+        )
+        if chained_cause is None:
+            break
+        console.print(f"[red]  cause: {chained_cause}[/red]")
+        exc_ptr = chained_cause
+
+
+def _handle_mcp_connection_error(error: MCPConnectionError) -> None:
+    console.print(f"[bold red]MCP Connectivity Error:[/bold red] {error}")
+    cause = error.cause
+
+    if hasattr(cause, "exceptions"):
+        for idx, sub_error in enumerate(cause.exceptions):
+            console.print(f"[red]  sub-exception {idx + 1}: {sub_error}[/red]")
+    elif error.__cause__:
+        console.print(f"[red]  cause: {error.__cause__}[/red]")
+
+    console.print("\n[yellow]Suggestion:[/yellow] Ensure the MCP server URL is correct and you have network access.")
+    if "web-fetch" in error.server_name:
+        console.print("[yellow]Note:[/yellow] web-fetch requires a valid remote URL. Check mcp/config.py")
+
+
+async def _run_agent(
+    agent_cls: Type[Any],
+    input_text: str,
+    allowed_mcp: list[str] | None,
+) -> str:
+    if allowed_mcp:
+        provider = MCPProvider(server_names=allowed_mcp)
+        async with provider.tool_session() as mcp_tools:
+            agent = agent_cls(initial_mcp_tools=mcp_tools)
+            return str(await agent.run(input_text))
+
+    agent = agent_cls()
+    return str(await agent.run(input_text))
+
+
+def execute_agent(agent_name: str, input_text: str, timeout_sec: int) -> str:
+    agent_cls = AgentRegistry.get(agent_name)
+    if not agent_cls:
+        raise typer.Exit(code=1)
+
+    allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
+    try:
+        return asyncio.run(asyncio.wait_for(_run_agent(agent_cls, input_text, allowed_mcp), timeout=float(timeout_sec)))
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(f"Run timed out after {timeout_sec}s.") from exc
+
+
+@app.command(name="list")
+def list_agents() -> None:
     """List all available agents."""
     agents = AgentRegistry.list_agents()
-    console.print(
-        Panel(
-            f"[bold green]Available Agents:[/bold green] {', '.join(agents)}",
-            title="Registry",
-        )
-    )
+    console.print(Panel(f"[bold green]Available Agents:[/bold green] {', '.join(agents)}", title="Registry"))
 
 
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
-):
-    """
-    Agentic Framework CLI. Use `list` to see available agents,
-    or `<agent-name>` to run one.
-    """
+) -> None:
+    """Agentic Framework CLI."""
     configure_logging(verbose)
     logging.info("Starting CLI")
     if ctx.invoked_subcommand is None:
@@ -75,107 +117,44 @@ def create_agent_command(agent_name: str):
             "-t",
             help="Max run time in seconds (MCP + LLM + tools).",
         ),
-    ):
-        """Run the {agent_name} agent."""
-
-        agent_cls = AgentRegistry.get(agent_name)
-        if not agent_cls:
+    ) -> None:
+        """Run agent."""
+        if not AgentRegistry.get(agent_name):
             console.print(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found.")
             raise typer.Exit(code=1)
 
         console.print(f"[bold blue]Running agent:[/bold blue] {agent_name}...")
+
         try:
-            allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
-
-            async def _run():
-                if allowed_mcp:
-                    provider = MCPProvider(server_names=allowed_mcp)
-                    # tool_session defaults to fail_fast=True now
-                    async with provider.tool_session() as mcp_tools:
-                        agent = agent_cls(initial_mcp_tools=mcp_tools)
-                        return await agent.run(input_text)
-                else:
-                    agent = agent_cls()
-                    return await agent.run(input_text)
-
-            try:
-                result = asyncio.run(asyncio.wait_for(_run(), timeout=float(timeout_sec)))
-            except asyncio.TimeoutError:
-                console.print(
-                    f"[bold red]Error running agent:[/bold red] Run timed out after {timeout_sec}s. "
-                    "Check MCP server connectivity or use --timeout to increase."
-                )
-                raise typer.Exit(code=1)
-
-            console.print(
-                Panel(
-                    str(result),
-                    title=f"[bold green]Result from {agent_name}[/bold green]",
-                )
-            )
-
+            result = execute_agent(agent_name=agent_name, input_text=input_text, timeout_sec=timeout_sec)
+            console.print(Panel(result, title=f"[bold green]Result from {agent_name}[/bold green]"))
         except typer.Exit:
             raise
-        except Exception as e:
-            from agentic_framework.mcp import MCPConnectionError
-
-            if isinstance(e, MCPConnectionError):
-                console.print(f"[bold red]MCP Connectivity Error:[/bold red] {e}")
-
-                # Special handling for ExceptionGroup (Python 3.11+) or TaskGroup errors
-                cause = e.cause
-                if hasattr(cause, "exceptions"):  # ExceptionGroup
-                    for idx, sub_e in enumerate(cause.exceptions):
-                        console.print(f"[red]  sub-exception {idx + 1}: {sub_e}[/red]")
-                elif e.__cause__:
-                    console.print(f"[red]  cause: {e.__cause__}[/red]")
-
-                console.print(
-                    "\n[yellow]Suggestion:[/yellow] Ensure the MCP server URL is correct and you have network access."
-                )
-                if "web-fetch" in e.server_name:
-                    console.print(
-                        "[yellow]Note:[/yellow] web-fetch requires a valid remote URL. "
-                        "Check agentic_framework/mcp/config.py"
-                    )
-
-                raise typer.Exit(code=1)
-
-            console.print(f"[bold red]Error running agent:[/bold red] {e}")
-
-            # Print chained exceptions
-            exc_ptr: BaseException | None = e
-            while exc_ptr is not None:
-                # Use a local variable with explicit type to satisfy mypy
-                chained_cause: BaseException | None = getattr(exc_ptr, "__cause__", None) or getattr(
-                    exc_ptr, "__context__", None
-                )
-                if chained_cause is None:
-                    break
-                console.print(f"[red]  cause: {chained_cause}[/red]")
-                exc_ptr = chained_cause
-
-            # Print traceback in verbose mode
+        except TimeoutError as error:
+            console.print(
+                "[bold red]Error running agent:[/bold red] "
+                f"{error} Check MCP server connectivity or use --timeout to increase."
+            )
+            raise typer.Exit(code=1)
+        except MCPConnectionError as error:
+            _handle_mcp_connection_error(error)
+            raise typer.Exit(code=1)
+        except Exception as error:
+            console.print(f"[bold red]Error running agent:[/bold red] {error}")
+            _print_chained_causes(error)
             if logging.getLogger().isEnabledFor(logging.DEBUG):
                 console.print("[dim]" + traceback.format_exc() + "[/dim]")
             else:
                 console.print("[dim]Run with --verbose to see full traceback.[/dim]")
-
             raise typer.Exit(code=1)
 
     command.__doc__ = f"Run the {agent_name} agent."
-    # We need to set the name of the function to be unique
-    # otherwise typer might get confused?
-    # Actually Typer uses the function object.
     return command
 
 
-# Discover and register all agent CLI commands
 AgentRegistry.discover_agents()
-for name in AgentRegistry.list_agents():
-    # Create a command function for this agent
-    cmd_func = create_agent_command(name)
-    app.command(name=name)(cmd_func)
+for _name in AgentRegistry.list_agents():
+    app.command(name=_name)(create_agent_command(_name))
 
 
 if __name__ == "__main__":

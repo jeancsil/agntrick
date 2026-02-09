@@ -47,6 +47,12 @@ addopts = "-ra -q --import-mode=importlib"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
+[tool.coverage.run]
+source = ["src/agentic_framework"]
+
+[tool.coverage.report]
+fail_under = 60
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

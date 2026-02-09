@@ -1,77 +1,115 @@
 # Agentic Framework
 
-An agentic framework built with LangChain and Python 3.12+.
+An educational LangChain + MCP framework for learning and building agentic systems in Python 3.12+.
 
 ![Build Status](https://github.com/jeancsil/agentic-framework/actions/workflows/ci.yml/badge.svg)
 ![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)
 ![GitHub License](https://img.shields.io/github/license/jeancsil/agentic-framework)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)](https://mypy-lang.org/)
+
+## Goal of This Repository
+
+This project is intentionally small so you can learn the core building blocks of agentic coding:
+
+- agent registry and dynamic CLI commands
+- reusable LangGraph agent pattern
+- optional MCP server access with explicit per-agent permissions
+- local tools + MCP tools combined in one runtime
+- testable architecture (no network required in unit tests)
 
 ## Prerequisites
 
 - Python >= 3.12, < 3.14
-- Uv (recommended): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/) (recommended)
 
-## Getting Started
-
-### Installation
-
-Install dependencies using `uv`:
+## Quickstart
 
 ```bash
 make install
+make test
 ```
 
-### Development
+Run an agent:
 
-The following Makefile targets are available:
-
-- `make install`: Install dependencies and set up the virtual environment.
-- `make run`: Run the default agent example.
-- `make test`: Run tests using pytest.
-- `make clean`: Clean up temporary files and caches.
-- `make lint`: Run linting and formatting checks.
-
-
-### Usage with UV
-The pattern is:  
-`uv run agentic-run **agent_name** --input "your prompt"`
-
-### Available Agents
-
-| Agent | Description | Tools / Integration |
-|-------|-------------|---------------------|
-| `simple` | A basic conversational agent. | - |
-| `chef` | Personal chef that suggests recipes based on ingredients. | Web Search |
-| `travel` | Travel assistant for flight search and planning. | **Kiwi MCP** (Flight Search) |
-
-#### Examples:  
 ```bash
-# Chef Agent
-uv run agentic-run chef -i "I have bread, tuna, lettuce and mayo."
-
-# Travel Agent (using Kiwi MCP)
-uv run agentic-run travel --input "From BCN to Lisbon any date in June or July during 5 days."
+uv --project agentic-framework run agentic-run simple -i "Explain what an MCP server is."
 ```
 
-### Project Structure
+List available agents:
 
-```
-agentic-framework/
-├── Makefile              # Commands for install, test, lint, run
-├── README.md             # Documentation and setup instructions
-├── pyproject.toml        # Dependencies and tool config (pytest, ruff, mypy)
-├── .gitignore            # Standard Python gitignore
-├── src/
-│   └── agentic_framework/
-│       ├── __init__.py
-│       ├── core/         # Core logic (e.g., your Agent implementation)
-│       ├── interfaces/   # Abstract base classes
-│       └── tools/        # Sample tools
-└── tests/
+```bash
+uv --project agentic-framework run agentic-run list
 ```
 
-## Creating Your First Agent
+## Current Agents
 
-See `src/agentic_framework/core/agent.py` for a basic agent implementation.
+| Agent | What it does | MCP Access |
+|---|---|---|
+| `simple` | basic conversational chain | none |
+| `chef` | recipe suggestions from ingredients | `tavily` |
+| `travel` | flight planning assistant | `kiwi-com-flight-search` |
+| `news` | AI news assistant | `web-fetch` |
+
+## Architecture (Beginner-Friendly)
+
+Core flow:
+
+1. Register an agent in `src/agentic_framework/registry.py`.
+2. CLI discovers registered agents and creates commands automatically.
+3. If an agent has MCP permissions, CLI opens those MCP tool sessions.
+4. Agent runs with local tools + MCP tools and returns final response.
+
+Key files:
+
+- `agentic-framework/src/agentic_framework/core/langgraph_agent.py`: reusable base class for most agents
+- `agentic-framework/src/agentic_framework/mcp/config.py`: all available MCP servers
+- `agentic-framework/src/agentic_framework/registry.py`: agent registration + allowed MCP servers
+- `agentic-framework/src/agentic_framework/cli.py`: command runner and error handling
+
+## Create a New Agent
+
+Minimal pattern:
+
+```python
+from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
+from agentic_framework.registry import AgentRegistry
+
+
+@AgentRegistry.register("my-agent", mcp_servers=["tavily", "web-fetch"])
+class MyAgent(LangGraphMCPAgent):
+    @property
+    def system_prompt(self) -> str:
+        return "You are my custom agent."
+```
+
+Optional local tools:
+
+```python
+def local_tools(self):
+    return [my_langchain_tool]
+```
+
+After adding the file under `src/agentic_framework/core/`, the CLI command appears automatically:
+
+```bash
+uv --project agentic-framework run agentic-run my-agent -i "hello"
+```
+
+## Scaling to Coordinators and Multi-Agent Systems
+
+Recommended approach:
+
+1. Build each specialist as a small `LangGraphMCPAgent` subclass.
+2. Keep MCP permissions strict per specialist in the registry.
+3. Add a coordinator agent that routes user intent to specialists.
+4. Keep shared policies/prompts in one place; keep specialist prompts focused.
+5. Add contract tests for routing and handoff behavior.
+
+This keeps the code easy for medium-level engineers to extend while remaining production-friendly.
+
+## Development Commands
+
+- `make install`: install dependencies
+- `make test`: run tests (coverage threshold configured to fail under 60%)
+- `make lint`: run mypy + ruff
+- `make run`: run a sample agent
+- `make clean`: remove caches and temporary artifacts
