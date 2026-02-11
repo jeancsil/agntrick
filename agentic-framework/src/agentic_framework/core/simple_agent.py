@@ -38,20 +38,3 @@ class SimpleAgent(Agent):
 
     def get_tools(self) -> List[Any]:
         return []
-
-
-if __name__ == "__main__":
-    # Example usage
-    import sys
-
-    if len(sys.argv) > 1:
-        user_input = " ".join(sys.argv[1:])
-    else:
-        user_input = "Hello, world!"
-
-    try:
-        agent = SimpleAgent()
-        print(agent.run(user_input))
-    except Exception as e:
-        print(f"Error running agent: {e}")
-        print("Make sure OPENAI_API_KEY is set in your environment.")
