@@ -1,4 +1,4 @@
-.PHONY: help install run test clean lint check format
+.PHONY: help install run test clean lint check format docker-build docker-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -57,3 +57,23 @@ clean: ## Deep clean temporary files and virtual environment
 
 	find $(PROJECT_DIR) -type d -name "__pycache__" -exec rm -rf {} +
 	find $(PROJECT_DIR) -type f -name "*.pyc" -delete
+
+## -- Docker Commands --
+
+docker-build: ## Build the Docker image
+	@echo "Building Docker image..."
+	@docker compose build
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo ""
+	@echo "Run agents using: bin/agent.sh <agent-name> [args]"
+	@echo "Example: bin/agent.sh chef -i 'I have eggs and cheese'"
+	@echo "Example: bin/agent.sh -v travel-coordinator -i 'Plan a trip'"
+	@echo ""
+	@echo "See bin/agent.sh --help for more information"
+
+docker-clean: ## Remove Docker containers, images, and volumes
+	@echo "Cleaning up Docker resources..."
+	@docker compose down -v 2>/dev/null || true
+	@docker rmi agents-agentic-framework 2>/dev/null || true
+	@echo "✓ Cleanup complete!"

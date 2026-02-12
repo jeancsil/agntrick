@@ -40,6 +40,31 @@ List available agents:
 uv --project agentic-framework run agentic-run list
 ```
 
+## Docker Support 🐳
+
+Run the framework in Docker with mounted volumes for live code updates:
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Run agents using the shell wrapper
+bin/agent.sh chef -i "I have bread, tuna, lettuce and mayo"
+bin/agent.sh -v travel-coordinator -i "Plan a trip to Paris"
+bin/agent.sh list
+
+# Access logs (same location as local)
+tail -f agentic-framework/logs/agent.log
+```
+
+**Key Features:**
+- ✅ No rebuild needed when changing Python code (mounted volumes)
+- ✅ Environment variables safely loaded from `.env`
+- ✅ Logs accessible from host machine
+- ✅ Uses `uv` just like local development
+- ✅ Simple shell wrapper mimics local CLI experience
+
+
 ## Current Agents
 
 | Agent | What it does | MCP Access |
@@ -149,8 +174,16 @@ This keeps the code easy for medium-level engineers to extend while remaining pr
 
 ## Development Commands
 
+### Local Development
 - `make install`: install dependencies
 - `make test`: run tests (coverage threshold configured to fail under 60%)
 - `make lint`: run mypy + ruff
 - `make run`: run a sample agent
 - `make clean`: remove caches and temporary artifacts
+
+### Docker
+- `make docker-build`: build Docker image
+- `make docker-clean`: remove containers and images
+- `bin/agent.sh <agent> [args]`: run agents in Docker (see [DOCKER.md](DOCKER.md))
+
+See `make help` for all available commands.

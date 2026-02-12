@@ -1,0 +1,40 @@
+services:
+  agentic-framework:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic-framework
+
+    # Mount volumes for live code updates and persistent logs
+    volumes:
+      # Mount source code for live updates (no rebuild needed)
+      - ./agentic-framework/src:/app/agentic-framework/src
+      - ./agentic-framework/tests:/app/agentic-framework/tests
+
+      # Mount logs directory for easy access from host
+      - ./agentic-framework/logs:/app/agentic-framework/logs
+
+      # Mount pyproject.toml in case you need to update dependencies
+      - ./agentic-framework/pyproject.toml:/app/agentic-framework/pyproject.toml
+      - ./agentic-framework/uv.lock:/app/agentic-framework/uv.lock
+
+      # Persist the cache here. This creates a persistent folder at this path INSIDE the container
+      - uv-cache:/root/.cache/uv
+      - venv-data:/app/agentic-framework/.venv
+    environment:
+      - UV_LINK_MODE=copy
+
+    # Pass environment variables from .env file
+    env_file:
+      - .env
+
+    # Override default command - this will be overridden when running specific commands
+    command: [ "uv", "--directory", "agentic-framework", "run", "agentic-run", "--help" ]
+    # Keep container running for interactive use (optional)
+    # stdin_open: true
+    # tty: true
+volumes:
+  uv-cache:
+  venv-data:
+    # Network mode (optional, use host network if needed)
+    # network_mode: "host"
