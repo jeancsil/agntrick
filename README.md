@@ -48,11 +48,10 @@ Run the framework in Docker with mounted volumes for live code updates:
 # Build the Docker image
 make docker-build
 
-# Run an agent
-make docker-chef INPUT="I have bread, tuna, lettuce and mayo"
-
-# Run tests in Docker
-make docker-test
+# Run agents using the shell wrapper
+bin/agent.sh chef -i "I have bread, tuna, lettuce and mayo"
+bin/agent.sh -v travel-coordinator -i "Plan a trip to Paris"
+bin/agent.sh list
 
 # Access logs (same location as local)
 tail -f agentic-framework/logs/agent.log
@@ -63,8 +62,7 @@ tail -f agentic-framework/logs/agent.log
 - ✅ Environment variables safely loaded from `.env`
 - ✅ Logs accessible from host machine
 - ✅ Uses `uv` just like local development
-
-📖 **See [DOCKER.md](DOCKER.md) for complete Docker documentation**
+- ✅ Simple shell wrapper mimics local CLI experience
 
 
 ## Current Agents
@@ -183,14 +181,9 @@ This keeps the code easy for medium-level engineers to extend while remaining pr
 - `make run`: run a sample agent
 - `make clean`: remove caches and temporary artifacts
 
-### Docker Commands
+### Docker
 - `make docker-build`: build Docker image
-- `make docker-run CMD="..."`: run any agent command
-- `make docker-chef INPUT="..."`: run chef agent
-- `make docker-test`: run tests in Docker
-- `make docker-lint`: run linting in Docker
-- `make docker-shell`: open interactive shell
-- `make docker-logs`: view container logs
 - `make docker-clean`: remove containers and images
+- `bin/agent.sh <agent> [args]`: run agents in Docker (see [DOCKER.md](DOCKER.md))
 
 See `make help` for all available commands.

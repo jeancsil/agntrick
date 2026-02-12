@@ -42,9 +42,12 @@ agentic-framework/logs/*.log
 .env
 .env.*
 
-# Documentation
-README.md
-LICENSE
+# Documentation (exclude root docs, but keep agentic-framework/README.md)
+/README.md
+/LICENSE
+/DOCKER.md
+/DOCKER_WORKFLOW.md
+/.docker-*.md
 
 # Build artifacts
 *.egg-info/
