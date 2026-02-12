@@ -1,4 +1,4 @@
-.PHONY: help install run test clean lint check format
+.PHONY: help install run test clean lint check format docker-build docker-run docker-chef docker-test docker-lint docker-shell docker-logs docker-start docker-stop docker-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -57,3 +57,38 @@ clean: ## Deep clean temporary files and virtual environment
 
 	find $(PROJECT_DIR) -type d -name "__pycache__" -exec rm -rf {} +
 	find $(PROJECT_DIR) -type f -name "*.pyc" -delete
+
+## -- Docker Commands --
+
+docker-build: ## Build the Docker image
+	@docker compose build
+
+docker-run: ## Run a command in Docker (usage: make docker-run CMD="chef -i 'your input'")
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run agentic-run $(CMD)
+
+docker-chef: ## Run the chef agent in Docker (usage: make docker-chef INPUT="I have bread, tuna, lettuce")
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run agentic-run chef -i "$(INPUT)"
+
+docker-test: ## Run tests in Docker
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run pytest agentic-framework/tests/ -v --cov=agentic-framework/src --cov-report=xml --cov-report=term
+
+docker-lint: ## Run linting in Docker
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run mypy agentic-framework/src/
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run ruff check --fix agentic-framework/src/ agentic-framework/tests/
+	@docker compose run --rm agentic-framework uv --directory agentic-framework run ruff format agentic-framework/src/ agentic-framework/tests/
+
+docker-shell: ## Open a shell in the Docker container
+	@docker compose run --rm -it agentic-framework /bin/bash
+
+docker-logs: ## View logs from the container (logs are also available in agentic-framework/logs/)
+	@docker compose logs -f
+
+docker-start: ## Start the Docker container in detached mode
+	@docker compose up -d
+
+docker-stop: ## Stop the Docker container
+	@docker compose down
+
+docker-clean: ## Remove Docker containers, images, and volumes
+	@docker compose down -v
+	@docker rmi agents-agentic-framework 2>/dev/null || true
