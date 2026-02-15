@@ -69,7 +69,7 @@ class MCPProvider:
         """
         Async context manager: load MCP tools with sessions that close on exit.
 
-        IMPORTANT: Connections are now opened sequentially. While slightly slower than
+        IMPORTANT: Connections are opened sequentially. While slightly slower than
         parallel, this avoids "Attempted to exit cancel scope in a different task"
         errors from anyio (used by mcp) which requires task identity for cleanup.
         """

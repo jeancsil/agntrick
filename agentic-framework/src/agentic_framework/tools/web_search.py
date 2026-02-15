@@ -11,6 +11,14 @@ class WebSearchTool(Tool):
     def __init__(self):
         self.tavily_client = TavilyClient()
 
+    @property
+    def name(self) -> str:
+        return "web_search"
+
+    @property
+    def description(self) -> str:
+        return "Search the web for information using Tavily API."
+
     def invoke(self, query: str) -> Dict[str, Any]:
         """Search the web for information"""
         return self.tavily_client.search(query)

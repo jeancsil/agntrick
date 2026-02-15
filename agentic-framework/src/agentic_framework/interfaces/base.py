@@ -25,6 +25,16 @@ class Agent(ABC):
 class Tool(ABC):
     """Abstract Base Class for a Tool."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """The name of the tool."""
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """A description of what the tool does."""
+
     @abstractmethod
     def invoke(self, input_str: str) -> Any:
         """Execute the tool logic."""
