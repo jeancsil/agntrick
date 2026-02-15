@@ -14,7 +14,7 @@ from agentic_framework.registry import AgentRegistry
 
 load_dotenv()
 
-RUN_TIMEOUT_SECONDS = 90
+RUN_TIMEOUT_SECONDS = 600
 
 app = typer.Typer(
     name="agentic-framework",

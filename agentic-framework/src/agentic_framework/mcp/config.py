@@ -29,6 +29,22 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def get_mcp_servers_config(
+    override: Dict[str, Dict[str, Any]] | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Return MCP server config for MultiServerMCPClient.
+
+    Merges DEFAULT_MCP_SERVERS with optional override, then resolves
+    env-dependent values (e.g. TAVILY_API_KEY). Does not mutate any shared state.
+    """
+    base = {k: dict(v) for k, v in DEFAULT_MCP_SERVERS.items()}
+    if override:
+        for k, v in override.items():
+            base[k] = dict(base.get(k, {}))
+            base[k].update(v)
+    return {k: _resolve_server_config(k, v) for k, v in base.items()}
+
+
 def _resolve_server_config(server_name: str, raw: Dict[str, Any]) -> Dict[str, Any]:
     """Return a copy of server config with env-dependent values resolved."""
     import logging
@@ -50,19 +66,3 @@ def _resolve_server_config(server_name: str, raw: Dict[str, Any]) -> Dict[str, A
             out["headers"] = out.get("headers", {})
             out["headers"]["X-API-Key"] = key
     return out
-
-
-def get_mcp_servers_config(
-    override: Dict[str, Dict[str, Any]] | None = None,
-) -> Dict[str, Dict[str, Any]]:
-    """Return MCP server config for MultiServerMCPClient.
-
-    Merges DEFAULT_MCP_SERVERS with optional override, then resolves
-    env-dependent values (e.g. TAVILY_API_KEY). Does not mutate any shared state.
-    """
-    base = {k: dict(v) for k, v in DEFAULT_MCP_SERVERS.items()}
-    if override:
-        for k, v in override.items():
-            base[k] = dict(base.get(k, {}))
-            base[k].update(v)
-    return {k: _resolve_server_config(k, v) for k, v in base.items()}
