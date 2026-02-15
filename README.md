@@ -28,13 +28,13 @@ make install
 make test
 ```
 
-Run an agent:
+Run a specialized agent for codebase exploration:
 
 ```bash
-uv --project agentic-framework run agentic-run simple -i "Explain what an MCP server is."
+uv --project agentic-framework run agentic-run developer -i "List the project structure and explain what the main components do."
 ```
 
-List available agents:
+List all available agents:
 
 ```bash
 uv --project agentic-framework run agentic-run list
@@ -49,8 +49,8 @@ Run the framework in Docker with mounted volumes for live code updates:
 make docker-build
 
 # Run agents using the shell wrapper
+bin/agent.sh developer -i "Search for all Tool definitions in the project"
 bin/agent.sh chef -i "I have bread, tuna, lettuce and mayo"
-bin/agent.sh -v travel-coordinator -i "Plan a trip to Paris"
 bin/agent.sh list
 
 # Access logs (same location as local)
@@ -65,17 +65,28 @@ tail -f agentic-framework/logs/agent.log
 - ✅ Simple shell wrapper mimics local CLI experience
 
 
-## Current Agents
+## Featured Agents
 
 | Agent | What it does | MCP Access |
 |---|---|---|
-| `simple` | basic conversational chain | none |
-| `chef` | recipe suggestions from ingredients | `tavily` |
-| `travel` | flight planning assistant | `kiwi-com-flight-search` |
-| `news` | AI news assistant | `web-fetch` |
-| `travel-coordinator` | orchestrates 3 specialists (flights + city intel + reviewer) | `kiwi-com-flight-search`, `web-fetch` |
+| `developer` | 🚀 **Principal Engineer** assistant for codebase exploration and search | `web-fetch` |
+| `travel-coordinator` | ✈️ **Multi-agent Orchestrator** (Flights + City Intel + Reviewer) | `kiwi-com-flight-search`, `web-fetch` |
+| `chef` | 🍳 Recipe suggestions from ingredients | `tavily` |
+| `news` | 📰 AI news assistant (TechCrunch specialist) | `web-fetch` |
+| `travel` | 🎫 Flight planning assistant | `kiwi-com-flight-search` |
+| `simple` | 💬 Basic conversational chain | none |
 
-## Coordinator Example (3 Agents + 2 MCP Servers)
+## Showcase: Developer Agent
+
+The `developer` agent is designed to assist with codebase maintenance and understanding. It comes equipped with local tools for:
+- **File Discovery**: Finding files by name across the project.
+- **Structure Exploration**: Visualizing the project directory tree.
+- **Code Outlining**: Extracting functions and classes from Python files.
+- **Pattern Search**: Global search using `ripgrep` for fast pattern matching.
+
+Implementation: `src/agentic_framework/core/developer_agent.py`
+
+## Showcase: Travel Coordinator (Multi-Agent System)
 
 Run:
 
@@ -83,24 +94,15 @@ Run:
 uv --project agentic-framework run agentic-run travel-coordinator -i "Plan a 5-day trip from Lisbon to Berlin in May."
 ```
 
-This example uses two remote MCP servers that are publicly configured in this project:
-`kiwi-com-flight-search` and `web-fetch`.
+This example demonstrates complex orchestration using two remote MCP servers: `kiwi-com-flight-search` and `web-fetch`.
 
-How it works:
+**How it works:**
 
-1. `FlightSpecialistAgent` uses MCP tools to gather flight options.
-2. `CityIntelAgent` receives the flight report and adds destination intelligence.
-3. `TravelReviewerAgent` receives both reports and returns the final itinerary brief.
+1. **FlightSpecialistAgent** uses MCP tools to gather flight options.
+2. **CityIntelAgent** receives the flight report and adds destination intelligence.
+3. **TravelReviewerAgent** receives both reports and returns the final itinerary brief.
 
-The coordinator implementation lives in:
-
-- `agentic-framework/src/agentic_framework/core/travel_coordinator_agent.py`
-
-Why this matters:
-
-- You can build orchestration logic in a new agent file.
-- You can compose many specialist agents without touching the framework base.
-- You can choose per-agent MCP access in registry metadata only.
+The coordinator implementation lives in: `src/agentic_framework/core/travel_coordinator_agent.py`
 
 ## Architecture (Beginner-Friendly)
 
@@ -159,6 +161,7 @@ After adding the file under `src/agentic_framework/core/`, the CLI command appea
 ```bash
 uv --project agentic-framework run agentic-run my-agent -i "hello"
 ```
+
 
 ## Scaling to Coordinators and Multi-Agent Systems
 
