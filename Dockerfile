@@ -8,6 +8,22 @@ WORKDIR /app
 # Copy from the official installer: https://github.com/astral-sh/uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install Search Tools
+# ripgrep: ultra-fast text searching
+# fd-find: user-friendly alternative to 'find'
+# fzf: general-purpose command-line fuzzy finder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ripgrep \
+    fd-find \
+    fzf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Note: In Debian/Ubuntu, the 'fd' executable is renamed to 'fdfind'.
+# We create a symbolic link so the agent can just call 'fd'.
+RUN ln -s $(which fdfind) /usr/local/bin/fd
+
+# Python Environment Setup
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

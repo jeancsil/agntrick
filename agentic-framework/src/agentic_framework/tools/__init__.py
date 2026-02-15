@@ -1,5 +1,6 @@
 from .code_searcher import CodeSearcher
 from .codebase_explorer import (
+    FileFinderTool,
     FileFragmentReaderTool,
     FileOutlinerTool,
     StructureExplorerTool,
@@ -15,4 +16,5 @@ __all__ = [
     "StructureExplorerTool",
     "FileOutlinerTool",
     "FileFragmentReaderTool",
+    "FileFinderTool",
 ]

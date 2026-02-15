@@ -6,7 +6,6 @@ from typing import Any, Type
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
-from rich.panel import Panel
 
 from agentic_framework.constants import LOGS_DIR
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
@@ -57,7 +56,7 @@ def _handle_mcp_connection_error(error: MCPConnectionError) -> None:
     elif error.__cause__:
         console.print(f"[red]  cause: {error.__cause__}[/red]")
 
-    console.print("\n[yellow]Suggestion:[/yellow] Ensure the MCP server URL is correct and you have network access.")
+    console.print("[yellow]Suggestion:[/yellow] Ensure the MCP server URL is correct and you have network access.")
     if "web-fetch" in error.server_name:
         console.print("[yellow]Note:[/yellow] web-fetch requires a valid remote URL. Check mcp/config.py")
 
@@ -93,7 +92,9 @@ def execute_agent(agent_name: str, input_text: str, timeout_sec: int) -> str:
 def list_agents() -> None:
     """List all available agents."""
     agents = AgentRegistry.list_agents()
-    console.print(Panel(f"[bold green]Available Agents:[/bold green] {', '.join(agents)}", title="Registry"))
+    console.print(
+        f"[bold magenta]Registry:[/bold magenta] [bold green]Available Agents:[/bold green] {', '.join(agents)}\n"
+    )
 
 
 @app.callback(invoke_without_command=True)
@@ -127,7 +128,8 @@ def create_agent_command(agent_name: str):
 
         try:
             result = execute_agent(agent_name=agent_name, input_text=input_text, timeout_sec=timeout_sec)
-            console.print(Panel(result, title=f"[bold green]Result from {agent_name}[/bold green]"))
+            console.print(f"[bold green]Result from {agent_name}:[/bold green]")
+            console.print(result)
         except typer.Exit:
             raise
         except TimeoutError as error:

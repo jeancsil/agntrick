@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -134,3 +135,65 @@ class FileFragmentReaderTool(CodebaseExplorer, Tool):
                 return "".join(lines[max(0, start_line - 1) : end_line])
         except Exception as e:
             return f"Error: {e}"
+
+
+class FileFinderTool(CodebaseExplorer, Tool):
+    """Tool to find files by name using 'fd'."""
+
+    @property
+    def name(self) -> str:
+        return "find_files"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Fast file search by name using 'fd'. Returns paths relative to project root. "
+            "Input is a search pattern (regex or simple string)."
+        )
+
+    def invoke(self, pattern: str) -> Any:
+        try:
+            # First, get candidates using fd
+            # -H: hidden files, -I: ignore .gitignore for faster full list if needed,
+            # but usually we want to respect it, so let's stick to standard fd.
+            # We'll list all files and let fzf rank them.
+            fd_cmd = ["fd", "--color", "never", "-H", ".", str(self.root_dir)]
+            fd_result = subprocess.run(fd_cmd, capture_output=True, text=True, check=False)
+
+            if fd_result.returncode != 0:
+                if fd_result.stderr:
+                    return f"Error executing fd: {fd_result.stderr}"
+                return "No files found."
+
+            all_files = fd_result.stdout
+            if not all_files:
+                return "No files found."
+
+            # Use fzf to rank the files based on the pattern
+            # fzf -f performs a non-interactive fuzzy search
+            try:
+                fzf_cmd = ["fzf", "-f", pattern]
+                fzf_result = subprocess.run(fzf_cmd, input=all_files, capture_output=True, text=True, check=False)
+                if fzf_result.returncode == 0:
+                    ranked_files = fzf_result.stdout.splitlines()
+                else:
+                    # Fallback to simple substring match if fzf returns nothing or fails
+                    ranked_files = [f for f in all_files.splitlines() if pattern.lower() in f.lower()]
+            except FileNotFoundError:
+                # Fallback if fzf is missing
+                ranked_files = [f for f in all_files.splitlines() if pattern.lower() in f.lower()]
+
+            # Convert absolute paths back to relative and limit results
+            relative_files = []
+            for f in ranked_files[:30]:  # Limit to top 30
+                try:
+                    relative_files.append(str(Path(f).relative_to(self.root_dir)))
+                except ValueError:
+                    relative_files.append(f)
+
+            if not relative_files:
+                return "No matches found for the given pattern."
+
+            return relative_files
+        except FileNotFoundError:
+            return "Error: Required search tools (fd) not found."
