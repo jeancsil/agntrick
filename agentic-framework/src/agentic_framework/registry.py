@@ -1,6 +1,7 @@
 import importlib
+import logging
 import pkgutil
-from typing import Dict, List, Optional, Type
+from typing import Callable, Dict, List, Optional, Type
 
 from agentic_framework.interfaces.base import Agent
 
@@ -8,23 +9,72 @@ from agentic_framework.interfaces.base import Agent
 # import (agent modules do "from agentic_framework.registry import AgentRegistry").
 # Must be a package whose __init__.py does NOT import concrete agent modules.
 _AGENTS_PACKAGE_NAME = "agentic_framework.core"
+_logger = logging.getLogger(__name__)
+
+
+class DuplicateAgentRegistrationError(Exception):
+    """Raised when attempting to register an agent with a name that's already in use."""
+
+    def __init__(self, name: str, existing: Type[Agent], new: Type[Agent]):
+        self.name = name
+        self.existing = existing
+        self.new = new
+        super().__init__(
+            f"Agent '{name}' is already registered with class {existing.__name__}. "
+            f"Attempted to register with {new.__name__}."
+        )
 
 
 class AgentRegistry:
     _registry: Dict[str, Type[Agent]] = {}
     _mcp_servers: Dict[str, Optional[List[str]]] = {}
+    _strict_registration: bool = False  # If True, duplicates raise an error
 
     @classmethod
-    def register(cls, name: str, mcp_servers: Optional[List[str]] = None):
+    def set_strict_registration(cls, strict: bool = True) -> None:
+        """Set whether duplicate registrations should raise an error.
+
+        When strict=True, attempting to register an agent with an existing name
+        will raise DuplicateAgentRegistrationError. When strict=False (default),
+        a warning is logged and the existing registration is overwritten.
+        """
+        cls._strict_registration = strict
+
+    @classmethod
+    def register(
+        cls,
+        name: str,
+        mcp_servers: Optional[List[str]] = None,
+        *,
+        override: bool = False,
+    ) -> Callable[[Type[Agent]], Type[Agent]]:
         """Decorator to register an agent class and its allowed MCP servers.
 
-        mcp_servers: list of keys from mcp.config.DEFAULT_MCP_SERVERS this agent may use.
-                     None or [] means the agent has no MCP access.
+        Args:
+            name: The agent name to register.
+            mcp_servers: list of keys from mcp.config.DEFAULT_MCP_SERVERS this agent may use.
+                        None or [] means the agent has no MCP access.
+            override: If True, allow overwriting an existing registration even in strict mode.
+
+        Raises:
+            DuplicateAgentRegistrationError: If strict_registration is True and the name
+                                          is already registered (unless override=True).
         """
 
-        def decorator(agent_cls: Type[Agent]):
+        def decorator(agent_cls: Type[Agent]) -> Type[Agent]:
+            if name in cls._registry and not override:
+                existing_cls = cls._registry[name]
+                if cls._strict_registration:
+                    raise DuplicateAgentRegistrationError(name, existing_cls, agent_cls)
+                _logger.warning(
+                    "Duplicate agent registration: '%s' already registered with %s, overwriting with %s",
+                    name,
+                    existing_cls.__name__,
+                    agent_cls.__name__,
+                )
             cls._registry[name] = agent_cls
             cls._mcp_servers[name] = mcp_servers
+            _logger.debug("Registered agent '%s' with class %s", name, agent_cls.__name__)
             return agent_cls
 
         return decorator

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import traceback
-from typing import Any, Type
+from typing import Any, Callable, Type
 
 import typer
 from dotenv import load_dotenv
@@ -97,6 +97,69 @@ def list_agents() -> None:
     )
 
 
+@app.command(name="info")
+def agent_info(agent_name: str = typer.Argument(..., help="Name of the agent to inspect.")) -> None:
+    """Show detailed information about an agent."""
+    agent_cls = AgentRegistry.get(agent_name)
+    if not agent_cls:
+        console.print(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found.")
+        console.print("[yellow]Tip:[/yellow] Use 'list' command to see all available agents.")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold cyan]Agent Details:[/bold cyan] {agent_name}\n")
+
+    # Agent class name
+    console.print(f"[bold]Class:[/bold] {agent_cls.__name__}")
+
+    # Module
+    console.print(f"[bold]Module:[/bold] {agent_cls.__module__}")
+
+    # MCP servers
+    mcp_servers = AgentRegistry.get_mcp_servers(agent_name)
+    if mcp_servers is None:
+        console.print("[bold]MCP Servers:[/bold] None (no MCP access)")
+    elif mcp_servers:
+        console.print(f"[bold]MCP Servers:[/bold] {', '.join(mcp_servers)}")
+    else:
+        console.print("[bold]MCP Servers:[/bold] (configured but empty list)")
+
+    # Create agent instance first (needed for system prompt and tools)
+    agent = None
+    try:
+        agent = agent_cls(initial_mcp_tools=[])  # type: ignore[call-arg]
+    except Exception as e:
+        console.print(f"[yellow]Warning:[/yellow] Could not instantiate agent: {e}")
+
+    # System prompt (if available) - need to instantiate to access the property
+    console.print("\n[bold]System Prompt:[/bold]")
+    if agent and hasattr(agent, "system_prompt"):
+        try:
+            system_prompt = agent.system_prompt
+            console.print(system_prompt)
+        except Exception as e:
+            console.print(f"[dim](Could not access system prompt: {e})[/dim]")
+    else:
+        console.print("[dim](No system prompt defined)[/dim]")
+
+    # Tools info
+    console.print("\n[bold]Tools:[/bold]")
+    if agent:
+        try:
+            tools = agent.get_tools()
+
+            if not tools:
+                console.print("  No tools configured")
+            else:
+                for tool in tools:
+                    tool_name = getattr(tool, "name", tool.__class__.__name__)
+                    tool_desc = getattr(tool, "description", "(no description)")
+                    console.print(f"  - [green]{tool_name}[/green]: {tool_desc}")
+        except Exception as e:
+            console.print(f"  [dim](Could not list tools: {e})[/dim]")
+    else:
+        console.print("  [dim](Could not instantiate agent to list tools)[/dim]")
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -109,7 +172,7 @@ def main(
         console.print("[bold yellow]No command provided. Use --help to see available commands.[/bold yellow]")
 
 
-def create_agent_command(agent_name: str):
+def create_agent_command(agent_name: str) -> Callable[[str, int], None]:
     def command(
         input_text: str = typer.Option(..., "--input", "-i", help="Input text for the agent."),
         timeout_sec: int = typer.Option(
