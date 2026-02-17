@@ -4,7 +4,7 @@ This guide is for both external LLMs working within this codebase and developers
 
 ## Project Overview
 
-This is an educational **LangChain + MCP framework** for building agentic systems in Python 3.12+.
+This is a **LangChain + MCP framework** for building agentic systems in Python 3.12+.
 
 ### Key Technologies
 
@@ -114,7 +114,7 @@ External tool integration managed by `MCPProvider`.
 - `web-fetch` - Web content fetching
 - `tavily` - Web search
 
-## Available Agents
+## Example of Available Agents
 
 ### simple
 Basic LLM assistant with no tools. Minimal example.
@@ -143,19 +143,21 @@ Codebase exploration agent with specialized local tools and webfetch MCP:
 ## Using Existing Agents
 
 ### CLI Usage
+Use always with uv `uv --directory agentic-framework run agentic-run info developer`, 
+from the root of the git repository.
 
 ```bash
 # List all available agents
-agentic-run list
+uv --directory agentic-framework run agentic-run list
 
 # View detailed information about an agent
-agentic-run info developer
+uv --directory agentic-framework run agentic-run info developer
 
 # Run an agent
-agentic-run developer --input "Find all files with 'agent' in the name"
+uv --directory agentic-framework run agentic-run developer --input "Find all files with 'agent' in the name"
 
 # With timeout override
-agentic-run travel --input "BCN to LIS next week" --timeout 120
+uv --directory agentic-framework run agentic-run travel --input "BCN to LIS next week" --timeout 120
 ```
 
 ### Programmatic Usage
@@ -348,6 +350,15 @@ def test_my_agent_run(monkeypatch):
     result = await agent.run("test")
     assert "expected" in result
 ```
+## Before committing
+
+Before commiting, run `make check`, `make test` and if needed, `make format`. Fix them before committing.
+
+make check runs:
+  - mypy - type checking
+  - ruff check - linting (no fixes)
+  - ruff format --check - formatting check (no fixes)
+
 
 ## Constants
 
