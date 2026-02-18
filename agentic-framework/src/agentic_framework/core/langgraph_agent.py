@@ -6,6 +6,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
+from agentic_framework.constants import DEFAULT_MODEL
 from agentic_framework.interfaces.base import Agent
 from agentic_framework.mcp import MCPProvider
 
@@ -15,7 +16,7 @@ class LangGraphMCPAgent(Agent):
 
     def __init__(
         self,
-        model_name: str = "gpt-5-nano",
+        model_name: str = DEFAULT_MODEL,
         temperature: float = 0.1,
         mcp_provider: MCPProvider | None = None,
         initial_mcp_tools: List[Any] | None = None,

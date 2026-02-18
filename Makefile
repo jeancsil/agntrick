@@ -1,4 +1,4 @@
-.PHONY: help install run test clean lint check format docker-build docker-clean
+.PHONY: help install run test clean fix check docker-build docker-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -31,18 +31,14 @@ run: ## Run the agentic-run simple command to exemplify the CLI
 test: ## Run tests with coverage
 	@$(UV) --project $(PROJECT_DIR) run pytest $(PROJECT_DIR)/tests/ -v --cov=$(PROJECT_DIR)/src --cov-report=xml --cov-report=term
 
-lint: ## Run ruff linting with auto-fix
-	@$(UV) --project $(PROJECT_DIR) run mypy $(PROJECT_DIR)/src/
-	@$(UV) --project $(PROJECT_DIR) run ruff check --fix $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
-	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
-
-format: ## Run ruff code formatting
-	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
-
-check: ## Run lint, format check, and mypy type checking (no fixes)
+check: ## Run all checks (mypy, ruff lint, ruff format) - no modifications
 	@$(UV) --project $(PROJECT_DIR) run mypy $(PROJECT_DIR)/src/
 	@$(UV) --project $(PROJECT_DIR) run ruff check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 	@$(UV) --project $(PROJECT_DIR) run ruff format --check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
+
+fix: ## Auto-fix lint and format issues (runs ruff check --fix and ruff format)
+	@$(UV) --project $(PROJECT_DIR) run ruff check --fix $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
+	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
 clean: ## Deep clean temporary files and virtual environment
 	rm -rf $(PROJECT_DIR)/.venv

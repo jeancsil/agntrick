@@ -5,6 +5,97 @@ from typing import Any, Dict, List, Optional, Union
 
 from agentic_framework.interfaces.base import Tool
 
+# Language detection by file extension
+LANGUAGE_EXTENSIONS: Dict[str, str] = {
+    ".py": "python",
+    ".pyi": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".php": "php",
+}
+
+# Regex patterns for each language
+# Each pattern captures the relevant code construct
+LANGUAGE_PATTERNS: Dict[str, List[str]] = {
+    "python": [
+        r"^\s*(class\s+\w+.*?)[:\(]",
+        r"^\s*(async\s+def\s+\w+.*?)\(",
+        r"^\s*(def\s+\w+.*?)\(",
+    ],
+    "javascript": [
+        r"^\s*(export\s+)?(default\s+)?(class\s+\w+)",
+        r"^\s*(export\s+)?(default\s+)?(function\s*\*?\s+\w+)",
+        r"^\s*(export\s+)?(const\s+\w+\s*=\s*\([^)]*\)\s*=>)",
+        r"^\s*(export\s+)?(const\s+\w+\s*=\s*async\s*\([^)]*\)\s*=>)",
+    ],
+    "typescript": [
+        r"^\s*(export\s+)?(default\s+)?(class\s+\w+)",
+        r"^\s*(export\s+)?(default\s+)?(function\s*\*?\s+\w+)",
+        r"^\s*(export\s+)?(const\s+\w+\s*=\s*\([^)]*\)\s*=>)",
+        r"^\s*(export\s+)?(const\s+\w+\s*=\s*async\s*\([^)]*\)\s*=>)",
+        r"^\s*(export\s+)?(interface\s+\w+)",
+        r"^\s*(export\s+)?(type\s+\w+)",
+        r"^\s*(export\s+)?(enum\s+\w+)",
+        r"^\s*(export\s+)?(abstract\s+class\s+\w+)",
+        r"^\s*(export\s+)?(namespace\s+\w+)",
+    ],
+    "rust": [
+        r"^\s*(pub\s+(\([^)]+\)\s+)?)?(struct\s+\w+)",
+        r"^\s*(pub\s+)?(enum\s+\w+)",
+        r"^\s*(pub\s+)?(trait\s+\w+)",
+        r"^\s*(pub\s+(\([^)]+\)\s+)?)?(async\s+)?(fn\s+\w+)",
+        r"^\s*(impl\s+(<[^>]+>\s+)?\w+)",
+        r"^\s*(pub\s+)?(mod\s+\w+)",
+    ],
+    "go": [
+        r"^\s*func\s+\(\w+\s+\*?\w+\)\s*\w+",  # method with receiver
+        r"^\s*func\s+\w+",  # function
+        r"^\s*type\s+\w+\s+struct\b",
+        r"^\s*type\s+\w+\s+interface\b",
+        r"^\s*type\s+\w+\s+func\b",
+        r"^\s*type\s+\w+\s*\(",  # type alias with params
+    ],
+    "java": [
+        r"^\s*(public|private|protected)?\s*(abstract\s+)?(class\s+\w+)",
+        r"^\s*(public\s+)?(interface\s+\w+)",
+        r"^\s*(public\s+)?(enum\s+\w+)",
+        r"^\s*@\w+(\([^)]*\))?\s*$",  # annotations (standalone)
+        r"^\s*(public|private|protected)\s+(static\s+)?[\w<>?,\s]+\s+\w+\s*\(",  # methods
+        r"^\s*(public|private|protected)\s+\w+\s*\([^\)]*\)\s*\{",  # constructors
+    ],
+    "c": [
+        r"^\s*(typedef\s+)?(struct\s+\w*)",
+        r"^\s*(typedef\s+)?(enum\s+\w*)",
+        r"^\s*(typedef\s+)?(union\s+\w*)",
+        r"^\s*(void|int|char|float|double|long|unsigned|signed|short)\s+[\w\s\*]+\s*\w+\s*\(",
+    ],
+    "cpp": [
+        r"^\s*(typedef\s+)?(struct\s+\w*)",
+        r"^\s*(typedef\s+)?(enum\s+\w*)",
+        r"^\s*(typedef\s+)?(union\s+\w*)",
+        r"^\s*(class\s+\w+)",
+        r"^\s*(namespace\s+\w+)",
+        r"^\s*(template\s*<[^>]*>)?\s*class\s+\w+",  # template class
+        r"^\s*(template\s*<[^>]*>)?\s*[\w:]+\s+[\w:]+\s*\(",  # template function
+    ],
+    "php": [
+        r"^\s*(abstract\s+)?(final\s+)?(class\s+\w+)",
+        r"^\s*(interface\s+\w+)",
+        r"^\s*(trait\s+\w+)",
+        r"^\s*(public|private|protected)?\s*(static\s+)?function\s+\w+",
+    ],
+}
+
 
 class CodebaseExplorer:
     """
@@ -77,7 +168,7 @@ class StructureExplorerTool(CodebaseExplorer, Tool):
 
 
 class FileOutlinerTool(CodebaseExplorer, Tool):
-    """Tool to extract high-level signatures from a file."""
+    """Tool to extract high-level signatures from various programming language files."""
 
     @property
     def name(self) -> str:
@@ -85,25 +176,47 @@ class FileOutlinerTool(CodebaseExplorer, Tool):
 
     @property
     def description(self) -> str:
-        return "Extracts classes and functions signatures from a Python file to skim its content."
+        return """Extracts classes, functions, and other definitions from code files.
+        Supports: Python, JavaScript, TypeScript, Rust, Go, Java, C/C++, PHP.
+        Returns a list of signatures with their line numbers.
+        Output format: [{"line": 15, "signature": "class MyAgent:"}, ...]"""
 
     def invoke(self, file_path: str) -> Any:
         full_path = self.root_dir / file_path
         if not full_path.exists() or not full_path.is_file():
             return f"Error: File {file_path} not found."
 
-        outline = []
-        pattern = re.compile(r"^\s*(class\s+\w+|async\s+def\s+\w+|def\s+\w+)")
+        language = self._detect_language(file_path)
+        if language is None:
+            return f"Error: Unsupported file type for {file_path}. Supported: Python, JS/TS, Rust, Go, Java, C/C++, PHP"
+
+        patterns = LANGUAGE_PATTERNS.get(language, [])
+        return self._extract_outline(full_path, patterns)
+
+    def _detect_language(self, file_path: str) -> Optional[str]:
+        """Detect programming language from file extension."""
+        ext = Path(file_path).suffix.lower()
+        return LANGUAGE_EXTENSIONS.get(ext)
+
+    def _extract_outline(self, file_path: Path, patterns: List[str]) -> List[Dict[str, Any]]:
+        """Extract code outline using regex patterns."""
+        outline: List[Dict[str, Any]] = []
+        compiled_patterns = [re.compile(p) for p in patterns]
 
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    match = pattern.match(line)
-                    if match:
-                        outline.append(line.strip())
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                for line_num, line in enumerate(f, 1):
+                    for pattern in compiled_patterns:
+                        if pattern.search(line):
+                            # Clean up the signature (limit length for readability)
+                            signature = line.strip()
+                            if len(signature) > 100:
+                                signature = signature[:97] + "..."
+                            outline.append({"line": line_num, "signature": signature})
+                            break  # Only match first pattern per line
             return outline
         except Exception as e:
-            return f"Error reading file: {e}"
+            return [{"error": f"Error reading file: {e}"}]
 
 
 class FileFragmentReaderTool(CodebaseExplorer, Tool):

@@ -81,7 +81,9 @@ tail -f agentic-framework/logs/agent.log
 The `developer` agent is designed to assist with codebase maintenance and understanding. It comes equipped with local tools for:
 - **File Discovery**: Finding files by name across the project.
 - **Structure Exploration**: Visualizing the project directory tree.
-- **Code Outlining**: Extracting functions and classes from Python files.
+- **Code Outlining**: Extracting functions, classes, and signatures from code files.
+  - Supports: Python, JavaScript, TypeScript, Rust, Go, Java, C/C++, PHP
+  - Returns line numbers for precise navigation.
 - **Pattern Search**: Global search using `ripgrep` for fast pattern matching.
 
 Implementation: `src/agentic_framework/core/developer_agent.py`

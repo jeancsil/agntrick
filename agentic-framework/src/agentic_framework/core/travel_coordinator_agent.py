@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 from langchain_core.messages import BaseMessage
 
+from agentic_framework.constants import DEFAULT_MODEL
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.interfaces.base import Agent
 from agentic_framework.mcp import MCPProvider
@@ -54,7 +55,7 @@ class TravelCoordinatorAgent(Agent):
 
     def __init__(
         self,
-        model_name: str = "gpt-5-nano",
+        model_name: str = DEFAULT_MODEL,
         temperature: float = 0.2,
         mcp_provider: MCPProvider | None = None,
         initial_mcp_tools: List[Any] | None = None,

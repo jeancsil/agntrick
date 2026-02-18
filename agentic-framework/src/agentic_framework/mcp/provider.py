@@ -65,7 +65,7 @@ class MCPProvider:
         return self._tools_cache
 
     @asynccontextmanager
-    async def tool_session(self, fail_fast: bool = True):
+    async def tool_session(self, fail_fast: bool = True) -> Any:
         """
         Async context manager: load MCP tools with sessions that close on exit.
 

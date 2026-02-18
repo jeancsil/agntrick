@@ -4,6 +4,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
+from agentic_framework.constants import DEFAULT_MODEL
 from agentic_framework.interfaces.base import Agent
 from agentic_framework.registry import AgentRegistry
 
@@ -15,7 +16,7 @@ class SimpleAgent(Agent):
     No MCP access (mcp_servers=None in registry).
     """
 
-    def __init__(self, model_name: str = "gpt-5-nano", temperature: float = 0.0, **kwargs):
+    def __init__(self, model_name: str = DEFAULT_MODEL, temperature: float = 0.0, **kwargs: Any) -> None:
         self.model = ChatOpenAI(model=model_name, temperature=temperature)
         self.prompt = ChatPromptTemplate.from_messages(
             [("system", "You are a helpful assistant."), ("user", "{input}")]

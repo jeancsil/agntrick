@@ -2,6 +2,12 @@
 
 This guide is for both external LLMs working within this codebase and developers building new agents and tools.
 
+## Environment
+
+We use uv for package management and running commands.
+cd is aliased to z (zoxide), use full path instead.
+ls is aliased to eza, use full path instead.
+
 ## Project Overview
 
 This is a **LangChain + MCP framework** for building agentic systems in Python 3.12+.
@@ -135,10 +141,13 @@ Orchestrates 3 specialist agents (flight, city intel, reviewer) with MCP tools.
 Codebase exploration agent with specialized local tools and webfetch MCP:
 - `find_files` - Fast file search via fd
 - `discover_structure` - Directory tree exploration
-- `get_file_outline` - Extract class/function signatures
+- `get_file_outline` - Extract class/function signatures (multi-language)
 - `read_file_fragment` - Read specific line ranges
 - `code_search` - Fast pattern search via ripgrep
 - `webfetch` (MCP) - Web content fetching
+
+**Supported Languages for `get_file_outline`**:
+Python, JavaScript, TypeScript, Rust, Go, Java, C/C++, PHP
 
 ## Using Existing Agents
 
@@ -313,6 +322,8 @@ __all__ = [
 - Use `find_files` when you need to locate files by name/pattern
 - Use `discover_structure` for project layout overview
 - Use `get_file_outline` to skim file contents before reading
+  - Supports: Python (`.py`), JavaScript (`.js`), TypeScript (`.ts`), Rust (`.rs`), Go (`.go`), Java (`.java`), C (`.c`, `.h`), C++ (`.cpp`, `.hpp`), PHP (`.php`)
+  - Returns: `[{"line": 15, "signature": "class MyAgent:"}, ...]`
 - Use `read_file_fragment` to read specific lines (format: `path:start:end`)
 - Use `code_search` for fast global pattern matching
 
