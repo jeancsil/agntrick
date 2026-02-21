@@ -26,7 +26,38 @@ _ALLOWED_FUNCTIONS: dict[str, Any] = {  # type: ignore[misc]
 
 
 class CalculatorTool(Tool):
-    """A simple calculator tool with safe math evaluation."""
+    """
+    A calculator tool that provides safe mathematical expression evaluation.
+
+    This tool uses Abstract Syntax Tree (AST) parsing to evaluate mathematical
+    expressions safely, preventing code injection by only allowing specific
+    operators and functions.
+
+    Features:
+        - Supports basic arithmetic operations: +, -, *, /, //, %, **
+        - Supports unary operators: +, - (negation)
+        - Built-in functions: abs, round, min, max, sum
+        - Supports lists and tuples for multi-argument functions
+        - Safe evaluation using AST parsing
+
+    Usage Examples:
+        "2 + 2 * 3"          # Returns "8"
+        "(5 + 3) * 2"        # Returns "16"
+        "abs(-5)"           # Returns "5"
+        "min([1, 2, 3])"     # Returns "1"
+        "max(4, 7, 2)"       # Returns "7"
+        "sum([1, 2, 3, 4])"  # Returns "10"
+
+    Error Handling:
+        - Invalid syntax raises ValueError with descriptive message
+        - Unsupported operators/functions raise ValueError
+        - Malformed expressions raise ValueError
+
+    Security:
+        - All expressions are parsed through AST before evaluation
+        - Only pre-approved operators and functions are allowed
+        - No arbitrary code execution possible
+    """
 
     @property
     def name(self) -> str:
@@ -89,7 +120,7 @@ class CalculatorTool(Tool):
 
 
 class WeatherTool(Tool):
-    """A mock weather tool."""
+    """A mock weather tool for testing."""
 
     @property
     def name(self) -> str:

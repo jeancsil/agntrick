@@ -310,3 +310,425 @@ class FileFinderTool(CodebaseExplorer, Tool):
             return relative_files
         except FileNotFoundError:
             return "Error: Required search tools (fd) not found."
+
+
+class FileEditorTool(CodebaseExplorer, Tool):
+    """Tool to safely edit files with line-based operations."""
+
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB hard limit
+    WARN_FILE_SIZE = 500 * 1024  # 500KB warning threshold
+
+    # Binary file extensions to reject
+    BINARY_EXTENSIONS = {
+        ".pyc",
+        ".pyo",
+        ".so",
+        ".dll",
+        ".dylib",
+        ".exe",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".pdf",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".7z",
+        ".rar",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".avi",
+        ".mov",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+    }
+
+    @property
+    def name(self) -> str:
+        return "edit_file"
+
+    @property
+    def description(self) -> str:
+        return """Edit files with line-based or text-based operations.
+
+Line-based operations (colon-delimited):
+- replace:path:start:end:content - Replace lines start to end
+- insert:path:after_line:content - Insert after line number
+- insert:path:before_line:content - Insert before line number
+- delete:path:start:end - Delete lines start to end
+
+Text-based operation (JSON format, RECOMMENDED):
+{"op": "search_replace", "path": "file.py", "old": "exact text to find", "new": "replacement text"}
+
+The search_replace operation finds exact text and replaces it. No line numbers needed.
+The old text must be unique in the file.
+
+IMPORTANT: Always read the file first using read_file_fragment to verify content before editing.
+Line numbers are 1-indexed. Content uses \\n for newlines.
+"""
+
+    def invoke(self, input_str: str) -> Any:
+        """Parse and execute the edit operation."""
+        try:
+            stripped = input_str.strip()
+            if stripped.startswith("{"):
+                return self._handle_json_input(stripped)
+            return self._handle_delimited_input(stripped)
+        except Exception as e:
+            return f"Error: {e}"
+
+    def _handle_json_input(self, input_str: str) -> Any:
+        """Handle JSON-formatted input for complex content."""
+        import json
+
+        data = json.loads(input_str)
+        op = data.get("op")
+        path = data.get("path")
+        content = data.get("content", "")
+
+        if op == "replace":
+            return self._replace_lines(path, data["start"], data["end"], content)
+        elif op == "search_replace":
+            return self._search_replace(path, data["old"], data.get("new", ""))
+        elif op == "insert":
+            return self._insert_lines(path, data.get("after"), data.get("before"), content)
+        elif op == "delete":
+            return self._delete_lines(path, data["start"], data["end"])
+        else:
+            return f"Error: Unknown operation '{op}'. Supported: replace, search_replace, insert, delete"
+
+    def _handle_delimited_input(self, input_str: str) -> Any:
+        """Handle colon-delimited input format."""
+        op = input_str.split(":", 1)[0]
+
+        if op == "replace":
+            # Format: replace:path:start:end:content
+            parts = input_str.split(":", 4)
+            if len(parts) < 5:
+                return "Error: Replace format: 'replace:path:start:end:content'"
+            path = parts[1]
+            start = int(parts[2])
+            end = int(parts[3])
+            content = parts[4].replace("\\n", "\n")
+            return self._replace_lines(path, start, end, content)
+
+        elif op == "insert":
+            # Format: insert:path:position:content
+            parts = input_str.split(":", 3)
+            if len(parts) < 4:
+                return "Error: Insert format: 'insert:path:position:content'"
+            path = parts[1]
+            position = parts[2]
+            content = parts[3].replace("\\n", "\n")
+
+            if position.isdigit():
+                return self._insert_lines(path, after=int(position), before=None, content=content)
+            elif position.startswith("before_"):
+                line_num = int(position[7:])
+                return self._insert_lines(path, after=None, before=line_num, content=content)
+            else:
+                return f"Error: Invalid insert position '{position}'"
+
+        elif op == "delete":
+            # Format: delete:path:start:end
+            parts = input_str.split(":", 3)
+            if len(parts) < 4:
+                return "Error: Delete format: 'delete:path:start:end'"
+            path = parts[1]
+            start = int(parts[2])
+            end = int(parts[3])
+            return self._delete_lines(path, start, end)
+
+        else:
+            return f"Error: Unknown operation '{op}'"
+
+    def _replace_lines(self, path: str, start: int, end: int, content: str) -> str:
+        """Replace lines start to end (1-indexed) with content."""
+        full_path = self._validate_path(path)
+
+        if not full_path.exists():
+            return f"Error: File '{path}' not found"
+
+        warning = self._check_file_size(full_path)
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            return f"Error: File '{path}' is not valid UTF-8 text"
+
+        self._validate_line_bounds(lines, start, end, path)
+
+        new_lines = lines[: start - 1]
+        new_lines.append(content if content.endswith("\n") else content + "\n")
+        new_lines.extend(lines[end:])
+
+        new_content = "".join(new_lines)
+        self._atomic_write(full_path, new_content)
+
+        result = f"Replaced lines {start}-{end} in '{path}'"
+        if warning:
+            result = f"{warning}\n{result}"
+
+        # Validate syntax after edit
+        syntax_warning = self._validate_syntax(new_content, path)
+        if syntax_warning:
+            result = f"{result}{syntax_warning}"
+
+        return result
+
+    def _insert_lines(self, path: str, after: Optional[int], before: Optional[int], content: str) -> str:
+        """Insert content after or before a specific line."""
+        full_path = self._validate_path(path)
+
+        if not full_path.exists():
+            return f"Error: File '{path}' not found"
+
+        warning = self._check_file_size(full_path)
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            return f"Error: File '{path}' is not valid UTF-8 text"
+
+        insert_content = content if content.endswith("\n") else content + "\n"
+
+        if before is not None:
+            if before < 1:
+                return f"Error: before_line must be >= 1, got {before}"
+            if before > len(lines) + 1:
+                return f"Error: before_line ({before}) exceeds file length + 1 ({len(lines) + 1})"
+            insert_pos = before - 1
+            position_desc = f"before line {before}"
+        else:
+            if after is None:
+                after = 0
+            if after < 0:
+                return f"Error: after_line must be >= 0, got {after}"
+            if after > len(lines):
+                return f"Error: after_line ({after}) exceeds file length ({len(lines)})"
+            insert_pos = after
+            position_desc = f"after line {after}" if after > 0 else "at beginning"
+
+        new_lines = lines[:insert_pos] + [insert_content] + lines[insert_pos:]
+        new_content = "".join(new_lines)
+
+        self._atomic_write(full_path, new_content)
+
+        result = f"Inserted content {position_desc} in '{path}'"
+        if warning:
+            result = f"{warning}\n{result}"
+
+        # Validate syntax after edit
+        syntax_warning = self._validate_syntax(new_content, path)
+        if syntax_warning:
+            result = f"{result}{syntax_warning}"
+
+        return result
+
+    def _delete_lines(self, path: str, start: int, end: int) -> str:
+        """Delete lines start to end (1-indexed)."""
+        full_path = self._validate_path(path)
+
+        if not full_path.exists():
+            return f"Error: File '{path}' not found"
+
+        warning = self._check_file_size(full_path)
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            return f"Error: File '{path}' is not valid UTF-8 text"
+
+        self._validate_line_bounds(lines, start, end, path)
+
+        new_lines = lines[: start - 1] + lines[end:]
+        new_content = "".join(new_lines)
+
+        self._atomic_write(full_path, new_content)
+
+        deleted_count = end - start + 1
+        result = f"Deleted {deleted_count} line(s) ({start}-{end}) from '{path}'"
+        if warning:
+            result = f"{warning}\n{result}"
+
+        # Validate syntax after edit
+        syntax_warning = self._validate_syntax(new_content, path)
+        if syntax_warning:
+            result = f"{result}{syntax_warning}"
+
+        return result
+
+    def _search_replace(self, path: str, old_text: str, new_text: str) -> str:
+        """Find and replace exact text in file.
+
+        More robust than line-based editing because it doesn't require line numbers.
+        Fails if old_text is not found or found multiple times.
+
+        Args:
+            path: Relative path to the file
+            old_text: Exact text to find (must be unique in file)
+            new_text: Text to replace with
+
+        Returns:
+            Success message or error with helpful context
+        """
+        full_path = self._validate_path(path)
+
+        if not full_path.exists():
+            return f"Error: File '{path}' not found. Use find_files to locate the file."
+
+        warning = self._check_file_size(full_path)
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            return f"Error: File '{path}' is not valid UTF-8 text"
+
+        # Count exact matches
+        count = content.count(old_text)
+
+        if count == 0:
+            return self._format_search_error(content, old_text, path)
+
+        if count > 1:
+            return (
+                f"Error: Found {count} occurrences of the search text in '{path}'. "
+                f"Make the search text more specific by including more context lines.\n"
+                f"Tip: Use read_file_fragment to see the file and identify unique context."
+            )
+
+        # Perform replacement
+        new_content = content.replace(old_text, new_text, 1)
+
+        self._atomic_write(full_path, new_content)
+
+        # Find line numbers for reporting
+        char_pos = content.index(old_text)
+        lines_before = content[:char_pos].count("\n") + 1
+        lines_in_old = old_text.count("\n")
+        end_line = lines_before + lines_in_old
+
+        result = f"Replaced text at lines {lines_before}-{end_line} in '{path}'"
+        if warning:
+            result = f"{warning}\n{result}"
+
+        # Validate syntax after edit
+        syntax_warning = self._validate_syntax(new_content, path)
+        if syntax_warning:
+            result = f"{result}{syntax_warning}"
+
+        return result
+
+    def _format_search_error(self, content: str, old_text: str, path: str) -> str:
+        """Format helpful error message when search text not found."""
+        # Try to find similar text
+        old_lines = old_text.strip().split("\n")
+        if old_lines:
+            first_line = old_lines[0].strip()
+            if len(first_line) > 10:  # Only search if first line is meaningful
+                for i, line in enumerate(content.split("\n"), 1):
+                    if first_line in line:
+                        return (
+                            f"Error: Search text not found exactly in '{path}'.\n"
+                            f"Found similar text at line {i}:\n"
+                            f"  {line.strip()[:60]}{'...' if len(line.strip()) > 60 else ''}\n"
+                            f"Tip: Use read_file_fragment('{path}:{max(1, i - 2)}:{i + 2}') "
+                            f"to see the exact content."
+                        )
+
+        return (
+            f"Error: Search text not found in '{path}'.\n"
+            f"Tip: Use read_file_fragment to view the file content first, "
+            f"then copy the exact text to replace."
+        )
+
+    def _validate_path(self, path: str) -> Path:
+        """Validate and resolve path within root_dir."""
+        full_path = (self.root_dir / path).resolve()
+
+        if not str(full_path).startswith(str(self.root_dir.resolve())):
+            raise ValueError(f"Path '{path}' is outside of project root")
+
+        if self._is_ignored(full_path):
+            raise ValueError(f"Path '{path}' is in an ignored directory")
+
+        if full_path.suffix.lower() in self.BINARY_EXTENSIONS:
+            raise ValueError(f"Cannot edit binary file: {path}")
+
+        return full_path
+
+    def _validate_line_bounds(self, lines: List[str], start: int, end: int, path: str = "file") -> None:
+        """Validate line numbers are within bounds with helpful error messages."""
+        total_lines = len(lines)
+
+        if start < 1:
+            raise ValueError(
+                f"Start line must be >= 1, got {start}. Line numbers are 1-indexed. "
+                f"Use read_file_fragment to verify line numbers."
+            )
+        if end < start:
+            raise ValueError(
+                f"End line ({end}) must be >= start line ({start}). "
+                f"Use read_file_fragment('{path}:{start}:{start + 5}') to see the content."
+            )
+        if start > total_lines:
+            raise ValueError(
+                f"Start line ({start}) exceeds file length ({total_lines} lines). "
+                f"Use read_file_fragment('{path}:{max(1, total_lines - 5)}:{total_lines}') "
+                f"to see the end of the file."
+            )
+        if end > total_lines + 1:
+            raise ValueError(
+                f"End line ({end}) exceeds file length + 1 ({total_lines + 1}). "
+                f"Use read_file_fragment to verify line numbers before editing."
+            )
+
+    def _check_file_size(self, path: Path) -> Optional[str]:
+        """Check file size and return warning if large."""
+        size = path.stat().st_size
+        if size > self.MAX_FILE_SIZE:
+            raise ValueError(f"File too large ({size} bytes). Maximum is {self.MAX_FILE_SIZE}")
+        if size > self.WARN_FILE_SIZE:
+            return f"Warning: Large file ({size} bytes). Proceeding with edit."
+        return None
+
+    def _atomic_write(self, path: Path, content: str) -> None:
+        """Write content atomically using temp file + rename."""
+        import os
+        import tempfile
+
+        dir_path = path.parent
+        fd, tmp_path = tempfile.mkstemp(dir=dir_path, prefix=".tmp_edit_")
+
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(tmp_path, path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+
+    def _validate_syntax(self, content: str, path: str) -> Optional[str]:
+        """Validate syntax of the content after an edit.
+
+        Args:
+            content: The file content after the edit
+            path: The file path (used for language detection)
+
+        Returns:
+            Warning message if there are syntax errors, None otherwise
+        """
+        from agentic_framework.tools.syntax_validator import get_validator
+
+        result = get_validator().validate(content, path)
+        return result.warning_message

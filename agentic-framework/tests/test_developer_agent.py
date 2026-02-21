@@ -21,6 +21,7 @@ def test_developer_agent_system_prompt(monkeypatch):
     assert "get_file_outline" in agent.system_prompt
     assert "read_file_fragment" in agent.system_prompt
     assert "code_search" in agent.system_prompt
+    assert "edit_file" in agent.system_prompt
 
 
 def test_developer_agent_local_tools_count(monkeypatch):
@@ -30,10 +31,17 @@ def test_developer_agent_local_tools_count(monkeypatch):
     agent = DeveloperAgent(initial_mcp_tools=[])
 
     tools = agent.get_tools()
-    assert len(tools) == 5
+    assert len(tools) == 6
 
     tool_names = {tool.name for tool in tools}
-    expected_names = {"discover_structure", "find_files", "get_file_outline", "read_file_fragment", "code_search"}
+    expected_names = {
+        "discover_structure",
+        "find_files",
+        "get_file_outline",
+        "read_file_fragment",
+        "code_search",
+        "edit_file",
+    }
     assert tool_names == expected_names
 
 
@@ -52,6 +60,7 @@ def test_developer_agent_tool_descriptions(monkeypatch):
     assert "class" in outline_desc and "function" in outline_desc
     assert "specific line range" in tools_by_name["read_file_fragment"].description.lower()
     assert "ripgrep" in tools_by_name["code_search"].description.lower()
+    assert "line-based operations" in tools_by_name["edit_file"].description.lower()
 
 
 def test_developer_agent_run(monkeypatch):
@@ -85,7 +94,7 @@ def test_developer_agent_with_mcp_tools(monkeypatch):
     asyncio.run(agent.run("test"))
     tools = agent.get_tools()
 
-    # Should have 5 local tools + 1 MCP tool
-    assert len(tools) == 6
+    # Should have 6 local tools + 1 MCP tool
+    assert len(tools) == 7
     tool_names = {tool.name for tool in tools}
     assert "webfetch" in tool_names

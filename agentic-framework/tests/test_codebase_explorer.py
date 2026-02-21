@@ -8,6 +8,7 @@ import pytest
 from agentic_framework.tools.codebase_explorer import (
     LANGUAGE_EXTENSIONS,
     LANGUAGE_PATTERNS,
+    FileEditorTool,
     FileFragmentReaderTool,
     FileOutlinerTool,
     StructureExplorerTool,
@@ -578,3 +579,354 @@ class TestLanguagePatterns:
                 # Should not raise exception
                 compiled = re.compile(pattern)
                 assert compiled is not None
+
+
+class TestFileEditorTool:
+    """Tests for FileEditorTool."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def editor(self, temp_dir):
+        return FileEditorTool(str(temp_dir))
+
+    # Replace tests
+    def test_replace_lines(self, editor, temp_dir):
+        """Test replacing a range of lines."""
+        (temp_dir / "test.py").write_text("line1\nline2\nline3\nline4\n")
+        result = editor.invoke("replace:test.py:2:3:new_line2\nnew_line3")
+        assert "Replaced lines 2-3" in result
+        content = (temp_dir / "test.py").read_text()
+        assert "line1" in content
+        assert "new_line2" in content
+        assert "new_line3" in content
+        assert "line4" in content
+
+    def test_replace_single_line(self, editor, temp_dir):
+        """Test replacing a single line."""
+        (temp_dir / "test.py").write_text("line1\nline2\nline3\n")
+        result = editor.invoke("replace:test.py:2:2:replaced")
+        assert "Replaced lines 2-2" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "line1\nreplaced\nline3\n"
+
+    def test_replace_all_lines(self, editor, temp_dir):
+        """Test replacing all lines in file."""
+        (temp_dir / "test.py").write_text("old1\nold2\nold3\n")
+        result = editor.invoke("replace:test.py:1:3:new_content")
+        assert "Replaced lines 1-3" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "new_content\n"
+
+    # Insert tests
+    def test_insert_after_line(self, editor, temp_dir):
+        """Test inserting after a specific line."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("insert:test.py:1:inserted")
+        assert "Inserted content after line 1" in result
+        content = (temp_dir / "test.py").read_text()
+        lines = content.split("\n")
+        assert lines[0] == "line1"
+        assert lines[1] == "inserted"
+        assert lines[2] == "line2"
+
+    def test_insert_before_line(self, editor, temp_dir):
+        """Test inserting before a specific line."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("insert:test.py:before_1:inserted")
+        assert "Inserted content before line 1" in result
+        content = (temp_dir / "test.py").read_text()
+        lines = content.split("\n")
+        assert lines[0] == "inserted"
+        assert lines[1] == "line1"
+
+    def test_insert_at_beginning(self, editor, temp_dir):
+        """Test inserting at the beginning of file."""
+        (temp_dir / "test.py").write_text("line1\n")
+        result = editor.invoke("insert:test.py:0:first_line")
+        assert "at beginning" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content.startswith("first_line\n")
+
+    def test_insert_after_last_line(self, editor, temp_dir):
+        """Test inserting after the last line."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("insert:test.py:2:appended")
+        assert "after line 2" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "line1\nline2\nappended\n"
+
+    # Delete tests
+    def test_delete_lines(self, editor, temp_dir):
+        """Test deleting a range of lines."""
+        (temp_dir / "test.py").write_text("line1\nline2\nline3\nline4\n")
+        result = editor.invoke("delete:test.py:2:3")
+        assert "Deleted 2 line(s)" in result
+        assert "(2-3)" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "line1\nline4\n"
+
+    def test_delete_single_line(self, editor, temp_dir):
+        """Test deleting a single line."""
+        (temp_dir / "test.py").write_text("line1\nline2\nline3\n")
+        result = editor.invoke("delete:test.py:2:2")
+        assert "Deleted 1 line(s)" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "line1\nline3\n"
+
+    def test_delete_all_lines(self, editor, temp_dir):
+        """Test deleting all lines from file."""
+        (temp_dir / "test.py").write_text("line1\nline2\nline3\n")
+        result = editor.invoke("delete:test.py:1:3")
+        assert "Deleted 3 line(s)" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == ""
+
+    # JSON format tests
+    def test_json_format_replace(self, editor, temp_dir):
+        """Test JSON format for complex content."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        json_input = '{"op": "replace", "path": "test.py", "start": 1, "end": 2, "content": "new\\ncontent"}'
+        result = editor.invoke(json_input)
+        assert "Replaced lines" in result
+        content = (temp_dir / "test.py").read_text()
+        assert "new" in content and "content" in content
+
+    def test_json_format_insert(self, editor, temp_dir):
+        """Test JSON format for insert operation."""
+        (temp_dir / "test.py").write_text("line1\n")
+        json_input = '{"op": "insert", "path": "test.py", "after": 0, "content": "first"}'
+        result = editor.invoke(json_input)
+        assert "Inserted content" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content.startswith("first\n")
+
+    def test_json_format_delete(self, editor, temp_dir):
+        """Test JSON format for delete operation."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        json_input = '{"op": "delete", "path": "test.py", "start": 1, "end": 1}'
+        result = editor.invoke(json_input)
+        assert "Deleted" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "line2\n"
+
+    # Validation tests
+    def test_path_traversal_prevention(self, editor, temp_dir):
+        """Test that path traversal is blocked."""
+        result = editor.invoke("replace:../outside.txt:1:1:content")
+        assert "Error" in result
+        assert "outside" in result.lower() or "root" in result.lower()
+
+    def test_line_bounds_checking(self, editor, temp_dir):
+        """Test that out-of-bounds lines are rejected."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("replace:test.py:1:100:content")
+        assert "Error" in result
+        assert "exceeds" in result.lower() or "bounds" in result.lower()
+
+    def test_start_line_negative(self, editor, temp_dir):
+        """Test that negative start line is rejected."""
+        # Create the file first
+        (temp_dir / "test.py").write_text("line1\n")
+        result = editor.invoke("replace:test.py:-1:1:content")
+        assert "Error" in result
+        assert ">=" in result or "must be >=" in result
+
+    def test_end_line_before_start(self, editor, temp_dir):
+        """Test that end < start is rejected."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("replace:test.py:3:2:content")
+        assert "Error" in result
+        assert ">= start line" in result
+
+    def test_binary_file_rejection(self, editor, temp_dir):
+        """Test that binary files are rejected."""
+        (temp_dir / "test.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        result = editor.invoke("replace:test.png:1:1:content")
+        assert "Error" in result
+        assert "binary" in result.lower()
+
+    def test_pyc_file_rejection(self, editor, temp_dir):
+        """Test that .pyc files are rejected."""
+        (temp_dir / "test.pyc").write_bytes(b"compiled python")
+        result = editor.invoke("replace:test.pyc:1:1:content")
+        assert "Error" in result
+        assert "binary" in result.lower()
+
+    def test_nonexistent_file(self, editor, temp_dir):
+        """Test error for non-existent file."""
+        result = editor.invoke("replace:nonexistent.py:1:1:content")
+        assert "Error" in result
+        assert "not found" in result.lower()
+
+    def test_invalid_format(self, editor):
+        """Test error for invalid input format."""
+        result = editor.invoke("invalid input")
+        assert "Error" in result
+
+    def test_unknown_operation(self, editor):
+        """Test error for unknown operation."""
+        result = editor.invoke("unknown:test.py:1:1:content")
+        assert "Error" in result
+        assert "unknown" in result.lower()
+
+    def test_invalid_replace_format(self, editor):
+        """Test error for incomplete replace format."""
+        result = editor.invoke("replace:test.py:1:2")
+        assert "Error" in result
+        assert "Replace format" in result
+
+    def test_invalid_insert_format(self, editor):
+        """Test error for incomplete insert format."""
+        result = editor.invoke("insert:test.py:1")
+        assert "Error" in result
+        assert "Insert format" in result
+
+    def test_invalid_delete_format(self, editor):
+        """Test error for incomplete delete format."""
+        result = editor.invoke("delete:test.py:1")
+        assert "Error" in result
+        assert "Delete format" in result
+
+    def test_content_with_newline_escaped(self, editor, temp_dir):
+        """Test that \\n escape is properly handled in delimited format."""
+        (temp_dir / "test.py").write_text("old\n")
+        result = editor.invoke("replace:test.py:1:1:first\\nsecond")
+        assert "Replaced lines" in result
+        content = (temp_dir / "test.py").read_text()
+        assert content == "first\nsecond\n"
+
+    def test_empty_file_replace(self, editor, temp_dir):
+        """Test that replace on empty file is handled properly."""
+        (temp_dir / "empty.py").write_text("")
+        result = editor.invoke("replace:empty.py:1:1:content")
+        assert "Error" in result
+        assert "exceeds" in result.lower()
+
+    def test_empty_file_insert(self, editor, temp_dir):
+        """Test that insert at beginning works on empty file."""
+        (temp_dir / "empty.py").write_text("")
+        result = editor.invoke("insert:empty.py:0:content")
+        assert "Inserted content" in result
+        content = (temp_dir / "empty.py").read_text()
+        assert content == "content\n"
+
+    def test_insert_before_invalid(self, editor, temp_dir):
+        """Test insert before with invalid line number."""
+        (temp_dir / "test.py").write_text("line1\n")
+        result = editor.invoke("insert:test.py:before_0:content")
+        assert "Error" in result
+        assert ">=" in result
+
+    def test_insert_after_invalid(self, editor, temp_dir):
+        """Test insert after with line number too high."""
+        (temp_dir / "test.py").write_text("line1\n")
+        result = editor.invoke("insert:test.py:10:content")
+        assert "Error" in result
+        assert "exceeds" in result.lower()
+
+    def test_invalid_insert_position(self, editor, temp_dir):
+        """Test insert with invalid position format."""
+        (temp_dir / "test.py").write_text("line1\n")
+        result = editor.invoke("insert:test.py:middle:content")
+        assert "Error" in result
+        assert "Invalid insert position" in result
+
+    def test_edit_adds_newline_if_missing(self, editor, temp_dir):
+        """Test that newline is added if content doesn't end with one."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke("replace:test.py:2:2:newline")
+        assert "Replaced lines" in result
+        content = (temp_dir / "test.py").read_text()
+        # Should have newline after replacement
+        assert content == "line1\nnewline\n"
+
+    def test_replace_preserves_existing_newlines(self, editor, temp_dir):
+        """Test that replace with content ending in newline works correctly."""
+        (temp_dir / "test.py").write_text("old1\nold2\n")
+        result = editor.invoke("replace:test.py:1:1:new1\n")
+        assert "Replaced lines" in result
+        content = (temp_dir / "test.py").read_text()
+        # Should not have double newlines
+        assert content == "new1\nold2\n"
+
+    # Search/Replace tests
+    def test_search_replace_exact_match(self, editor, temp_dir):
+        """Test search_replace with exact text match."""
+        (temp_dir / "test.py").write_text('"""A mock weather tool."""\n')
+        json_input = (
+            '{"op": "search_replace", "path": "test.py", '
+            '"old": "A mock weather tool.", "new": "A mock weather tool for testing."}'
+        )
+        result = editor.invoke(json_input)
+        assert "Replaced text" in result
+        content = (temp_dir / "test.py").read_text()
+        assert "for testing" in content
+
+    def test_search_replace_multiline(self, editor, temp_dir):
+        """Test search_replace with multiline content."""
+        (temp_dir / "test.py").write_text("def foo():\n    pass\n\ndef bar():\n    pass\n")
+        json_input = (
+            '{"op": "search_replace", "path": "test.py", '
+            '"old": "def foo():\\n    pass", "new": "def foo():\\n    return 42"}'
+        )
+        result = editor.invoke(json_input)
+        assert "Replaced text" in result
+        content = (temp_dir / "test.py").read_text()
+        assert "return 42" in content
+        assert "def bar" in content  # Unchanged
+
+    def test_search_replace_not_found(self, editor, temp_dir):
+        """Test search_replace when text is not found."""
+        (temp_dir / "test.py").write_text("line1\nline2\n")
+        result = editor.invoke(
+            '{"op": "search_replace", "path": "test.py", "old": "nonexistent", "new": "replacement"}'
+        )
+        assert "Error" in result
+        assert "not found" in result.lower()
+
+    def test_search_replace_multiple_matches(self, editor, temp_dir):
+        """Test search_replace when text appears multiple times."""
+        (temp_dir / "test.py").write_text("foo\nbar\nfoo\n")
+        result = editor.invoke('{"op": "search_replace", "path": "test.py", "old": "foo", "new": "baz"}')
+        assert "Error" in result
+        assert "2 occurrences" in result.lower()
+
+    def test_search_replace_similar_text_hint(self, editor, temp_dir):
+        """Test search_replace suggests location when text not found but similar exists."""
+        (temp_dir / "test.py").write_text("class WeatherTool:\n    pass\n")
+        result = editor.invoke('{"op": "search_replace", "path": "test.py", "old": "WeatherTools:", "new": "SkyTool:"}')
+        # Should find similar text and suggest location (note: "WeatherTools" vs "WeatherTool")
+        assert "Error" in result
+        # Should suggest read_file_fragment
+        assert "read_file_fragment" in result
+
+    def test_search_replace_preserves_quotes(self, editor, temp_dir):
+        """Test that search_replace preserves surrounding content."""
+        (temp_dir / "test.py").write_text('    """A mock weather tool."""\n')
+        json_input = (
+            '{"op": "search_replace", "path": "test.py", '
+            '"old": "A mock weather tool.", "new": "A mock weather tool for testing."}'
+        )
+        result = editor.invoke(json_input)
+        assert "Replaced text" in result
+        content = (temp_dir / "test.py").read_text()
+        # Quotes should be preserved
+        assert '"""' in content
+        assert "for testing" in content
+
+    def test_search_replace_file_not_found(self, editor, temp_dir):
+        """Test search_replace on non-existent file."""
+        result = editor.invoke('{"op": "search_replace", "path": "nonexistent.py", "old": "old", "new": "new"}')
+        assert "Error" in result
+        assert "not found" in result.lower()
+
+    def test_search_replace_empty_old_text(self, editor, temp_dir):
+        """Test search_replace with empty old text."""
+        (temp_dir / "test.py").write_text("content\n")
+        result = editor.invoke('{"op": "search_replace", "path": "test.py", "old": "", "new": "new"}')
+        # Empty string matches everywhere, should fail
+        assert "Error" in result or "0 occurrences" in result.lower() or "not found" in result.lower()
