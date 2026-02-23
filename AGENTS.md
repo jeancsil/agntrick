@@ -1,390 +1,479 @@
-# Agents Guide
+# AGENTS.md
 
-This guide is for both external LLMs working within this codebase and developers building new agents and tools.
+**FOR LLM AGENTS DEVELOPING THIS FRAMEWORK.** This document defines strict rules for modifying the agentic-framework codebase.
 
-## Environment
+---
 
-We use uv for package management and running commands.
-cd is aliased to z (zoxide), use full path instead.
-ls is aliased to eza, use full path instead.
+## PURPOSE
 
-## Project Overview
+You are an LLM agent tasked with improving, fixing, or extending the **agentic-framework** codebase. This document defines how you MUST approach this work.
 
-This is a **LangChain + MCP framework** for building agentic systems in Python 3.12+.
+---
 
-### Key Technologies
+## STRICT BEHAVIORAL RULES
 
-- **LangChain**: LLM orchestration framework
-- **LangGraph**: Stateful agent workflows with checkpoints
-- **MCP (Model Context Protocol)**: External tool integration
-- **Typer**: CLI interface
-- **Rich**: Terminal formatting
+### ALWAYS Rules
 
-## Architecture
+1. **ALWAYS** run `make check` after making any code changes.
+2. **ALWAYS** run `make test` after making any code changes.
+3. **ALWAYS** fix all linting errors before indicating completion.
+4. **ALWAYS** fix all test failures before indicating completion.
+5. **ALWAYS** maintain or improve test coverage (current: 80%).
+6. **ALWAYS** follow existing code patterns in the codebase.
+7. **ALWAYS** add tests for new functionality.
+8. **ALWAYS** update docstrings if you change function behavior.
+9. **ALWAYS** use `uv` for package management - **NO EXCEPTIONS** (not pip, not poetry, not pipenv).
+10. **ALWAYS** prefer Docker for running the framework locally (see Docker section).
+11. **ALWAYS** run commands from the correct directory (see Working Directory).
 
-### Directory Structure
+### NEVER Rules
 
-```
-src/agentic_framework/
-├── core/               # Agent implementations
-│   ├── __init__.py     # Exports only base classes (no concrete agents)
-│   ├── langgraph_agent.py    # Reusable LangGraphMCPAgent base
-│   ├── simple_agent.py       # Basic LLM agent (no tools)
-│   ├── chef_agent.py         # Recipe finder with web search
-│   ├── travel_agent.py       # Flight search via Kiwi MCP
-│   ├── news_agent.py         # AI news via web-fetch MCP
-│   ├── travel_coordinator_agent.py  # Multi-agent orchestration
-│   └── developer_agent.py    # Codebase exploration agent
-├── interfaces/          # Abstract base classes
-│   └── base.py          # Agent and Tool ABCs
-├── mcp/                 # Model Context Protocol
-│   ├── config.py        # MCP server configurations
-│   └── provider.py      # MCP client and session management
-├── tools/               # Tool implementations
-│   ├── codebase_explorer.py  # Code navigation tools
-│   ├── code_searcher.py      # ripgrep wrapper
-│   ├── web_search.py         # Tavily search
-│   └── example.py            # Demo tools
-├── constants.py         # Project-wide constants
-├── registry.py          # Agent discovery and registration
-└── cli.py               # CLI interface
-```
+1. **NEVER** skip running `make check` and `make test`.
+2. **NEVER** commit changes unless explicitly requested by the user.
+3. **NEVER** push changes without user confirmation.
+4. **NEVER** introduce new dependencies without discussion.
+5. **NEVER** delete existing tests without replacement.
+6. **NEVER** change the public API without updating all affected code.
+7. **NEVER** use synchronous code where async is expected.
+8. **NEVER** raise exceptions from tools - return error strings instead.
+9. **NEVER** edit generated files (uv.lock, etc.) directly.
+10. **NEVER** ignore deprecation warnings - fix them.
+11. **NEVER** use pip, pipenv, poetry, or any package manager other than `uv`.
+12. **NEVER** install dependencies locally when Docker can be used instead.
 
-## Core Concepts
+### BEFORE Rules
 
-### Agent
+1. **BEFORE** making changes: Read and understand the existing code.
+2. **BEFORE** claiming done: Run `make check && make test`.
+3. **BEFORE** adding features: Check if similar functionality exists.
+4. **BEFORE** refactoring: Ensure tests cover the affected code.
 
-Base class defined in `interfaces/base.py`:
+### AFTER Rules
 
-```python
-class Agent(ABC):
-    @abstractmethod
-    async def run(
-        self,
-        input_data: Union[str, List[BaseMessage]],
-        config: Optional[Dict[str, Any]] = None,
-    ) -> Union[str, BaseMessage]:
-        """Run the agent with the given input."""
+1. **AFTER** editing code: Run `make check` immediately.
+2. **AFTER** check passes: Run `make test`.
+3. **AFTER** tests pass: Summarize what was changed and why.
 
-    @abstractmethod
-    def get_tools(self) -> List[Any]:
-        """Return available tools for this agent."""
-```
+---
 
-### Tool
+## WORKING DIRECTORY
 
-Base class defined in `interfaces/base.py`:
-
-```python
-class Tool(ABC):
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """The name of the tool."""
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """A description of what the tool does."""
-
-    @abstractmethod
-    def invoke(self, input_str: str) -> Any:
-        """Execute the tool logic."""
-```
-
-### Agent Registry
-
-Central registration system in `registry.py`:
-
-```python
-@AgentRegistry.register("agent-name", mcp_servers=["server1", "server2"])
-class MyAgent(Agent):
-    # Implementation
-```
-
-**Registry Methods:**
-- `AgentRegistry.list_agents()` - List all registered agents
-- `AgentRegistry.get(name)` - Get agent class by name
-- `AgentRegistry.get_mcp_servers(name)` - Get allowed MCP servers for an agent
-- `AgentRegistry.discover_agents()` - Auto-discover agents in `core/` package
-- `AgentRegistry.set_strict_registration(strict=True)` - Enable strict mode (raises error on duplicate registrations)
-- `AgentRegistry.register(name, mcp_servers, override=False)` - Register an agent with optional override flag
-
-### MCP (Model Context Protocol)
-
-External tool integration managed by `MCPProvider`.
-
-**Available MCP Servers** (see `mcp/config.py`):
-- `kiwi-com-flight-search` - Flight search
-- `tinyfish` - AI assistant
-- `web-fetch` - Web content fetching
-- `tavily` - Web search
-
-## Example of Available Agents
-
-### simple
-Basic LLM assistant with no tools. Minimal example.
-
-### chef
-Recipe finder using local web search tool + Tavily MCP.
-
-### travel
-Flight search assistant using Kiwi MCP.
-
-### news
-AI news aggregator using web-fetch MCP.
-
-### travel-coordinator
-Orchestrates 3 specialist agents (flight, city intel, reviewer) with MCP tools.
-
-### developer
-Codebase exploration agent with specialized local tools and webfetch MCP:
-- `find_files` - Fast file search via fd
-- `discover_structure` - Directory tree exploration
-- `get_file_outline` - Extract class/function signatures (multi-language)
-- `read_file_fragment` - Read specific line ranges
-- `code_search` - Fast pattern search via ripgrep
-- `webfetch` (MCP) - Web content fetching
-
-**Supported Languages for `get_file_outline`**:
-Python, JavaScript, TypeScript, Rust, Go, Java, C/C++, PHP
-
-## Using Existing Agents
-
-### CLI Usage
-Use always with uv `uv --directory agentic-framework run agentic-run info developer`, 
-from the root of the git repository.
+The framework code lives in `agentic-framework/` subdirectory. The project root (with Makefile) is one level up.
 
 ```bash
-# List all available agents
-uv --directory agentic-framework run agentic-run list
+# If you're in agentic-framework/ directory, run make commands from parent:
+make -C .. check
+make -C .. test
+make -C .. format
 
-# View detailed information about an agent
-uv --directory agentic-framework run agentic-run info developer
-
-# Run an agent
-uv --directory agentic-framework run agentic-run developer --input "Find all files with 'agent' in the name"
-
-# With timeout override
-uv --directory agentic-framework run agentic-run travel --input "BCN to LIS next week" --timeout 120
+# Or navigate to project root first:
+cd .. && make check
 ```
 
-### Programmatic Usage
+---
 
-```python
-from agentic_framework.registry import AgentRegistry
-from agentic_framework.mcp import MCPProvider
+## DEVELOPMENT WORKFLOW
 
-# Get agent class
-agent_cls = AgentRegistry.get("developer")
+### Step 1: UNDERSTAND
+Before making changes:
+1. Read the relevant source files
+2. Read related test files
+3. Understand the existing patterns
+4. Check CLAUDE.md for architectural context
 
-# Without MCP
-agent = agent_cls()
-result = await agent.run("Explain the project structure")
+### Step 2: IMPLEMENT
+Make your changes:
+1. Follow existing code style
+2. Add type hints (this project uses strict mypy)
+3. Add/update docstrings for public functions
+4. Keep functions focused and small
 
-# With MCP (if agent supports it)
-provider = MCPProvider(server_names=["webfetch"])
-async with provider.tool_session() as mcp_tools:
-    agent = agent_cls(initial_mcp_tools=mcp_tools)
-    result = await agent.run("Search for...")
+### Step 3: VERIFY
+After changes:
+```bash
+make -C .. check    # Linting (mypy + ruff)
+make -C .. test     # Run all tests
 ```
 
-## Building New Agents
+### Step 4: FIX
+If checks or tests fail:
+1. Read the error message carefully
+2. Fix the issue
+3. Re-run the failing command
+4. Repeat until all pass
 
-### Simple Agent (No Tools)
+---
 
-```python
-from agentic_framework.interfaces.base import Agent
-from agentic_framework.registry import AgentRegistry
+## UV IS MANDATORY
 
-@AgentRegistry.register("my-simple-agent", mcp_servers=None)
-class MySimpleAgent(Agent):
-    async def run(self, input_data, config=None):
-        return f"Response to: {input_data}"
+**This project uses `uv` exclusively.** No other package manager is allowed.
 
-    def get_tools(self):
-        return []
+### Why uv?
+- Fast dependency resolution
+- Consistent lockfile (uv.lock)
+- Built-in virtual environment management
+- Replaces pip, pip-tools, poetry, pipenv
+
+### Required Commands
+
+```bash
+# Install dependencies
+uv sync
+
+# Add a dependency
+uv add package-name
+
+# Add a dev dependency
+uv add --dev package-name
+
+# Run a command in the virtual environment
+uv run <command>
+
+# Update lockfile
+uv lock --upgrade-package package-name
 ```
 
-### LangGraph Agent with Local Tools
+### Forbidden Commands
 
-```python
-from langchain_core.tools import StructuredTool
-from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
-from agentic_framework.registry import AgentRegistry
-
-@AgentRegistry.register("my-agent", mcp_servers=None)
-class MyAgent(LangGraphMCPAgent):
-    @property
-    def system_prompt(self) -> str:
-        return "You are a helpful assistant specialized in X."
-
-    def local_tools(self) -> Sequence[Any]:
-        # Add your tools here
-        return [
-            StructuredTool.from_function(
-                func=my_function,
-                name="my_tool",
-                description="Description of what the tool does",
-            )
-        ]
+```bash
+# NEVER use these:
+pip install package-name      # WRONG
+pipenv install package-name   # WRONG
+poetry add package-name       # WRONG
+pip install -r requirements.txt  # WRONG
 ```
 
-### LangGraph Agent with MCP Tools
+If you need a dependency, use `uv add`. No exceptions.
 
-```python
-@AgentRegistry.register("my-agent", mcp_servers=["web-fetch", "tavily"])
-class MyAgent(LangGraphMCPAgent):
-    @property
-    def system_prompt(self) -> str:
-        return "You have access to web tools."
+---
 
-    def local_tools(self) -> Sequence[Any]:
-        return []  # No local tools, just MCP
+## DOCKER (PREFERRED)
+
+**Docker is the preferred way to run and test the framework.** Avoid installing dependencies locally.
+
+### Why Docker?
+- Consistent environment across all machines
+- No pollution of local Python environment
+- Easy cleanup and isolation
+- Matches production deployment
+
+### Docker Commands
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Run agents in Docker
+bin/agent.sh developer -i "Explain the project structure"
+bin/agent.sh chef -i "I have eggs and cheese"
+bin/agent.sh list
+
+# Run tests in Docker
+docker compose run --rm app make test
+
+# View logs (same location as local)
+tail -f agentic-framework/logs/agent.log
 ```
 
-## Building New Tools
+### Docker Benefits
+- No rebuild needed when changing Python code (mounted volumes)
+- Environment variables loaded from `.env`
+- Logs accessible from host machine
+- Uses `uv` just like local development
 
-### Simple Tool
+---
+
+## CODE STANDARDS
+
+### Type Hints
+
+This project uses strict mypy. All functions MUST have type hints:
 
 ```python
-from agentic_framework.interfaces.base import Tool
+# GOOD
+async def run(self, input_data: str, config: dict[str, Any] | None = None) -> str:
+    ...
 
-class MyTool(Tool):
-    @property
-    def name(self) -> str:
-        return "my_tool"
-
-    @property
-    def description(self) -> str:
-        return "Description of what the tool does."
-
-    def invoke(self, input_str: str) -> Any:
-        # Tool logic here
-        return f"Result: {input_str}"
+# BAD
+async def run(self, input_data, config=None):
+    ...
 ```
 
-### Codebase Explorer Tool
+### Docstrings
+
+Use Google-style docstrings:
 
 ```python
-from agentic_framework.tools.codebase_explorer import CodebaseExplorer, Tool
+def process_data(data: list[str]) -> dict[str, int]:
+    """Process a list of strings and return counts.
 
-class MyExplorerTool(CodebaseExplorer, Tool):
-    @property
-    def name(self) -> str:
-        return "my_explorer"
+    Args:
+        data: A list of strings to process.
 
-    @property
-    def description(self) -> str:
-        return "Description of the explorer tool."
+    Returns:
+        A dictionary mapping each unique string to its count.
 
-    def invoke(self, input_str: str) -> Any:
-        # Use self.root_dir for project root
-        # Tool logic here
+    Raises:
+        ValueError: If data is empty.
+    """
+```
+
+### Error Handling in Tools
+
+Tools MUST return error messages as strings, never raise exceptions:
+
+```python
+# GOOD
+def invoke(self, input_str: str) -> str:
+    try:
+        result = do_something(input_str)
         return result
+    except FileNotFoundError:
+        return f"Error: File '{input_str}' not found."
+
+# BAD
+def invoke(self, input_str: str) -> str:
+    if not os.path.exists(input_str):
+        raise FileNotFoundError(f"File '{input_str}' not found")
 ```
 
-### Export from tools/__init__.py
+### Async Patterns
 
-Add your tool to `tools/__init__.py`:
+Agent `run()` methods are async. Use `async def` and `await`:
 
 ```python
-from .my_tool import MyTool
+# GOOD
+async def run(self, input_data: str) -> str:
+    result = await some_async_operation()
+    return result
 
-__all__ = [
-    # existing...
-    "MyTool",
-]
+# BAD
+async def run(self, input_data: str) -> str:
+    result = some_sync_operation()  # Blocks event loop
+    return result
 ```
-
-## Patterns and Conventions
 
 ### Agent Registration
 
-- Always use `@AgentRegistry.register(name, mcp_servers)` decorator
-- `mcp_servers=None` means no MCP access
-- `mcp_servers=[]` or `mcp_servers=["server1"]` for MCP access
-
-### System Prompts
-
-- Define as a property named `system_prompt`
-- Keep prompts concise and focused
-- Include instructions on when/how to use tools
-
-### Tool Initialization
-
-- Tools in `local_tools()` should be initialized once (not per-call)
-- Use `StructuredTool.from_function()` to wrap functions for LangChain
-- Tool names should be snake_case
-
-### Codebase Tools Usage
-
-- Use `find_files` when you need to locate files by name/pattern
-- Use `discover_structure` for project layout overview
-- Use `get_file_outline` to skim file contents before reading
-  - Supports: Python (`.py`), JavaScript (`.js`), TypeScript (`.ts`), Rust (`.rs`), Go (`.go`), Java (`.java`), C (`.c`, `.h`), C++ (`.cpp`, `.hpp`), PHP (`.php`)
-  - Returns: `[{"line": 15, "signature": "class MyAgent:"}, ...]`
-- Use `read_file_fragment` to read specific lines (format: `path:start:end`)
-- Use `code_search` for fast global pattern matching
-
-### Async/Await
-
-- All agent `run()` methods are async
-- Use `await` when calling agent methods
-- MCP operations use async context managers
-
-### Thread IDs
-
-- LangGraph uses thread IDs for checkpointing
-- Provide unique thread_ids for concurrent agent runs
-- Format: `"1"`, `"agent:1"`, etc.
-
-### Error Handling
-
-- Tools should return error messages as strings, not raise exceptions
-- CLI provides error reporting with `--verbose` flag
-- MCP connection errors are handled via `MCPConnectionError`
-
-## Testing
+Always use the decorator pattern:
 
 ```python
-# Test agent discovery
-def test_my_agent_registered():
-    AgentRegistry.discover_agents()
-    assert "my-agent" in AgentRegistry.list_agents()
-
-# Test agent behavior (use monkeypatch for external dependencies)
-def test_my_agent_run(monkeypatch):
-    # Mock external dependencies
-    monkeypatch.setattr("module.Class", mock_class)
-    agent = MyAgent()
-    result = await agent.run("test")
-    assert "expected" in result
+@AgentRegistry.register("agent-name", mcp_servers=["server1"])
+class MyAgent(LangGraphMCPAgent):
+    ...
 ```
-## Before committing
 
-Before commiting, run `make check`, `make test` and if needed, `make format`. Fix them before committing.
+---
 
-make check runs:
-  - mypy - type checking
-  - ruff check - linting (no fixes)
-  - ruff format --check - formatting check (no fixes)
+## TESTING REQUIREMENTS
 
+### Test Location
 
-## Constants
+Tests are in `agentic-framework/tests/`
 
-- `BASE_DIR` - Project root directory
-- `LOGS_DIR` - Logs directory (logs/)
-- Default timeout: 600 seconds
-- Connection timeout: 15 seconds
+### Test Naming
 
-## Notes for External LLMs
+- Test files: `test_<module>.py`
+- Test functions: `test_<function>_<scenario>()`
 
-When working with this codebase:
+```python
+# GOOD
+def test_run_with_valid_input_returns_response():
+    ...
 
-1. **Agent Discovery**: All agents are auto-registered in `AgentRegistry`
-2. **MCP Access**: Check `AgentRegistry.get_mcp_servers(name)` before using MCP
-3. **Tool Conventions**: Tools return strings for errors, not exceptions
-4. **Codebase Navigation**: The developer agent has specialized tools for code exploration
-5. **Model Selection**: The default model name may be a placeholder - check environment variables
-6. **File Patterns**: Ignore patterns include `.git`, `__pycache__`, `node_modules`, `.venv`, etc.
+def test_invoke_with_missing_file_returns_error():
+    ...
+
+# BAD
+def test_run():
+    ...
+
+def testErrorHandling():
+    ...
+```
+
+### Test Patterns
+
+Use `monkeypatch` for external dependencies:
+
+```python
+def test_web_search_returns_results(monkeypatch):
+    def mock_search(query: str) -> str:
+        return "Mocked results"
+
+    monkeypatch.setattr("module.web_search", mock_search)
+    tool = WebSearchTool()
+    result = tool.invoke("test query")
+    assert "Mocked results" in result
+```
+
+### Coverage Requirement
+
+Minimum coverage: 60% (fail under configured in pyproject.toml)
+Current coverage: 80%
+
+New code should include tests. Aim to maintain or improve coverage.
+
+---
+
+## PROJECT STRUCTURE
+
+```
+agentic-framework/
+├── src/agentic_framework/
+│   ├── core/               # Agent implementations
+│   │   ├── langgraph_agent.py   # Base class - modify carefully
+│   │   ├── simple_agent.py
+│   │   ├── chef_agent.py
+│   │   ├── travel_agent.py
+│   │   ├── news_agent.py
+│   │   ├── developer_agent.py
+│   │   └── travel_coordinator_agent.py
+│   ├── interfaces/         # Abstract base classes
+│   │   └── base.py              # Agent and Tool ABCs
+│   ├── mcp/                # MCP integration
+│   │   ├── config.py            # Server configurations
+│   │   └── provider.py          # Connection management
+│   ├── tools/              # Tool implementations
+│   │   ├── codebase_explorer.py # Code navigation tools
+│   │   ├── code_searcher.py     # ripgrep wrapper
+│   │   ├── syntax_validator.py  # Tree-sitter validation
+│   │   ├── web_search.py
+│   │   └── example.py
+│   ├── constants.py        # BASE_DIR, LOGS_DIR, timeouts
+│   ├── registry.py         # Agent discovery and registration
+│   └── cli.py              # Typer CLI interface
+├── tests/                  # Test suite
+├── pyproject.toml          # Project config, dependencies
+└── uv.lock                 # Lockfile (DO NOT EDIT DIRECTLY)
+```
+
+---
+
+## GIT HOOKS
+
+This project has a pre-push hook that runs `make check`.
+
+If the hook fails:
+1. Run `make -C .. check` to see errors
+2. Fix all errors
+3. Try pushing again
+
+---
+
+## COMMANDS REFERENCE
+
+```bash
+# From agentic-framework directory:
+make -C .. check      # Run mypy + ruff (linting)
+make -C .. test       # Run pytest with coverage
+make -C .. format     # Auto-format with ruff
+make -C .. install    # Install dependencies
+make -C .. clean      # Remove caches and artifacts
+
+# Run the CLI:
+uv run agentic-run list
+uv run agentic-run info developer
+uv run agentic-run developer -i "input"
+```
+
+---
+
+## COMMON TASKS
+
+### Adding a New Agent
+
+1. Create file in `src/agentic_framework/core/my_agent.py`
+2. Subclass `LangGraphMCPAgent`
+3. Add `@AgentRegistry.register()` decorator
+4. Define `system_prompt` property
+5. Override `local_tools()` if needed
+6. Add tests in `tests/test_my_agent.py`
+7. Run `make -C .. check && make -C .. test`
+
+### Adding a New Tool
+
+1. Create file in `src/agentic_framework/tools/my_tool.py`
+2. Subclass `Tool` from `interfaces.base`
+3. Implement `name`, `description`, `invoke()`
+4. Export from `tools/__init__.py`
+5. Add tests in `tests/test_my_tool.py`
+6. Run `make -C .. check && make -C .. test`
+
+### Adding a New MCP Server
+
+1. Add configuration in `mcp/config.py`
+2. Update `DEFAULT_MCP_SERVERS` dict
+3. Document API key requirements if any
+4. Test connection manually
+5. Update relevant agent registrations
+
+### Fixing a Bug
+
+1. Write a failing test that reproduces the bug
+2. Run `make -C .. test` to confirm failure
+3. Fix the code
+4. Run `make -C .. check && make -C .. test`
+5. Confirm test now passes
+
+---
+
+## DEPENDENCIES
+
+### Adding Dependencies
+
+```bash
+uv add package-name
+```
+
+### Adding Dev Dependencies
+
+```bash
+uv add --dev package-name
+```
+
+### Updating Dependencies
+
+```bash
+uv lock --upgrade-package package-name
+```
+
+---
+
+## FINAL CHECKLIST
+
+Before saying a task is complete:
+
+- [ ] Code follows project style
+- [ ] Type hints are complete
+- [ ] Docstrings are updated
+- [ ] `make check` passes with no errors
+- [ ] `make test` passes with no failures
+- [ ] Coverage maintained or improved
+- [ ] No new warnings introduced
+- [ ] README.md is updated if public API or agents/tools changed
+
+## KEEPING README.md IN SYNC
+
+**README.md must stay in sync with framework changes.**
+
+Update README.md when you:
+- Add a new agent (add to Available Agents table)
+- Add a new tool (add to Available Tools table)
+- Add a new MCP server (add to Available MCP Servers table)
+- Change public API (update Architecture section if needed)
+- Modify agent capabilities (update agent descriptions)
+
+**Do NOT:**
+- Leave outdated information in README.md
+- Document features that no longer exist
+- Skip updating relevant sections
+
+---
+
+## WHEN IN DOUBT
+
+1. Read existing code for patterns
+2. Run `make -C .. check` early and often
+3. Ask the user for clarification
+4. Don't guess - verify
