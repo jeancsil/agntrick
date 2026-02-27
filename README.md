@@ -1,317 +1,344 @@
-# Agentic Framework
+<div align="center">
 
-A LangChain + MCP framework for building agentic systems in Python 3.12+.
+# 🤖 Agentic Framework
+**Build AI agents that *actually* do things.**
 
-![Build Status](https://github.com/jeancsil/agentic-framework/actions/workflows/ci.yml/badge.svg)
-![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)
-![GitHub License](https://img.shields.io/github/license/jeancsil/agentic-framework)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
+[![LangChain](https://img.shields.io/badge/langchain-%23007BA7.svg?style=plastic&logo=langchain&logoColor=white)](https://python.langchain.com/)
+[![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-green?style=plastic&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
+[![Docker Ready](https://img.shields.io/badge/docker-ready-blue?style=plastic&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License](https://img.shields.io/github/license/jeancsil/agentic-framework?style=plastic)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/jeancsil/agentic-framework/ci.yml?style=plastic&logo=github&label=Build)](https://github.com/jeancsil/agentic-framework/actions)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen?style=plastic)](https://github.com/jeancsil/agentic-framework)
 
-## What is this?
+<br>
 
-This framework helps you build AI agents that can:
-- Use **local tools** (file operations, code search, etc.)
-- Connect to **MCP servers** (web search, flight booking, etc.)
-- Combine both in a single runtime
+Combine **local tools** and **MCP servers** in a single, elegant runtime.  
+Write agents in **5 lines of code**. Run them anywhere.
 
-**Key features:**
-- Decorator-based agent registration with automatic CLI generation
-- Reusable LangGraph agent pattern with checkpointing
-- Per-agent MCP server permissions
-- Multi-language code navigation tools
-- Safe file editing with automatic syntax validation
+</div>
 
 ---
 
-## Quick Start (Docker - Recommended)
+## 💡 Why Agentic Framework?
 
-**Docker is the recommended way to run this framework.** It comes pre-configured with all required tools and dependencies.
+Instead of spending days wiring together LLMs, tools, and execution environments, Agentic Framework gives you a production-ready setup instantly.
+
+*   **Write Less, Do More:** Create a fully functional agent with just 5 lines of Python using the zero-config `@AgentRegistry.register` decorator.
+*   **Context is King (MCP):** Native integration with Model Context Protocol (MCP) servers to give your agents live data (Web search, APIs, internal databases).
+*   **Hardcore Local Tools:** Built-in blazing fast tools (`ripgrep`, `fd`, AST parsing) so your agents can explore and understand local codebases out-of-the-box.
+*   **Stateful & Resilient:** Powered by **LangGraph** to support memory, cyclic reasoning, and human-in-the-loop workflows.
+*   **Docker-First Isolation:** Every agent runs in isolated containers—no more "it works on my machine" when sharing with your team.
+
+---
+
+## 🎬 See it in Action
+
+> *In this single command, the framework orchestrates 3 distinct AI sub-agents working together to plan a trip—built entirely in just **126 lines of Python**.*
+
+<p align="center">
+  <img src="docs/resources/demo.gif" alt="Agentic Framework Demo" width="100%" style="max-width: 800px; border-radius: 8px;">
+</p>
+
+---
+
+## 📑 Table of Contents
+- [🧰 Available Out of the Box](#-available-out-of-the-box)
+  - [🤖 Agents](#-agents)
+  - [📦 Local Tools (Zero External Dependencies)](#-local-tools-zero-external-dependencies)
+  - [🌐 MCP Servers (Context Superpowers)](#-mcp-servers-context-superpowers)
+- [🚀 Quick Start (Zero to Agent in 60s)](#-quick-start-zero-to-agent-in-60s)
+- [🛠️ Build Your Own Agent](#️-build-your-own-agent)
+- [🏗️ Architecture](#️-architecture)
+- [💻 CLI Reference](#-cli-reference)
+- [🧑‍💻 Local Development](#local-development)
+- [🎬 See it in Action](#-see-it-in-action)
+- [🤝 Contributing](#-contributing)
+
+---
+
+## 🧰 Available Out of the Box
+
+### 🤖 Agents
+
+| Agent | Purpose | MCP Servers | Local Tools |
+|-------|---------|-------------|-------------|
+| `developer` | **Code Master:** Read, search & edit code. | `webfetch` | *All codebase tools below* |
+| `travel-coordinator` | **Trip Planner:** Orchestrates agents. | `kiwi-com-flight-search`<br>`webfetch` | *Uses 3 sub-agents* |
+| `chef` | **Chef:** Recipes from your fridge. | *Tavily Web Search* | `web_search` |
+| `news` | **News Anchor:** Aggregates top stories. | `webfetch` | - |
+| `travel` | **Flight Booker:** Finds the best routes. | `kiwi-com-flight-search` | - |
+| `simple` | **Chat Buddy:** Vanilla conversational agent. | - | - |
+
+### 📦 Local Tools (Zero External Dependencies)
+
+| Tool | Capability | Example |
+|------|------------|---------|
+| `find_files` | Fast search via `fd` | `*.py` finds Python files |
+| `discover_structure` | Directory tree mapping | Understands project layout |
+| `get_file_outline` | AST signature parsing | Extracts classes/functions |
+| `read_file_fragment` | Precise file reading | `file.py:10:50` |
+| `code_search` | Fast search via `ripgrep` | Global regex search |
+| `edit_file` | Safe file editing | Inserts/Replaces lines |
+
+### 🌐 MCP Servers (Context Superpowers)
+
+| Server | Purpose | API Key Needed? |
+|--------|---------|-----------------|
+| `kiwi-com-flight-search` | Search real-time flights | 🟢 No |
+| `webfetch` | Extract clean text from URLs | 🟢 No |
+
+---
+
+## 🚀 Quick Start (Zero to Agent in 60s)
+
+### 1. Add your Brain (API Key)
+You need an **LLM API key** (OpenAI or Anthropic) to breathe life into your agents. The framework uses Langchain under the hood, so standard environment functions perfectly!
 
 ```bash
+# Copy the template
+cp .env.example .env
+
+# Edit .env and paste your API key
+# OPENAI_API_KEY=sk-your-key-here
+# ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
+> ⚠️ **Note:** At minimum, set your preferred provider's API key. Without it, your agents will sleep forever! 💤
+
+### 2. Build & Run
+No `pip`, no `virtualenv`, no *"it works on my machine"* excuses.
+
+```bash
+# Clone the repository
+git clone https://github.com/jeancsil/agentic-framework.git
+cd agentic-framework
+
 # Build the Docker image
 make docker-build
 
-# Run agents (no rebuild needed for code changes)
-bin/agent.sh developer -i "Explain project structure"
-bin/agent.sh chef -i "I have eggs and cheese"
-bin/agent.sh list
+# Unleash your first agent!
+bin/agent.sh developer -i "Explain this codebase"
 
-# View logs (same location as local)
-tail -f agentic-framework/logs/agent.log
+# Or try the chef agent
+bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 ```
 
-**Why Docker?**
-- All dependencies pre-installed: `ripgrep`, `fd`, `fzf`, `tree-sitter`
-- No environment setup needed - just build and run
-- Code changes reflected immediately (mounted volumes)
-- Consistent environment across all machines
+<details>
+<summary><strong>🔑 Required Environment Variables</strong></summary>
+
+| Variable | Required? | Description |
+|----------|-----------|-------------|
+| `OPENAI_API_KEY` | 🟢 **Yes*** | OpenAI API key (*if using OpenAI) |
+| `ANTHROPIC_API_KEY`| 🟢 **Yes*** | Anthropic API key (*if using Anthropic) |
+| `OPENAI_MODEL_NAME` | ⚪ No | Model to use (default: `gpt-4o`/`gpt-4`) |
+
+</details>
 
 ---
 
-## Local Installation
+## 🛠️ Build Your Own Agent
 
-If you need to run locally, you must install these dependencies:
-
-**System packages:**
-- `ripgrep` - Ultra-fast text searching
-- `fd` - User-friendly alternative to `find`
-- `fzf` - General-purpose command-line fuzzy finder
-
-**Python packages (managed by `uv`):**
-- `tree-sitter` - Parser generator
-- `tree-sitter-languages` - Grammar packages
-
-```bash
-# Install Python dependencies
-make install
-
-# Run tests
-make test
-
-# Run agents
-uv --directory agentic-framework run agentic-run developer -i "Explain project structure"
-```
-
----
-
-## Available Tools
-
-| Tool | Purpose | Input Format |
-|-------|---------|--------------|
-| `find_files` | Fast file search via `fd` | `pattern` |
-| `discover_structure` | Directory tree exploration | `[max_depth]` (default: 3) |
-| `get_file_outline` | Extract class/function signatures | `file_path` |
-| `read_file_fragment` | Read specific line ranges | `path:start:end` (1-indexed) |
-| `code_search` | Pattern search via `ripgrep` | `regex_pattern` |
-| `edit_file` | Safe file editing with syntax validation | See below |
-| `web_search` | Web search via Tavily | `query` |
-
-### File Editing
-
-**RECOMMENDED: search_replace (no line numbers needed)**
-```json
-{"op": "search_replace", "path": "file.py", "old": "exact text", "new": "replacement text"}
-```
-
-**Line-based operations:**
-```
-replace:path:start:end:content
-insert:path:after_line:content
-delete:path:start:end
-```
-
----
-
-## Available MCP Servers
-
-| Server | Purpose | API Key Required |
-|--------|---------|------------------|
-| `kiwi-com-flight-search` | Flight search | No |
-| `webfetch` | Web content fetching | No |
-| `tavily` | Web search | Yes (`TAVILY_API_KEY`) |
-| `tinyfish` | AI assistant | Yes (`TINYFISH_API_KEY`) |
-
----
-
-## Available Agents
-
-| Agent | Purpose | MCP Access | Tools |
-|-------|---------|------------|-------|
-| `developer` | Codebase exploration & editing | webfetch | find_files, discover_structure, get_file_outline, read_file_fragment, code_search, edit_file |
-| `travel-coordinator` | Multi-agent trip planning | kiwi-com-flight-search, web-fetch | Orchestrates 3 specialist agents |
-| `chef` | Recipe suggestions | tavily | web_search |
-| `news` | AI news aggregation | web-fetch | - |
-| `travel` | Flight search | kiwi-com-flight-search | - |
-| `simple` | Basic conversation | none | - |
-
----
-
-## CLI Reference
-
-```bash
-# List all agents
-uv --directory agentic-framework run agentic-run list
-
-# Get agent info
-uv --directory agentic-framework run agentic-run info <agent>
-
-# Run an agent
-uv --directory agentic-framework run agentic-run <agent> -i "your input"
-
-# With timeout (seconds)
-uv --directory agentic-framework run agentic-run <agent> -i "input" -t 120
-
-# Verbose logging
-uv --directory agentic-framework run agentic-run <agent> -i "input" -v
-```
-
-**In Docker:**
-```bash
-bin/agent.sh <agent> -i "input"
-bin/agent.sh list
-```
-
----
-
-## Developer Agent
-
-The `developer` agent is a Principal Software Engineer assistant for codebase work.
-
-**Supported languages for `get_file_outline`:** Python, JavaScript, TypeScript, Rust, Go, Java, C/C++, PHP
-
----
-
-## Multi-Agent Systems
-
-The `travel-coordinator` demonstrates multi-agent orchestration:
-
-```bash
-bin/agent.sh travel-coordinator -i "Plan a 5-day trip from Lisbon to Berlin in May"
-```
-
-**Workflow:**
-1. `FlightSpecialistAgent` → gathers flight options
-2. `CityIntelAgent` → adds destination intelligence
-3. `TravelReviewerAgent` → final itinerary
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OPENAI_MODEL_NAME` | No | LLM model (default: gpt-4) |
-| `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `TAVILY_API_KEY` | For chef agent | Tavily search API |
-| `TINYFISH_API_KEY` | Optional | TinyFish MCP access |
-
----
-
-## Building New Agents
-
-### Minimal Agent
+### The 5-Line Superhero 🦸‍♂️
 
 ```python
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.registry import AgentRegistry
 
-@AgentRegistry.register("my-agent", mcp_servers=["tavily"])
+@AgentRegistry.register("my-agent", mcp_servers=["webfetch"])
 class MyAgent(LangGraphMCPAgent):
     @property
     def system_prompt(self) -> str:
-        return "You are my custom agent."
+        return "You are my custom agent with the power to fetch websites."
 ```
 
-### Agent with Local Tools
+Boom. Run it instantly:
+```bash
+bin/agent.sh my-agent -i "Summarize https://example.com"
+```
+
+### Advanced: Custom Local Tools 🔧
+
+Want to add your own Python logic? Easy.
 
 ```python
 from langchain_core.tools import StructuredTool
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.registry import AgentRegistry
 
-@AgentRegistry.register("my-agent", mcp_servers=None)
-class MyAgent(LangGraphMCPAgent):
+@AgentRegistry.register("data-processor")
+class DataProcessorAgent(LangGraphMCPAgent):
     @property
     def system_prompt(self) -> str:
-        return "You are a helpful assistant."
+        return "You process data files like a boss."
 
     def local_tools(self) -> list:
         return [
             StructuredTool.from_function(
-                func=my_function,
-                name="my_tool",
-                description="What this tool does",
+                func=self.process_csv,
+                name="process_csv",
+                description="Process a CSV file path",
             )
         ]
+
+    def process_csv(self, filepath: str) -> str:
+        # Magic happens here ✨
+        return f"Successfully processed {filepath}!"
 ```
 
-### Multi-Agent Coordinator
+---
 
-```python
-from agentic_framework.interfaces.base import Agent
-from agentic_framework.registry import AgentRegistry
+## 🏗️ Architecture
 
-@AgentRegistry.register("coordinator", mcp_servers=["server1", "server2"])
-class CoordinatorAgent(Agent):
-    async def run(self, input_data, config=None):
-        # Stage 1: First specialist
-        specialist1 = Specialist1Agent()
-        result1 = await specialist1.run(input_data)
+Under the hood, we seamlessly bridge the gap between user intent and execution:
 
-        # Stage 2: Second specialist
-        specialist2 = Specialist2Agent()
-        result2 = await specialist2.run(result1)
+```mermaid
+flowchart TB
+    subgraph User [👤 User Space]
+        Input[User Input]
+    end
 
-        return result2
+    subgraph CLI [💻 CLI - agentic-run]
+        Typer[Typer Interface]
+    end
 
-    def get_tools(self):
-        return []
+    subgraph Registry [📋 Registry]
+        AR[AgentRegistry]
+        AD[Auto-discovery]
+    end
+
+    subgraph Agents [🤖 Agents]
+        Chef[chef agent]
+        Dev[developer agent]
+        Travel[travel agent]
+    end
+
+    subgraph Core [🧠 Core Engine]
+        LGA[LangGraphMCPAgent]
+        LG[LangGraph Runtime]
+        CP[(Checkpointing)]
+    end
+
+    subgraph Tools [🧰 Tools & Skills]
+        LT[Local Tools]
+        MCP[MCP Tools]
+    end
+
+    subgraph External [🌍 External World]
+        LLM[LLM API]
+        MCPS[MCP Servers]
+    end
+
+    Input --> Typer
+    Typer --> AR
+    AR --> AD
+    AR -->|Routes to| Chef & Dev & Travel
+
+    Chef & Dev & Travel -->|Inherits from| LGA
+
+    LGA --> LG
+    LG <--> CP
+    LGA -->|Uses| LT
+    LGA -->|Uses| MCP
+
+    LT -->|Reasoning| LLM
+    MCP -->|Queries| MCPS
+    MCPS -->|Provides Data| LLM
+
+    LLM --> Output[Final Response]
 ```
 
-After creating your agent in `src/agentic_framework/core/`, it automatically becomes available:
+---
+
+## 💻 CLI Reference
+
+Command your agents directly from the terminal.
 
 ```bash
-uv --directory agentic-framework run agentic-run my-agent -i "hello"
+# 📋 List all registered agents
+bin/agent.sh list
+
+# 🕵️ Get detailed info about what an agent can do
+bin/agent.sh info developer
+
+# 🚀 Run an agent with input
+bin/agent.sh developer -i "Analyze the architecture of this project"
+
+# ⏱️ Run with an execution timeout (seconds)
+bin/agent.sh developer -i "Refactor this module" -t 120
+
+# 📝 Run with debug-level verbosity
+bin/agent.sh developer -i "Hello" -v
+
+# 📜 Access logs (same location as local)
+tail -f agentic-framework/logs/agent.log
 ```
 
 ---
 
-## Architecture
+<a id="local-development"></a>
+## 🧑‍💻 Local Development
 
-```
-User Input
-    │
-    ▼
-┌─────────────────┐
-│   CLI (Typer)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│ AgentRegistry   │────▶│ Agent Discovery │
-└────────┬────────┘     └─────────────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│  MCPProvider    │────▶│  MCP Servers    │
-└────────┬────────┘     └─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ LangGraph Agent │
-│  (base class)   │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
-┌───────┐ ┌───────┐
-│ Local │ │  MCP  │
-│ Tools │ │ Tools │
-└───────┘ └───────┘
-```
+Prefer running without Docker? We got you.
 
-**Key files:**
-- `src/agentic_framework/core/langgraph_agent.py` - Reusable agent base
-- `src/agentic_framework/registry.py` - Agent registration
-- `src/agentic_framework/mcp/provider.py` - MCP connection management
-- `src/agentic_framework/tools/` - Tool implementations
+<details>
+<summary><strong>System Requirements & Setup</strong></summary>
 
----
-
-## Development
-
-For contributing to the framework itself, see [AGENTS.md](AGENTS.md).
+**Requirements:**
+- Python 3.12+
+- `ripgrep`, `fd`, `fzf`
 
 ```bash
-make install    # Install dependencies
-make test       # Run tests (coverage threshold: 60%)
-make format     # Auto-format code
-make check      # Run all checks (lint + format check)
-```
+# Install dependencies (blazingly fast with uv ⚡)
+make install
 
-**Before committing:** Run `make check && make test`
+# Run the test suite
+make test
+
+# Run agents directly in your environment
+uv --directory agentic-framework run agentic-run developer -i "Hello"
+```
+</details>
+
+<details>
+<summary><strong>Useful `make` Commands</strong></summary>
+
+```bash
+make install    # Install dependencies with uv
+make test       # Run pytest with coverage
+make format     # Auto-format codebase with ruff
+make check      # Strict linting (mypy + ruff)
+```
+</details>
 
 ---
 
-## License
+## 🤝 Contributing
 
-MIT License - see [LICENSE](LICENSE) for details.
+We love contributions! Check out our [AGENTS.md](AGENTS.md) for development guidelines.
+
+**The Golden Rules:**
+1. `make check` should pass without complaints.
+2. `make test` should stay green.
+3. Don't drop test coverage (we like our 80% mark!).
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  <strong>Stand on the shoulders of giants:</strong><br><br>
+  <a href="https://python.langchain.com/"><img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain"></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Protocol-4B32C3?style=for-the-badge" alt="MCP"></a>
+  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-FF0000?style=for-the-badge" alt="LangGraph"></a>
+</p>
+
+<p align="center">
+  If you find this useful, please consider giving it a ⭐!<br><br>
+  <a href="https://github.com/jeancsil/agentic-framework/stargazers">
+    <img src="https://img.shields.io/github/stars/jeancsil/agentic-framework?style=social&size=large" alt="Star the repo">
+  </a>
+</p>
