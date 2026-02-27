@@ -76,10 +76,24 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 |------|------------|---------|
 | `find_files` | Fast search via `fd` | `*.py` finds Python files |
 | `discover_structure` | Directory tree mapping | Understands project layout |
-| `get_file_outline` | AST signature parsing | Extracts classes/functions |
+| `get_file_outline` | AST signature parsing (Python, TS, Go, Rust, Java, C++, PHP) | Extracts classes/functions |
 | `read_file_fragment` | Precise file reading | `file.py:10:50` |
 | `code_search` | Fast search via `ripgrep` | Global regex search |
 | `edit_file` | Safe file editing | Inserts/Replaces lines |
+| `web_search` | Web search | `query` |
+
+<details>
+<summary><strong>📝 Advanced: <code>edit_file</code> Formats</strong></summary>
+
+**RECOMMENDED: `search_replace` (no line numbers needed)**
+```json
+{"op": "search_replace", "path": "file.py", "old": "exact text", "new": "replacement text"}
+```
+
+**Line-based operations:**
+`replace:path:start:end:content` | `insert:path:after_line:content` | `delete:path:start:end`
+
+</details>
 
 ### 🌐 MCP Servers (Context Superpowers)
 
@@ -87,6 +101,8 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 |--------|---------|-----------------|
 | `kiwi-com-flight-search` | Search real-time flights | 🟢 No |
 | `webfetch` | Extract clean text from URLs | 🟢 No |
+| `tavily` | Fast Web search | 🔴 Yes (`TAVILY_API_KEY`) |
+| `tinyfish` | AI assistant | 🔴 Yes (`TINYFISH_API_KEY`) |
 
 ---
 
@@ -130,6 +146,8 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 |----------|-----------|-------------|
 | `OPENAI_API_KEY` | 🟢 **Yes*** | OpenAI API key (*if using OpenAI) |
 | `ANTHROPIC_API_KEY`| 🟢 **Yes*** | Anthropic API key (*if using Anthropic) |
+| `TAVILY_API_KEY` | 🟡 **For chef** | Tavily search API key |
+| `TINYFISH_API_KEY` | ⚪ No | TinyFish MCP access |
 | `OPENAI_MODEL_NAME` | ⚪ No | Model to use (default: `gpt-4o`/`gpt-4`) |
 
 </details>
