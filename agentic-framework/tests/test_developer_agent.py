@@ -10,7 +10,7 @@ class DummyGraph:
 
 
 def test_developer_agent_system_prompt(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     agent = DeveloperAgent(initial_mcp_tools=[])
@@ -25,7 +25,7 @@ def test_developer_agent_system_prompt(monkeypatch):
 
 
 def test_developer_agent_local_tools_count(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     agent = DeveloperAgent(initial_mcp_tools=[])
@@ -46,7 +46,7 @@ def test_developer_agent_local_tools_count(monkeypatch):
 
 
 def test_developer_agent_tool_descriptions(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     agent = DeveloperAgent(initial_mcp_tools=[])
@@ -64,7 +64,7 @@ def test_developer_agent_tool_descriptions(monkeypatch):
 
 
 def test_developer_agent_run(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     agent = DeveloperAgent(initial_mcp_tools=[])
@@ -74,7 +74,7 @@ def test_developer_agent_run(monkeypatch):
 
 
 def test_developer_agent_with_mcp_tools(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     # Simulate MCP tools

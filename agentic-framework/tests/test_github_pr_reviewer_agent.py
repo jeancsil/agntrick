@@ -26,7 +26,7 @@ class DummyGraph:
 
 
 def test_github_pr_reviewer_system_prompt(monkeypatch: object) -> None:
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())  # type: ignore[attr-defined]
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())  # type: ignore[attr-defined]
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())  # type: ignore[attr-defined]
 
     agent = GitHubPRReviewerAgent(initial_mcp_tools=[])
@@ -41,7 +41,7 @@ def test_github_pr_reviewer_system_prompt(monkeypatch: object) -> None:
 
 
 def test_github_pr_reviewer_tools_count(monkeypatch: object) -> None:
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())  # type: ignore[attr-defined]
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())  # type: ignore[attr-defined]
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())  # type: ignore[attr-defined]
 
     agent = GitHubPRReviewerAgent(initial_mcp_tools=[])
@@ -62,7 +62,7 @@ def test_github_pr_reviewer_tools_count(monkeypatch: object) -> None:
 
 
 def test_github_pr_reviewer_tool_descriptions(monkeypatch: object) -> None:
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())  # type: ignore[attr-defined]
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())  # type: ignore[attr-defined]
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())  # type: ignore[attr-defined]
 
     agent = GitHubPRReviewerAgent(initial_mcp_tools=[])
@@ -77,7 +77,7 @@ def test_github_pr_reviewer_tool_descriptions(monkeypatch: object) -> None:
 
 
 def test_github_pr_reviewer_run(monkeypatch: object) -> None:
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())  # type: ignore[attr-defined]
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())  # type: ignore[attr-defined]
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())  # type: ignore[attr-defined]
 
     agent = GitHubPRReviewerAgent(initial_mcp_tools=[])

@@ -105,20 +105,63 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 ---
 
+### 🧠 Supported LLM Providers
+
+The framework supports **10+ LLM providers** out of the box, covering 90%+ of the LLM market:
+
+| Provider | Type | Use Case |
+|----------|-------|----------|
+| **Anthropic** | Cloud | State-of-the-art reasoning (Claude) |
+| **OpenAI** | Cloud | GPT-4, GPT-4.1, o1 series |
+| **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
+| **Google GenAI** | Cloud | Gemini models via API |
+| **Google Vertex AI** | Cloud | Gemini models via GCP |
+| **Groq** | Cloud | Ultra-fast inference |
+| **Mistral AI** | Cloud | European privacy-focused models |
+| **Cohere** | Cloud | Enterprise RAG and Command models |
+| **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
+| **Ollama** | Local | Run LLMs locally (zero API cost) |
+| **Hugging Face** | Cloud | Open models from Hugging Face Hub |
+
+**Provider Priority:** Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (fallback)
+
+---
+
 ## 🚀 Quick Start (Zero to Agent in 60s)
 
 ### 1. Add your Brain (API Key)
-You need an **LLM API key** (OpenAI or Anthropic) to breathe life into your agents. The framework uses Langchain under the hood, so standard environment functions perfectly!
+You need an **LLM API key** to breathe life into your agents. The framework supports 10+ LLM providers via LangChain!
 
 ```bash
 # Copy the template
 cp .env.example .env
 
 # Edit .env and paste your API key
+# Choose one of the following providers:
 # OPENAI_API_KEY=sk-your-key-here
 # ANTHROPIC_API_KEY=sk-ant-your-key-here
+# GOOGLE_API_KEY=your-google-key
+# GROQ_API_KEY=gsk-your-key-here
+# MISTRAL_API_KEY=your-mistral-key-here
+# COHERE_API_KEY=your-cohere-key-here
+
+# For Ollama (local), no API key needed:
+# OLLAMA_BASE_URL=http://localhost:11434
+
+# For Azure OpenAI:
+# AZURE_OPENAI_API_KEY=your-azure-key
+# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+
+# For Google Vertex AI:
+# GOOGLE_VERTEX_PROJECT_ID=your-project-id
+
+# For AWS Bedrock:
+# AWS_PROFILE=your-profile
+
+# For Hugging Face:
+# HUGGINGFACEHUB_API_TOKEN=your-hf-token
 ```
-> ⚠️ **Note:** At minimum, set your preferred provider's API key. Without it, your agents will sleep forever! 💤
+> ⚠️ **Note:** Set your preferred provider's API key. Priority: Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (default fallback).
 
 ### 2. Build & Run
 No `pip`, no `virtualenv`, no *"it works on my machine"* excuses.
@@ -141,11 +184,24 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 <details>
 <summary><strong>🔑 Required Environment Variables</strong></summary>
 
-| Variable | Required? | Description |
-|----------|-----------|-------------|
-| `OPENAI_API_KEY` | 🟢 **Yes*** | OpenAI API key (*if using OpenAI) |
-| `ANTHROPIC_API_KEY`| 🟢 **Yes*** | Anthropic API key (*if using Anthropic) |
-| `OPENAI_MODEL_NAME` | ⚪ No | Model to use (default: `gpt-4o`/`gpt-4`) |
+| Provider | Variable | Required? | Default Model |
+|----------|-----------|-------------|---------------|
+| **Anthropic** | `ANTHROPIC_API_KEY` | 🟢 **Yes*** | `claude-haiku-4-5-20251001` |
+| **OpenAI** | `OPENAI_API_KEY` | 🟢 **Yes*** | `gpt-4o-mini` |
+| **Azure OpenAI** | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | ⚪ No | `gpt-4o-mini` |
+| **Google GenAI** | `GOOGLE_API_KEY` | ⚪ No | `gemini-2.0-flash-exp` |
+| **Google Vertex AI** | `GOOGLE_VERTEX_PROJECT_ID` | ⚪ No | `gemini-2.0-flash-exp` |
+| **Groq** | `GROQ_API_KEY` | ⚪ No | `llama-3.3-70b-versatile` |
+| **Mistral AI** | `MISTRAL_API_KEY` | ⚪ No | `mistral-large-latest` |
+| **Cohere** | `COHERE_API_KEY` | ⚪ No | `command-r-plus` |
+| **AWS Bedrock** | `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` | ⚪ No | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| **Ollama** | `OLLAMA_BASE_URL` | ⚪ No | `llama3.2` |
+| **Hugging Face** | `HUGGINGFACEHUB_API_TOKEN` | ⚪ No | `meta-llama/Llama-3.2-3B-Instruct` |
+
+**Model Override Variables** (optional):
+- `ANTHROPIC_MODEL_NAME`, `OPENAI_MODEL_NAME`, `AZURE_OPENAI_MODEL_NAME`, `GOOGLE_GENAI_MODEL_NAME`, `GROQ_MODEL_NAME`, etc.
+
+> ⚠️ **Note:** Only one provider's API key is required. The framework auto-detects which provider to use based on available credentials.
 
 </details>
 

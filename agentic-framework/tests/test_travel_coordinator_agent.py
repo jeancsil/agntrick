@@ -22,7 +22,7 @@ class DummyGraph:
 def test_travel_coordinator_orchestrates_three_specialists(monkeypatch):
     calls: list[tuple[str, dict, dict]] = []
 
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
 
     def fake_create_agent(**kwargs):
         system_prompt = kwargs["system_prompt"]
@@ -52,7 +52,7 @@ def test_travel_coordinator_orchestrates_three_specialists(monkeypatch):
 
 
 def test_travel_coordinator_get_tools_aggregates_from_specialists(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr(
         "agentic_framework.core.langgraph_agent.create_agent",
         lambda **kwargs: DummyGraph("review", []),

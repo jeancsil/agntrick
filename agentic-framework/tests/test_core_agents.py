@@ -12,7 +12,7 @@ class DummyGraph:
 
 
 def test_chef_agent_prompt_and_mcp(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     agent = ChefAgent(initial_mcp_tools=[])
@@ -24,7 +24,7 @@ def test_chef_agent_prompt_and_mcp(monkeypatch):
 
 
 def test_travel_and_news_prompts(monkeypatch):
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", lambda model, temp: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
     travel = TravelAgent(initial_mcp_tools=[])
