@@ -15,7 +15,7 @@ def test_registry_discovers_core_agents():
 
 
 def test_registry_register_get_and_mcp_servers():
-    @AgentRegistry.register("test-agent", mcp_servers=["tavily", "web-fetch"])
+    @AgentRegistry.register("test-agent", mcp_servers=["web-fetch"])
     class TestAgent(Agent):
         async def run(self, input_data, config=None):
             return "ok"
@@ -25,7 +25,7 @@ def test_registry_register_get_and_mcp_servers():
 
     try:
         assert AgentRegistry.get("test-agent") is TestAgent
-        assert AgentRegistry.get_mcp_servers("test-agent") == ["tavily", "web-fetch"]
+        assert AgentRegistry.get_mcp_servers("test-agent") == ["web-fetch"]
         assert "test-agent" in AgentRegistry.list_agents()
     finally:
         AgentRegistry._registry.pop("test-agent", None)

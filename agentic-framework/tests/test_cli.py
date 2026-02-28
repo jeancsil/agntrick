@@ -41,7 +41,7 @@ def test_execute_agent_without_mcp(monkeypatch):
 
 def test_execute_agent_with_mcp(monkeypatch):
     monkeypatch.setattr(cli.AgentRegistry, "get", lambda name: FakeAgent)
-    monkeypatch.setattr(cli.AgentRegistry, "get_mcp_servers", lambda name: ["tavily"])
+    monkeypatch.setattr(cli.AgentRegistry, "get_mcp_servers", lambda name: ["web-fetch"])
     monkeypatch.setattr(cli, "MCPProvider", FakeProvider)
 
     result = cli.execute_agent(agent_name="chef", input_text="hello", timeout_sec=5)

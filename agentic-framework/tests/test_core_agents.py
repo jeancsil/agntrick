@@ -11,12 +11,7 @@ class DummyGraph:
         return {"messages": [SimpleNamespace(content="done")]}
 
 
-def test_chef_agent_local_tools_and_prompt(monkeypatch):
-    class FakeWebSearchTool:
-        def invoke(self, query):
-            return {"query": query}
-
-    monkeypatch.setattr("agentic_framework.core.chef_agent.WebSearchTool", FakeWebSearchTool)
+def test_chef_agent_prompt_and_mcp(monkeypatch):
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: DummyGraph())
 
@@ -24,7 +19,7 @@ def test_chef_agent_local_tools_and_prompt(monkeypatch):
     result = asyncio.run(agent.run("ingredients"))
 
     assert "personal chef" in agent.system_prompt
-    assert len(agent.get_tools()) == 1
+    assert len(agent.get_tools()) == 0  # No local tools, uses MCP instead
     assert result == "done"
 
 

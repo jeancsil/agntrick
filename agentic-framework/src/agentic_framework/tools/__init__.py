@@ -8,12 +8,10 @@ from .codebase_explorer import (
 )
 from .example import CalculatorTool, WeatherTool
 from .syntax_validator import SyntaxValidator, ValidationResult, get_validator
-from .web_search import WebSearchTool
 
 __all__ = [
     "CalculatorTool",
     "WeatherTool",
-    "WebSearchTool",
     "CodeSearcher",
     "StructureExplorerTool",
     "FileOutlinerTool",

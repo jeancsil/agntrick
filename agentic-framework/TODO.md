@@ -126,13 +126,6 @@ brew install fd ripgrep fzf
 apt install fd-find ripgrep fzf
 ```
 
-### API Keys Required
-
-- `TAVILY_API_KEY` - For Tavily MCP server
-- `TINYFISH_API_KEY` - For TinyFish MCP server (optional)
-
-Note: Missing keys produce warnings but don't prevent agent startup.
-
 ## Deprecated / Legacy
 
 None currently.

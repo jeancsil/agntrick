@@ -65,7 +65,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 |-------|---------|-------------|-------------|
 | `developer` | **Code Master:** Read, search & edit code. | `webfetch` | *All codebase tools below* |
 | `travel-coordinator` | **Trip Planner:** Orchestrates agents. | `kiwi-com-flight-search`<br>`webfetch` | *Uses 3 sub-agents* |
-| `chef` | **Chef:** Recipes from your fridge. | *Tavily Web Search* | `web_search` |
+| `chef` | **Chef:** Recipes from your fridge. | `webfetch` | - |
 | `news` | **News Anchor:** Aggregates top stories. | `webfetch` | - |
 | `travel` | **Flight Booker:** Finds the best routes. | `kiwi-com-flight-search` | - |
 | `simple` | **Chat Buddy:** Vanilla conversational agent. | - | - |
@@ -80,7 +80,6 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 | `read_file_fragment` | Precise file reading | `file.py:10:50` |
 | `code_search` | Fast search via `ripgrep` | Global regex search |
 | `edit_file` | Safe file editing | Inserts/Replaces lines |
-| `web_search` | Web search | `query` |
 
 <details>
 <summary><strong>📝 Advanced: <code>edit_file</code> Formats</strong></summary>
@@ -100,9 +99,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 | Server | Purpose | API Key Needed? |
 |--------|---------|-----------------|
 | `kiwi-com-flight-search` | Search real-time flights | 🟢 No |
-| `webfetch` | Extract clean text from URLs | 🟢 No |
-| `tavily` | Fast Web search | 🔴 Yes (`TAVILY_API_KEY`) |
-| `tinyfish` | AI assistant | 🔴 Yes (`TINYFISH_API_KEY`) |
+| `webfetch` | Extract clean text from URLs & web search | 🟢 No |
 
 ---
 
@@ -146,8 +143,6 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 |----------|-----------|-------------|
 | `OPENAI_API_KEY` | 🟢 **Yes*** | OpenAI API key (*if using OpenAI) |
 | `ANTHROPIC_API_KEY`| 🟢 **Yes*** | Anthropic API key (*if using Anthropic) |
-| `TAVILY_API_KEY` | 🟡 **For chef** | Tavily search API key |
-| `TINYFISH_API_KEY` | ⚪ No | TinyFish MCP access |
 | `OPENAI_MODEL_NAME` | ⚪ No | Model to use (default: `gpt-4o`/`gpt-4`) |
 
 </details>
