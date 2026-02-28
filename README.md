@@ -69,6 +69,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 | `news` | **News Anchor:** Aggregates top stories. | `webfetch` | - |
 | `travel` | **Flight Booker:** Finds the best routes. | `kiwi-com-flight-search` | - |
 | `simple` | **Chat Buddy:** Vanilla conversational agent. | - | - |
+| `github-pr-reviewer` | **PR Reviewer:** Reviews diffs, posts inline comments & summaries. | - | `get_pr_diff`, `get_pr_comments`, `post_review_comment`, `post_general_comment`, `reply_to_review_comment`, `get_pr_metadata` |
 
 ### 📦 Local Tools (Zero External Dependencies)
 

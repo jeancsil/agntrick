@@ -19,8 +19,8 @@ def detect_provider() -> Provider:
         "anthropic" if ANTHROPIC_API_KEY is set, "openai" otherwise.
 
     Note:
-        This defaults to OpenAI since it's the most commonly available,
-        but Anthropic is preferred if both keys are available.
+        OpenAI is the default fallback when ANTHROPIC_API_KEY is absent.
+        When both keys are available, Anthropic takes precedence.
     """
     if os.getenv("ANTHROPIC_API_KEY"):
         return "anthropic"
@@ -34,7 +34,7 @@ def get_default_model() -> str:
         Default model name for the detected provider.
 
     Examples:
-        - Anthropic: "claude-3-5-sonnet-20241022"
+        - Anthropic: "claude-haiku-4-5-20251001"
         - OpenAI: "gpt-4o-mini"
     """
     provider = detect_provider()
