@@ -9,16 +9,19 @@ from agentic_framework.core.simple_agent import SimpleAgent
 
 
 def test_simple_agent_initialization():
-    with patch("agentic_framework.core.simple_agent.ChatOpenAI") as MockChatOpenAI:
-        # Configure the mock
-        MockChatOpenAI.return_value
+    with patch("agentic_framework.core.simple_agent._create_model") as MockCreateModel:
+        # Configure the mock - return a callable that behaves like a Runnable
+        def fake_model(*args, **kwargs):
+            return SimpleNamespace()
+
+        MockCreateModel.return_value = fake_model
 
         agent = SimpleAgent(model_name="gpt-4o-mini")
         assert agent is not None
         assert agent.get_tools() == []
 
-        # Verify ChatOpenAI was initialized with correct params
-        MockChatOpenAI.assert_called_once_with(model="gpt-4o-mini", temperature=0.0)
+        # Verify _create_model was called with correct params
+        MockCreateModel.assert_called_once_with("gpt-4o-mini", 0.0)
 
 
 def test_simple_agent_run_with_string(monkeypatch):
@@ -31,7 +34,15 @@ def test_simple_agent_run_with_string(monkeypatch):
         def __or__(self, model):
             return FakeChain()
 
-    monkeypatch.setattr("agentic_framework.core.simple_agent.ChatOpenAI", lambda **kwargs: object())
+    def fake_model(*args, **kwargs):
+        return FakeModel()
+
+    class FakeModel:
+        def __or__(self, other):
+            # Return a chain when model is combined with prompt
+            return FakeChain()
+
+    monkeypatch.setattr("agentic_framework.core.simple_agent._create_model", fake_model)
     monkeypatch.setattr(
         "agentic_framework.core.simple_agent.ChatPromptTemplate",
         SimpleNamespace(from_messages=lambda messages: FakePrompt()),
@@ -52,7 +63,14 @@ def test_simple_agent_run_with_message_list_raises(monkeypatch):
 
             return FakeChain()
 
-    monkeypatch.setattr("agentic_framework.core.simple_agent.ChatOpenAI", lambda **kwargs: object())
+    class FakeModel:
+        def __or__(self, other):
+            return FakePrompt()
+
+    def fake_model(*args, **kwargs):
+        return FakeModel()
+
+    monkeypatch.setattr("agentic_framework.core.simple_agent._create_model", fake_model)
     monkeypatch.setattr(
         "agentic_framework.core.simple_agent.ChatPromptTemplate",
         SimpleNamespace(from_messages=lambda messages: FakePrompt()),

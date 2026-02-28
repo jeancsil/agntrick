@@ -2,13 +2,30 @@ from abc import abstractmethod
 from typing import Any, Dict, List, Sequence, Union
 
 from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
-from agentic_framework.constants import DEFAULT_MODEL
+from agentic_framework.constants import detect_provider, get_default_model
 from agentic_framework.interfaces.base import Agent
 from agentic_framework.mcp import MCPProvider
+
+
+def _create_model(model_name: str, temperature: float):  # type: ignore[no-any-return]
+    """Create the appropriate LLM model instance based on detected provider.
+
+    Args:
+        model_name: Name of the model to use.
+        temperature: Temperature setting for the model.
+
+    Returns:
+        Either ChatAnthropic or ChatOpenAI instance.
+    """
+    provider = detect_provider()
+    if provider == "anthropic":
+        return ChatAnthropic(model=model_name, temperature=temperature)  # type: ignore[call-arg]
+    return ChatOpenAI(model=model_name, temperature=temperature)
 
 
 class LangGraphMCPAgent(Agent):
@@ -16,14 +33,16 @@ class LangGraphMCPAgent(Agent):
 
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str | None = None,
         temperature: float = 0.1,
         mcp_provider: MCPProvider | None = None,
         initial_mcp_tools: List[Any] | None = None,
         thread_id: str = "1",
         **kwargs: Any,
     ):
-        self.model = ChatOpenAI(model=model_name, temperature=temperature)
+        if model_name is None:
+            model_name = get_default_model()
+        self.model = _create_model(model_name, temperature)
         self._mcp_provider = mcp_provider
         self._initial_mcp_tools = initial_mcp_tools
         self._thread_id = thread_id

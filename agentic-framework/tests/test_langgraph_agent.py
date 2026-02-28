@@ -34,11 +34,25 @@ class DummyGraph:
         return {"messages": [SimpleNamespace(content="ok")]}
 
 
+class DummyModel:
+    """A fake model that can be combined with other runnables."""
+
+    def __init__(self):
+        pass
+
+    def __or__(self, other):
+        # Return a DummyGraph when combined with create_agent
+        return DummyGraph()
+
+
 def test_langgraph_agent_initializes_with_local_and_initial_mcp_tools(monkeypatch):
     graph = DummyGraph()
     captured = {}
 
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    def fake_model(*args, **kwargs):
+        return DummyModel()
+
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", fake_model)
 
     def fake_create_agent(**kwargs):
         captured.update(kwargs)
@@ -61,7 +75,10 @@ def test_langgraph_agent_uses_provider_tools_once(monkeypatch):
     provider = DummyProvider(["mcp-a", "mcp-b"])
     captured = {}
 
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    def fake_model(*args, **kwargs):
+        return DummyModel()
+
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", fake_model)
 
     def fake_create_agent(**kwargs):
         captured.update(kwargs)
@@ -81,7 +98,10 @@ def test_langgraph_agent_uses_provider_tools_once(monkeypatch):
 def test_langgraph_agent_run_accepts_message_list_and_custom_config(monkeypatch):
     graph = DummyGraph()
 
-    monkeypatch.setattr("agentic_framework.core.langgraph_agent.ChatOpenAI", lambda **kwargs: object())
+    def fake_model(*args, **kwargs):
+        return DummyModel()
+
+    monkeypatch.setattr("agentic_framework.core.langgraph_agent._create_model", fake_model)
     monkeypatch.setattr("agentic_framework.core.langgraph_agent.create_agent", lambda **kwargs: graph)
 
     agent = DummyAgent(initial_mcp_tools=[])

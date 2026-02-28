@@ -1,12 +1,29 @@
 from typing import Any, Dict, List, Union
 
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from agentic_framework.constants import DEFAULT_MODEL
+from agentic_framework.constants import detect_provider, get_default_model
 from agentic_framework.interfaces.base import Agent
 from agentic_framework.registry import AgentRegistry
+
+
+def _create_model(model_name: str, temperature: float):  # type: ignore[no-any-return]
+    """Create the appropriate LLM model instance based on detected provider.
+
+    Args:
+        model_name: Name of the model to use.
+        temperature: Temperature setting for the model.
+
+    Returns:
+        Either ChatAnthropic or ChatOpenAI instance.
+    """
+    provider = detect_provider()
+    if provider == "anthropic":
+        return ChatAnthropic(model=model_name, temperature=temperature)  # type: ignore[call-arg]
+    return ChatOpenAI(model=model_name, temperature=temperature)
 
 
 @AgentRegistry.register("simple", mcp_servers=None)
@@ -16,8 +33,10 @@ class SimpleAgent(Agent):
     No MCP access (mcp_servers=None in registry).
     """
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, temperature: float = 0.0, **kwargs: Any) -> None:
-        self.model = ChatOpenAI(model=model_name, temperature=temperature)
+    def __init__(self, model_name: str | None = None, temperature: float = 0.0, **kwargs: Any) -> None:
+        if model_name is None:
+            model_name = get_default_model()
+        self.model = _create_model(model_name, temperature)
         self.prompt = ChatPromptTemplate.from_messages(
             [("system", "You are a helpful assistant."), ("user", "{input}")]
         )
