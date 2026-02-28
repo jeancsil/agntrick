@@ -62,26 +62,114 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 ### 🤖 Agents
 
-| Agent | Purpose | MCP Servers | Local Tools |
-|-------|---------|-------------|-------------|
-| `developer` | **Code Master:** Read, search & edit code. | `webfetch` | *All codebase tools below* |
-| `travel-coordinator` | **Trip Planner:** Orchestrates agents. | `kiwi-com-flight-search`<br>`webfetch` | *Uses 3 sub-agents* |
-| `chef` | **Chef:** Recipes from your fridge. | `webfetch` | - |
-| `news` | **News Anchor:** Aggregates top stories. | `webfetch` | - |
-| `travel` | **Flight Booker:** Finds the best routes. | `kiwi-com-flight-search` | - |
-| `simple` | **Chat Buddy:** Vanilla conversational agent. | - | - |
-| `github-pr-reviewer` | **PR Reviewer:** Reviews diffs, posts inline comments & summaries. | - | `get_pr_diff`, `get_pr_comments`, `post_review_comment`, `post_general_comment`, `reply_to_review_comment`, `get_pr_metadata` |
+<table>
+  <thead>
+    <tr>
+      <th width="25%">Agent</th>
+      <th width="40%">Purpose</th>
+      <th width="15%">MCP Servers</th>
+      <th width="20%">Local Tools</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>developer</code></td>
+      <td><b>Code Master:</b> Read, search &amp; edit code.</td>
+      <td><code>webfetch</code></td>
+      <td><i>All codebase tools below</i></td>
+    </tr>
+    <tr>
+      <td><code>travel-coordinator</code></td>
+      <td><b>Trip Planner:</b> Orchestrates agents.</td>
+      <td><code>kiwi-com-flight-search</code><br><code>webfetch</code></td>
+      <td><i>Uses 3 sub-agents</i></td>
+    </tr>
+    <tr>
+      <td><code>chef</code></td>
+      <td><b>Chef:</b> Recipes from your fridge.</td>
+      <td><code>webfetch</code></td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>news</code></td>
+      <td><b>News Anchor:</b> Aggregates top stories.</td>
+      <td><code>webfetch</code></td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>travel</code></td>
+      <td><b>Flight Booker:</b> Finds the best routes.</td>
+      <td><code>kiwi-com-flight-search</code></td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>simple</code></td>
+      <td><b>Chat Buddy:</b> Vanilla conversational agent.</td>
+      <td>-</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td><code>github-pr-reviewer</code></td>
+      <td><b>PR Reviewer:</b> Reviews diffs, posts inline comments &amp; summaries.</td>
+      <td>-</td>
+      <td>
+        <details>
+          <summary>View tools</summary>
+          <code>get_pr_diff</code><br>
+          <code>get_pr_comments</code><br>
+          <code>post_review_comment</code><br>
+          <code>post_general_comment</code><br>
+          <code>reply_to_review_comment</code><br>
+          <code>get_pr_metadata</code>
+        </details>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ### 📦 Local Tools (Zero External Dependencies)
 
-| Tool | Capability | Example |
-|------|------------|---------|
-| `find_files` | Fast search via `fd` | `*.py` finds Python files |
-| `discover_structure` | Directory tree mapping | Understands project layout |
-| `get_file_outline` | AST signature parsing (Python, TS, Go, Rust, Java, C++, PHP) | Extracts classes/functions |
-| `read_file_fragment` | Precise file reading | `file.py:10:50` |
-| `code_search` | Fast search via `ripgrep` | Global regex search |
-| `edit_file` | Safe file editing | Inserts/Replaces lines |
+<table>
+  <thead>
+    <tr>
+      <th width="15%">Tool</th>
+      <th width="55%">Capability</th>
+      <th width="30%">Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>find_files</code></td>
+      <td>Fast search via <code>fd</code></td>
+      <td><code>*.py</code> finds Python files</td>
+    </tr>
+    <tr>
+      <td><code>discover_structure</code></td>
+      <td>Directory tree mapping</td>
+      <td>Understands project layout</td>
+    </tr>
+    <tr>
+      <td><code>get_file_outline</code></td>
+      <td>AST signature parsing (Python, TS, Go, Rust, Java, C++, PHP)</td>
+      <td>Extracts classes/functions</td>
+    </tr>
+    <tr>
+      <td><code>read_file_fragment</code></td>
+      <td>Precise file reading</td>
+      <td><code>file.py:10:50</code></td>
+    </tr>
+    <tr>
+      <td><code>code_search</code></td>
+      <td>Fast search via <code>ripgrep</code></td>
+      <td>Global regex search</td>
+    </tr>
+    <tr>
+      <td><code>edit_file</code></td>
+      <td>Safe file editing</td>
+      <td>Inserts/Replaces lines</td>
+    </tr>
+  </tbody>
+</table>
 
 <details>
 <summary><strong>📝 Advanced: <code>edit_file</code> Formats</strong></summary>
@@ -98,10 +186,27 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 ### 🌐 MCP Servers (Context Superpowers)
 
-| Server | Purpose | API Key Needed? |
-|--------|---------|-----------------|
-| `kiwi-com-flight-search` | Search real-time flights | 🟢 No |
-| `webfetch` | Extract clean text from URLs & web search | 🟢 No |
+<table>
+  <thead>
+    <tr>
+      <th width="35%">Server</th>
+      <th width="45%">Purpose</th>
+      <th width="20%">API Key Needed?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>kiwi-com-flight-search</code></td>
+      <td>Search real-time flights</td>
+      <td>🟢 No</td>
+    </tr>
+    <tr>
+      <td><code>webfetch</code></td>
+      <td>Extract clean text from URLs &amp; web search</td>
+      <td>🟢 No</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
@@ -109,19 +214,72 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 The framework supports **10+ LLM providers** out of the box, covering 90%+ of the LLM market:
 
-| Provider | Type | Use Case |
-|----------|-------|----------|
-| **Anthropic** | Cloud | State-of-the-art reasoning (Claude) |
-| **OpenAI** | Cloud | GPT-4, GPT-4.1, o1 series |
-| **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
-| **Google GenAI** | Cloud | Gemini models via API |
-| **Google Vertex AI** | Cloud | Gemini models via GCP |
-| **Groq** | Cloud | Ultra-fast inference |
-| **Mistral AI** | Cloud | European privacy-focused models |
-| **Cohere** | Cloud | Enterprise RAG and Command models |
-| **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
-| **Ollama** | Local | Run LLMs locally (zero API cost) |
-| **Hugging Face** | Cloud | Open models from Hugging Face Hub |
+<table>
+  <thead>
+    <tr>
+      <th width="25%">Provider</th>
+      <th width="20%">Type</th>
+      <th width="55%">Use Case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Anthropic</b></td>
+      <td>Cloud</td>
+      <td>State-of-the-art reasoning (Claude)</td>
+    </tr>
+    <tr>
+      <td><b>OpenAI</b></td>
+      <td>Cloud</td>
+      <td>GPT-4, GPT-4.1, o1 series</td>
+    </tr>
+    <tr>
+      <td><b>Azure OpenAI</b></td>
+      <td>Cloud</td>
+      <td>Enterprise OpenAI deployments</td>
+    </tr>
+    <tr>
+      <td><b>Google GenAI</b></td>
+      <td>Cloud</td>
+      <td>Gemini models via API</td>
+    </tr>
+    <tr>
+      <td><b>Google Vertex AI</b></td>
+      <td>Cloud</td>
+      <td>Gemini models via GCP</td>
+    </tr>
+    <tr>
+      <td><b>Groq</b></td>
+      <td>Cloud</td>
+      <td>Ultra-fast inference</td>
+    </tr>
+    <tr>
+      <td><b>Mistral AI</b></td>
+      <td>Cloud</td>
+      <td>European privacy-focused models</td>
+    </tr>
+    <tr>
+      <td><b>Cohere</b></td>
+      <td>Cloud</td>
+      <td>Enterprise RAG and Command models</td>
+    </tr>
+    <tr>
+      <td><b>AWS Bedrock</b></td>
+      <td>Cloud</td>
+      <td>Anthropic, Titan, Meta via AWS</td>
+    </tr>
+    <tr>
+      <td><b>Ollama</b></td>
+      <td>Local</td>
+      <td>Run LLMs locally (zero API cost)</td>
+    </tr>
+    <tr>
+      <td><b>Hugging Face</b></td>
+      <td>Cloud</td>
+      <td>Open models from Hugging Face Hub</td>
+    </tr>
+  </tbody>
+</table>
 
 **Provider Priority:** Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (fallback)
 
@@ -184,19 +342,84 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 <details>
 <summary><strong>🔑 Required Environment Variables</strong></summary>
 
-| Provider | Variable | Required? | Default Model |
-|----------|-----------|-------------|---------------|
-| **Anthropic** | `ANTHROPIC_API_KEY` | 🟢 **Yes*** | `claude-haiku-4-5-20251001` |
-| **OpenAI** | `OPENAI_API_KEY` | 🟢 **Yes*** | `gpt-4o-mini` |
-| **Azure OpenAI** | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | ⚪ No | `gpt-4o-mini` |
-| **Google GenAI** | `GOOGLE_API_KEY` | ⚪ No | `gemini-2.0-flash-exp` |
-| **Google Vertex AI** | `GOOGLE_VERTEX_PROJECT_ID` | ⚪ No | `gemini-2.0-flash-exp` |
-| **Groq** | `GROQ_API_KEY` | ⚪ No | `llama-3.3-70b-versatile` |
-| **Mistral AI** | `MISTRAL_API_KEY` | ⚪ No | `mistral-large-latest` |
-| **Cohere** | `COHERE_API_KEY` | ⚪ No | `command-r-plus` |
-| **AWS Bedrock** | `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` | ⚪ No | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
-| **Ollama** | `OLLAMA_BASE_URL` | ⚪ No | `llama3.2` |
-| **Hugging Face** | `HUGGINGFACEHUB_API_TOKEN` | ⚪ No | `meta-llama/Llama-3.2-3B-Instruct` |
+<table>
+  <thead>
+    <tr>
+      <th width="20%">Provider</th>
+      <th width="35%">Variable</th>
+      <th width="15%">Required?</th>
+      <th width="30%">Default Model</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Anthropic</b></td>
+      <td><code>ANTHROPIC_API_KEY</code></td>
+      <td>🟢 <b>Yes*</b></td>
+      <td><code>claude-haiku-4-5-20251001</code></td>
+    </tr>
+    <tr>
+      <td><b>OpenAI</b></td>
+      <td><code>OPENAI_API_KEY</code></td>
+      <td>🟢 <b>Yes*</b></td>
+      <td><code>gpt-4o-mini</code></td>
+    </tr>
+    <tr>
+      <td><b>Azure OpenAI</b></td>
+      <td><code>AZURE_OPENAI_API_KEY</code>, <code>AZURE_OPENAI_ENDPOINT</code></td>
+      <td>⚪ No</td>
+      <td><code>gpt-4o-mini</code></td>
+    </tr>
+    <tr>
+      <td><b>Google GenAI</b></td>
+      <td><code>GOOGLE_API_KEY</code></td>
+      <td>⚪ No</td>
+      <td><code>gemini-2.0-flash-exp</code></td>
+    </tr>
+    <tr>
+      <td><b>Google Vertex AI</b></td>
+      <td><code>GOOGLE_VERTEX_PROJECT_ID</code></td>
+      <td>⚪ No</td>
+      <td><code>gemini-2.0-flash-exp</code></td>
+    </tr>
+    <tr>
+      <td><b>Groq</b></td>
+      <td><code>GROQ_API_KEY</code></td>
+      <td>⚪ No</td>
+      <td><code>llama-3.3-70b-versatile</code></td>
+    </tr>
+    <tr>
+      <td><b>Mistral AI</b></td>
+      <td><code>MISTRAL_API_KEY</code></td>
+      <td>⚪ No</td>
+      <td><code>mistral-large-latest</code></td>
+    </tr>
+    <tr>
+      <td><b>Cohere</b></td>
+      <td><code>COHERE_API_KEY</code></td>
+      <td>⚪ No</td>
+      <td><code>command-r-plus</code></td>
+    </tr>
+    <tr>
+      <td><b>AWS Bedrock</b></td>
+      <td><code>AWS_PROFILE</code> or <code>AWS_ACCESS_KEY_ID</code></td>
+      <td>⚪ No</td>
+      <td><code>anthropic.claude-3-5-sonnet-20241022-v2:0</code></td>
+    </tr>
+    <tr>
+      <td><b>Ollama</b></td>
+      <td><code>OLLAMA_BASE_URL</code></td>
+      <td>⚪ No</td>
+      <td><code>llama3.2</code></td>
+    </tr>
+    <tr>
+      <td><b>Hugging Face</b></td>
+      <td><code>HUGGINGFACEHUB_API_TOKEN</code></td>
+      <td>⚪ No</td>
+      <td><code>meta-llama/Llama-3.2-3B-Instruct</code></td>
+    </tr>
+  </tbody>
+</table>
 
 **Model Override Variables** (optional):
 - `ANTHROPIC_MODEL_NAME`, `OPENAI_MODEL_NAME`, `AZURE_OPENAI_MODEL_NAME`, `GOOGLE_GENAI_MODEL_NAME`, `GROQ_MODEL_NAME`, etc.
