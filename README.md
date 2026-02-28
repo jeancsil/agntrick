@@ -10,6 +10,7 @@
 [![License](https://img.shields.io/github/license/jeancsil/agentic-framework?style=plastic)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/jeancsil/agentic-framework/ci.yml?style=plastic&logo=github&label=Build)](https://github.com/jeancsil/agentic-framework/actions)
 [![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen?style=plastic)](https://github.com/jeancsil/agentic-framework)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=plastic&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jeancsil)
 
 <br>
 
@@ -344,15 +345,19 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 ---
 
 <p align="center">
-  <strong>Stand on the shoulders of giants:</strong><br><br>
-  <a href="https://python.langchain.com/"><img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain"></a>
-  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Protocol-4B32C3?style=for-the-badge" alt="MCP"></a>
-  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-FF0000?style=for-the-badge" alt="LangGraph"></a>
+  <strong>Stand on the shoulders of giants:</strong><br>
+  <a href="https://python.langchain.com/"><img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" height="28" alt="LangChain"></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Protocol-4B32C3?style=for-the-badge" height="28" alt="MCP"></a>
+  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-FF0000?style=for-the-badge" height="28" alt="LangGraph"></a>
 </p>
 
 <p align="center">
-  If you find this useful, please consider giving it a ⭐!<br><br>
+  If you find this useful, please consider giving it a ⭐ or buying me a coffee!<br>
   <a href="https://github.com/jeancsil/agentic-framework/stargazers">
-    <img src="https://img.shields.io/github/stars/jeancsil/agentic-framework?style=social&size=large" alt="Star the repo">
+    <img src="https://img.shields.io/github/stars/jeancsil/agentic-framework?style=social&size=large" height="28" alt="Star the repo" style="vertical-align: middle;">
+  </a>
+  &nbsp;
+  <a href="https://buymeacoffee.com/jeancsil" target="_blank">
+    <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" height="28" alt="Buy Me A Coffee" style="vertical-align: middle;">
   </a>
 </p>
