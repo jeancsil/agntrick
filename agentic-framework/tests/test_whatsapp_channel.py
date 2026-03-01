@@ -388,6 +388,80 @@ class TestWhatsAppChannelContactFiltering:
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
     @patch("asyncio.run_coroutine_threadsafe")
+    async def test_self_message_with_recipient_alt_is_processed(
+        self, mock_run_coro: MagicMock, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that self-messages are processed when phone number is in RecipientAlt.
+
+        This covers the real-world scenario where:
+        1. User sends a message to themselves in WhatsApp
+        2. Message arrives from an LID (e.g., 118657162162293@lid)
+        3. Phone number is in RecipientAlt (e.g., 34677427318@s.whatsapp.net)
+        4. Message should be allowed and response should go back to the LID
+
+        This is the critical scenario for self-messaging functionality.
+        """
+        whatsapp_channel.allowed_contact = "34677427318"  # User's phone number
+
+        scheduled_coroutines: list = []
+
+        def capture_run_coro(coro, loop):
+            scheduled_coroutines.append(coro)
+            return MagicMock()
+
+        mock_run_coro.side_effect = capture_run_coro
+
+        # Set up callback to capture the IncomingMessage
+        captured_message = None
+
+        async def capture_callback(msg):
+            nonlocal captured_message
+            captured_message = msg
+
+        whatsapp_channel._message_callback = capture_callback
+        whatsapp_channel._loop = MagicMock()
+
+        # Create a self-message event from LID with phone number in RecipientAlt
+        # This is the exact scenario from user's logs
+        mock_event = MagicMock()
+        mock_event.Message.conversation = "Hello myself!"
+        # Sender and Chat are LIDs (not phone numbers)
+        mock_event.Info.MessageSource.Sender = "118657162162293@lid"
+        mock_event.Info.MessageSource.Chat = "118657162162293@lid"
+        mock_event.Info.MessageSource.IsFromMe = True
+        mock_event.Info.Timestamp = 1234567890
+        # RecipientAlt contains the actual phone number
+        mock_event.Info.MessageSource.RecipientAlt = "34677427318@s.whatsapp.net"
+        mock_event.Info.MessageSource.SenderAlt = None  # No sender alt
+
+        def mock_jid2string(jid):
+            return str(jid)
+
+        with patch("agentic_framework.channels.whatsapp.Jid2String", side_effect=mock_jid2string):
+            whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
+
+        # Verify a coroutine was scheduled (message should be allowed via RecipientAlt)
+        assert len(scheduled_coroutines) == 1, "Self-message with phone in RecipientAlt should be processed"
+
+        # Execute the callback to get the IncomingMessage
+        await scheduled_coroutines[0]
+
+        # Verify the IncomingMessage was created correctly
+        assert captured_message is not None, "IncomingMessage should have been created"
+        # CRITICAL: Response should go back to the LID, not to phone number
+        # This ensures the user sees the response in their own chat
+        assert captured_message.sender_id == "118657162162293@lid", (
+            "Response should go back to original LID so user sees it in their own chat"
+        )
+        assert "34677427318" not in captured_message.sender_id, (
+            "Response should NOT be routed to phone number - must go to LID for self-chat"
+        )
+        # Verify message text was captured
+        assert captured_message.text == "Hello myself!"
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.run_coroutine_threadsafe")
     async def test_group_chat_always_filtered(
         self, mock_run_coro: MagicMock, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
     ) -> None:
