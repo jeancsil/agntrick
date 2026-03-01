@@ -424,12 +424,23 @@ class WhatsAppChannel(Channel):
             normalized_sender = self._normalize_phone_number(sender_jid)
             normalized_chat = self._normalize_phone_number(chat_jid) if chat_jid else ""
 
-            # Check if message is from allowed contact
-            # For regular messages: compare phone number
-            # For self-messages: allow if IsFromMe is true (messaging yourself from same device)
-            is_allowed = (
-                is_from_me or normalized_sender == self.allowed_contact or normalized_chat == self.allowed_contact
-            )
+            # SECURITY: Only allow messages from the explicitly allowed contact.
+            # We do NOT exempt self-messages - they must match the allowed_contact
+            # number. This prevents responding to messages from unknown LIDs when
+            # messaging from different devices or contexts.
+            is_allowed = normalized_sender == self.allowed_contact or normalized_chat == self.allowed_contact
+
+            # SECURITY OVERRIDE: Allow self-messages from same device
+            # Self-messages (is_from_me=True) are allowed even if they don't match
+            # allowed_contact. This enables legitimate self-messaging use case while maintaining
+            # security because responses go back to the original sender JID, not to allowed_contact.
+            #
+            # Security rationale: You cannot "hijack" or "steal" your own self-messages.
+            # If someone else sent a message from a different device, is_from_me would be False,
+            # and it would be filtered by the strict contact check above.
+            if is_from_me:
+                is_allowed = True
+                logger.debug("Allowing self-message (from same device). Response will go back to original sender JID.")
 
             logger.debug(
                 f"Normalized sender: {normalized_sender}, chat: {normalized_chat}, "
@@ -501,6 +512,26 @@ class WhatsAppChannel(Channel):
         def _run_client() -> None:
             try:
                 assert self._client is not None
+
+                # Check if session file exists and its size
+                # The session file name is based on device name, but device_props may be None
+                # until after connect(). Use the default name "agentic-framework-whatsapp"
+                session_file_name = "agentic-framework-whatsapp"
+                if self._client.device_props is not None:
+                    session_file_name = self._client.device_props.name
+
+                session_file = self.storage_path / session_file_name
+                if session_file.exists():
+                    session_size = session_file.stat().st_size
+                    session_age = time.time() - session_file.stat().st_mtime
+                    age_hours = session_age / 3600
+                    logger.info(
+                        f"Found existing session file: {session_file.name} "
+                        f"(size={session_size / 1024 / 1024:.1f}MB, age={age_hours:.1f}h)"
+                    )
+                else:
+                    logger.warning("No existing session file found - QR code scan will be required")
+
                 # Connect to WhatsApp (may require QR code scan on first run)
                 logger.info("Connecting to WhatsApp (scan QR code if prompted)...")
                 self._client.connect()
@@ -513,7 +544,27 @@ class WhatsAppChannel(Channel):
                     self._stop_event.wait(timeout=0.1)
 
             except Exception as e:
-                logger.error(f"Error in neonize client thread: {e}")
+                error_msg = str(e)
+                logger.error(f"Error in neonize client thread: {error_msg}")
+
+                # Provide helpful guidance based on error type
+                if "401" in error_msg or "logged out" in error_msg.lower():
+                    logger.error(
+                        "WhatsApp session was rejected (401). This could mean:\n"
+                        "  1. Session expired (WhatsApp sessions expire after ~14 days of inactivity)\n"
+                        "  2. Another device logged out this session\n"
+                        "  3. Password/2FA changed on WhatsApp account\n"
+                        "  4. WhatsApp security policy changed\n\n"
+                        "To fix: Delete the session file and scan QR code again.\n"
+                        f"Session location: {self.storage_path}"
+                    )
+                elif "EOF" in error_msg:
+                    logger.error(
+                        "Connection closed unexpectedly (EOF). This could be:\n"
+                        "  1. Network connectivity issue\n"
+                        "  2. WhatsApp server unavailable\n"
+                        "  3. Session was invalidated mid-connection\n"
+                    )
 
         self._thread = threading.Thread(target=_run_client, daemon=True)
         self._thread.start()

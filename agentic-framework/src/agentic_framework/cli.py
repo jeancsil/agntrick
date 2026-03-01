@@ -228,6 +228,11 @@ def whatsapp_command(
         "--mcp-servers",
         help="Comma-separated MCP servers (e.g., 'web-fetch,duckduckgo-search'). Use 'none' to disable.",
     ),
+    reset_session: bool = typer.Option(
+        False,
+        "--reset-session",
+        help="Delete existing WhatsApp session to force QR code rescan.",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -244,6 +249,9 @@ def whatsapp_command(
 
     MCP Servers: By default, uses web-fetch and duckduckgo-search.
     Use --mcp-servers to customize or 'none' to disable.
+
+    Session Management: WhatsApp sessions can expire or be invalidated by WhatsApp.
+    Use --reset-session to delete the existing session and force a new QR code scan.
     """
     # Reconfigure logging if verbose
     if verbose:
@@ -255,6 +263,27 @@ def whatsapp_command(
     # Apply CLI overrides
     storage_path = storage or str(config.get_storage_path())
     allowed_contact_value = allowed_contact or config.privacy.allowed_contact
+
+    # Handle --reset-session: delete existing session file
+    if reset_session:
+        storage_dir = Path(storage_path).expanduser().resolve()
+
+        # Find and delete session files (whatsmeow creates files named after the device)
+        session_files = list(storage_dir.glob("*"))  # This catches the session file
+        # Also look for whatsmeow-specific session files
+        session_files.extend(list(storage_dir.glob("*.session*")))
+
+        if session_files:
+            console.print(f"[yellow]Deleting session files from:[/yellow] {storage_dir}")
+            for session_file in session_files:
+                # Keep the deduplication DB, delete everything else
+                if session_file.name != "processed_messages.db":
+                    console.print(f"  [dim]Removing:[/dim] {session_file.name}")
+                    session_file.unlink()
+            console.print("[green]Session cleared. QR code will be required on next run.[/green]")
+            return  # Exit after resetting session
+        else:
+            console.print("[yellow]No session files found to delete.[/yellow]")
 
     # Parse MCP servers from CLI override (takes precedence)
     mcp_servers_list: list[str] | None = None
@@ -376,6 +405,11 @@ def whatsapp_alias(
         "-v",
         help="Enable verbose logging.",
     ),
+    reset_session: bool = typer.Option(
+        False,
+        "--reset-session",
+        help="Delete existing WhatsApp session to force QR code rescan.",
+    ),
 ) -> None:
     """Alias for whatsapp-bridge command."""
     whatsapp_command(
@@ -384,6 +418,7 @@ def whatsapp_alias(
         storage=storage,
         mcp_servers=mcp_servers,
         verbose=verbose,
+        reset_session=reset_session,
     )
 
 
