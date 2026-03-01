@@ -206,10 +206,13 @@ def _create_model(model_name: str, temperature: float) -> Any:
             return ChatHuggingFace(model_id=model_name)
 
     # Default fallback to OpenAI
-    from langchain_openai import ChatOpenAI
+    # Note: In langchain-openai 0.2.0+, ChatOpenAI requires api_key.
+    # Only create the client when a model is explicitly provided.
+    from langchain_openai.chat_models.base import ChatOpenAI
 
     return ChatOpenAI(
         model=model_name,
         temperature=temperature,
         base_url=os.getenv("OPENAI_BASE_URL"),
+        api_key=os.getenv("OPENAI_API_KEY") if model_name and model_name.startswith("gpt") else None,
     )
