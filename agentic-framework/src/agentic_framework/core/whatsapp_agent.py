@@ -7,6 +7,7 @@ via their personal WhatsApp account.
 
 import asyncio
 import logging
+import traceback
 from typing import Any, Sequence, Union
 
 from langchain.agents import create_agent
@@ -260,15 +261,14 @@ class WhatsAppAgent(LangGraphMCPAgent):
             logger.info(f"Response sent to {incoming.sender_id}")
 
         except Exception as e:
-            import traceback
-
             logger.error(f"Error handling message: {e}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
 
-            # Send error message to user
+            # Send a generic message to the user — do NOT forward `str(e)` as
+            # it may contain internal paths, server URLs, or API details.
             try:
                 error_message = OutgoingMessage(
-                    text=f"Sorry, I encountered an error: {str(e)}",
+                    text="Sorry, something went wrong processing your message. Please try again.",
                     recipient_id=incoming.sender_id,
                 )
                 await self.channel.send(error_message)

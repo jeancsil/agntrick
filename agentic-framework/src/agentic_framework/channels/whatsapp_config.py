@@ -10,6 +10,24 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
+def parse_mcp_servers_str(value: str) -> list[str]:
+    """Parse a comma-separated MCP server string into a list.
+
+    Accepts:
+        - ``"none"`` / ``""`` / ``"disabled"`` → empty list (MCP disabled)
+        - ``"web-fetch,duckduckgo-search"`` → ``["web-fetch", "duckduckgo-search"]``
+
+    Args:
+        value: The raw string value from the CLI or config file.
+
+    Returns:
+        List of server names, possibly empty.
+    """
+    if value.lower() in ("none", "", "disabled"):
+        return []
+    return [s.strip() for s in value.split(",") if s.strip()]
+
+
 class PrivacyConfig(BaseModel):
     """Privacy and filtering configuration."""
 
@@ -96,9 +114,7 @@ class WhatsAppAgentConfig(BaseModel):
         if v is None:
             return None
         if isinstance(v, str):
-            if v.lower() in ("none", "", "disabled"):
-                return []
-            return [s.strip() for s in v.split(",") if s.strip()]
+            return parse_mcp_servers_str(v)
         if isinstance(v, list):
             return v
         raise ValueError(f"mcp_servers must be a list or string, got {type(v).__name__}")
@@ -118,15 +134,3 @@ class WhatsAppAgentConfig(BaseModel):
     def get_storage_path(self) -> Path:
         """Get the storage path as a Path object, expanded from ~ if needed."""
         return Path(self.channel.storage_path).expanduser()
-
-    def get_allowed_contact(self) -> str:
-        """Get the normalized allowed contact phone number."""
-        return self.privacy.allowed_contact
-
-    def get_model(self) -> str | None:
-        """Get the configured model name."""
-        return self.model
-
-    def get_mcp_servers(self) -> list[str] | None:
-        """Get the configured MCP servers."""
-        return self.mcp_servers

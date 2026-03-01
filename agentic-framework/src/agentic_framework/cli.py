@@ -254,7 +254,7 @@ def whatsapp_command(
 
     # Apply CLI overrides
     storage_path = storage or str(config.get_storage_path())
-    allowed_contact_value = allowed_contact or config.get_allowed_contact()
+    allowed_contact_value = allowed_contact or config.privacy.allowed_contact
 
     # Parse MCP servers from CLI override (takes precedence)
     mcp_servers_list: list[str] | None = None
@@ -264,13 +264,13 @@ def whatsapp_command(
         else:
             mcp_servers_list = [s.strip() for s in mcp_servers.split(",") if s.strip()]
     else:
-        mcp_servers_list = config.get_mcp_servers()
+        mcp_servers_list = config.mcp_servers
 
     # Display startup information
     console.print("[bold blue]Starting WhatsApp Agent...[/bold blue]")
     console.print(f"[dim]Storage:[/dim] {storage_path}")
     console.print(f"[dim]Allowed contact:[/dim] {allowed_contact_value}")
-    console.print(f"[dim]Model:[/dim] {config.get_model() or 'default'}")
+    console.print(f"[dim]Model:[/dim] {config.model or 'default'}")
 
     # Show MCP configuration
     if mcp_servers_list is not None:
@@ -298,7 +298,7 @@ def whatsapp_command(
         # Create agent with optional MCP servers override
         agent = WhatsAppAgent(
             channel=channel,
-            model_name=config.get_model() if config.get_model() else None,
+            model_name=config.model if config.model else None,
             mcp_servers_override=mcp_servers_list,
         )
 

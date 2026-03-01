@@ -340,8 +340,11 @@ class WhatsAppChannel(Channel):
     async def initialize(self) -> None:
         """Initialize the neonize client.
 
-        This method creates the neonize client and changes to the storage
-        directory to ensure session data is persisted in the correct location.
+        This method creates the neonize client and permanently changes to the
+        storage directory so that neonize persists session data in the correct
+        location for the duration of the connection (including the background
+        thread that calls connect()). The original directory is restored in
+        shutdown().
 
         Raises:
             ChannelError: If neonize fails to initialize.
@@ -352,20 +355,21 @@ class WhatsAppChannel(Channel):
         self._init_deduplication_db()
 
         try:
-            # Change to storage directory so neonize stores session there
-            # The database is created when connect() is called, so we need
-            # to stay in this directory for the duration of the connection
-            with _change_directory(self.storage_path):
-                logger.debug(f"Changed working directory to: {self.storage_path}")
+            # Permanently change to storage directory so neonize stores session
+            # there.  We cannot use the _change_directory context manager here
+            # because the background thread runs connect() *after* this method
+            # returns, so we need CWD to remain changed until shutdown().
+            os.chdir(self.storage_path)
+            logger.debug(f"Changed working directory to: {self.storage_path}")
 
-                # Create neonize sync client (will store session in current directory)
-                self._client = NewClient("agentic-framework-whatsapp")
+            # Create neonize sync client (will store session in current directory)
+            self._client = NewClient("agentic-framework-whatsapp")
 
-                # Set up event handler for incoming messages
-                if self._client:
-                    self._client.event(MessageEv)(self._on_message_event)
+            # Set up event handler for incoming messages
+            if self._client:
+                self._client.event(MessageEv)(self._on_message_event)
 
-                logger.info("Neonize client initialized successfully")
+            logger.info("Neonize client initialized successfully")
 
         except Exception as e:
             raise ChannelError(
@@ -489,7 +493,7 @@ class WhatsAppChannel(Channel):
 
         self._is_listening = True
         self._message_callback = callback
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
 
         logger.info("Starting to listen for WhatsApp messages...")
 
@@ -553,7 +557,7 @@ class WhatsAppChannel(Channel):
                 await self._send_media(jid, message.media_url, message.text, media_type)
             else:
                 # Send text message - run in thread pool to avoid blocking
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._client.send_message, jid, message.text)
 
             logger.info("Message sent")
@@ -577,7 +581,7 @@ class WhatsAppChannel(Channel):
             media_type: Type of media (image, video, document, audio). Used as fallback.
         """
         if self._client is None:
-            raise RuntimeError("Client not initialized")
+            raise ChannelError("Client not initialized. Call initialize() first.", channel_name="whatsapp")
 
         # Download media from URL
         import httpx
@@ -620,7 +624,7 @@ class WhatsAppChannel(Channel):
                 msg = self._client.build_image_message(media_data, caption=caption, mime_type=mime_type)
             self._client.send_message(jid, message=msg)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _build_and_send)
 
     async def shutdown(self) -> None:
@@ -643,23 +647,26 @@ class WhatsAppChannel(Channel):
         if self._client:
             try:
                 # Disconnect the client
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._client.disconnect)
             except Exception as e:
                 logger.error(f"Error during disconnect: {e}")
             finally:
                 self._client = None
 
-        # Restore original working directory (was changed during initialization)
-        # The client runs in the storage directory, so we restore it on shutdown
+        # Restore original working directory (was changed during initialization).
+        # Use os.chdir() directly — the _change_directory context manager would
+        # temporarily enter and immediately exit the target dir, which is a no-op.
         try:
-            with _change_directory(self._original_dir):
-                logger.debug(f"Restored working directory to: {self._original_dir}")
-        except Exception as e:
+            os.chdir(self._original_dir)
+            logger.debug(f"Restored working directory to: {self._original_dir}")
+        except OSError as e:
             logger.error(f"Error restoring working directory: {e}")
 
-        # Wait for thread to finish
+        # Wait for thread to finish, and warn if it outlives the timeout
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
+            if self._thread.is_alive():
+                logger.warning("Worker thread did not stop within timeout — possible resource leak")
 
         logger.info("WhatsApp channel shutdown complete")
