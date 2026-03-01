@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from neonize.client import NewClient  # type: ignore
 from neonize.events import MessageEv  # type: ignore
+from neonize.utils import ChatPresence, ChatPresenceMedia  # type: ignore
 from neonize.utils.jid import Jid2String, build_jid  # type: ignore
 
 from agentic_framework.channels.base import (
@@ -140,12 +141,16 @@ class WhatsAppChannel(Channel):
             return
 
         try:
-            # Use neonize's chat presence methods if available
-            # Try to send typing indicator via the client
-            if hasattr(self._client, "send_chat_presence"):
-                self._client.send_chat_presence(jid, "composing")
-                self._typing_jids.add(jid)
-                logger.debug(f"Sent typing indicator to {jid}")
+            # Build JID object from string
+            jid_obj = build_jid(jid)
+            # Send composing presence to show typing indicator
+            self._client.send_chat_presence(
+                jid_obj,
+                ChatPresence.CHAT_PRESENCE_COMPOSING,
+                ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT,
+            )
+            self._typing_jids.add(jid)
+            logger.debug(f"Sent typing indicator to {jid}")
         except Exception as e:
             logger.warning(f"Failed to send typing indicator: {e}")
 
@@ -159,11 +164,16 @@ class WhatsAppChannel(Channel):
             return
 
         try:
-            # Send presence "paused" to stop typing indicator
-            if hasattr(self._client, "send_chat_presence"):
-                self._client.send_chat_presence(jid, "paused")
-                self._typing_jids.discard(jid)
-                logger.debug(f"Stopped typing indicator for {jid}")
+            # Build JID object from string
+            jid_obj = build_jid(jid)
+            # Send paused presence to stop typing indicator
+            self._client.send_chat_presence(
+                jid_obj,
+                ChatPresence.CHAT_PRESENCE_PAUSED,
+                ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT,
+            )
+            self._typing_jids.discard(jid)
+            logger.debug(f"Stopped typing indicator for {jid}")
         except Exception as e:
             logger.warning(f"Failed to stop typing indicator: {e}")
 

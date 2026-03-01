@@ -904,3 +904,245 @@ class TestWhatsAppChannelDeduplicationSimple:
         # Both should not be duplicates
         assert not is_duplicate_1
         assert not is_duplicate_2
+
+
+class TestWhatsAppChannelTypingIndicators:
+    """Tests for typing indicator functionality."""
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_send_typing_indicator_calls_correct_api(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that send_typing uses the correct neonize API."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+
+        whatsapp_channel._send_typing(jid)
+
+        # Verify send_chat_presence was called with correct arguments
+        mock_client.send_chat_presence.assert_called_once()
+        call_args = mock_client.send_chat_presence.call_args
+
+        # The JID object should be passed as first argument
+        assert call_args[0][0] is not None  # JID object
+
+        # Verify the JID was added to tracking set
+        assert jid in whatsapp_channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_send_typing_indicator_with_lid_jid(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that send_typing works with LID format JIDs."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jid = "118657162162293@lid"
+
+        whatsapp_channel._send_typing(jid)
+
+        # Verify send_chat_presence was called
+        mock_client.send_chat_presence.assert_called_once()
+
+        # Verify the JID was added to tracking set
+        assert jid in whatsapp_channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_stop_typing_indicator_calls_correct_api(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that stop_typing uses the correct neonize API."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+        whatsapp_channel._typing_jids.add(jid)
+
+        whatsapp_channel._stop_typing(jid)
+
+        # Verify send_chat_presence was called with PAUSED state
+        mock_client.send_chat_presence.assert_called_once()
+
+        # Verify the JID was removed from tracking set
+        assert jid not in whatsapp_channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_stop_typing_idempotent(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that stop_typing is idempotent - can be called multiple times."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+
+        # First call - JID is in set
+        whatsapp_channel._typing_jids.add(jid)
+        whatsapp_channel._stop_typing(jid)
+        assert mock_client.send_chat_presence.call_count == 1
+
+        # Second call - JID not in set, should not call again
+        whatsapp_channel._stop_typing(jid)
+        assert mock_client.send_chat_presence.call_count == 1  # Still 1
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_typing_indicators_disabled_no_api_call(
+        self, mock_client_class: MagicMock, temp_storage: Path
+    ) -> None:
+        """Test that typing indicators are not sent when disabled."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        # Create channel with typing indicators disabled
+        channel = WhatsAppChannel(
+            storage_path=temp_storage,
+            allowed_contact="+34 666 666 666",
+            typing_indicators=False,
+        )
+        channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+
+        channel._send_typing(jid)
+
+        # send_chat_presence should NOT be called
+        mock_client.send_chat_presence.assert_not_called()
+
+        # JID should NOT be in tracking set
+        assert jid not in channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_typing_indicators_with_multiple_jids(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that typing indicators work correctly with multiple JIDs."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jids = [
+            "34666666666@s.whatsapp.net",
+            "118657162162293@lid",
+            "44777888999@s.whatsapp.net",
+        ]
+
+        # Send typing indicators to all JIDs
+        for jid in jids:
+            whatsapp_channel._send_typing(jid)
+
+        # All JIDs should be in tracking set
+        for jid in jids:
+            assert jid in whatsapp_channel._typing_jids
+
+        # send_chat_presence should be called once per JID
+        assert mock_client.send_chat_presence.call_count == 3
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_send_typing_handles_exception(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that send_typing handles exceptions gracefully."""
+        mock_client = MagicMock()
+        mock_client.send_chat_presence.side_effect = Exception("Network error")
+        mock_client_class.return_value = mock_client
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+
+        # Should not raise exception
+        whatsapp_channel._send_typing(jid)
+
+        # JID should NOT be in tracking set because of error
+        assert jid not in whatsapp_channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_send_typing_without_client_no_error(self, whatsapp_channel: WhatsAppChannel) -> None:
+        """Test that send_typing doesn't crash when client is None."""
+        whatsapp_channel._client = None
+
+        jid = "34666666666@s.whatsapp.net"
+
+        # Should not raise exception
+        whatsapp_channel._send_typing(jid)
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    async def test_typing_indicator_sent_on_message_received(
+        self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
+    ) -> None:
+        """Test that typing indicator is sent when a message is received."""
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        await whatsapp_channel.initialize()
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+        whatsapp_channel._typing_jids.clear()  # Clear any existing
+
+        whatsapp_channel._send_typing(jid)
+
+        assert jid in whatsapp_channel._typing_jids
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.get_running_loop")
+    async def test_typing_stopped_after_sending_message(
+        self,
+        mock_get_running_loop: MagicMock,
+        mock_client_class: MagicMock,
+        whatsapp_channel: WhatsAppChannel,
+    ) -> None:
+        """Test that typing indicator is stopped after sending a message."""
+        import asyncio
+        from unittest.mock import MagicMock as MockMagic
+
+        # Set up mock loop with run_in_executor
+        mock_loop = MockMagic()
+        mock_get_running_loop.return_value = mock_loop
+
+        # Mock run_in_executor to execute immediately and return a future
+        def fake_run_in_executor(executor, func, *args):
+            future = asyncio.get_event_loop().create_future()
+            try:
+                result = func(*args)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+            return future
+
+        mock_loop.run_in_executor = fake_run_in_executor
+
+        # Set up mock client
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        await whatsapp_channel.initialize()
+        whatsapp_channel._client = mock_client
+
+        jid = "34666666666@s.whatsapp.net"
+
+        # First, send typing indicator
+        whatsapp_channel._send_typing(jid)
+        assert jid in whatsapp_channel._typing_jids
+
+        # Now send a message
+        message = OutgoingMessage(text="Hello", recipient_id=jid)
+        await whatsapp_channel.send(message)
+
+        # Typing indicator should be stopped (JID removed from set)
+        assert jid not in whatsapp_channel._typing_jids

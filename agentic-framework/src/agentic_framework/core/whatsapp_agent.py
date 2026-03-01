@@ -28,7 +28,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
     """Agent that communicates through WhatsApp.
 
     This agent connects to WhatsApp via a Channel implementation and
-    provides bidirectional communication with users. It processes
+    provides bidirectional communication WITH ALLOWED USERS only. It processes
     incoming messages and sends responses back through WhatsApp.
 
     The agent has access to:
@@ -84,9 +84,8 @@ class WhatsAppAgent(LangGraphMCPAgent):
 
     @property
     def system_prompt(self) -> str:
-        """Prompt that defines WhatsApp agent behavior.
-
-        The WhatsApp agent is designed for concise, friendly responses
+        """
+        The WhatsApp agent is designed for concise, friendly responses to allowed users only,
         suitable for messaging platforms, with web search and fetch capabilities.
         """
         return (
