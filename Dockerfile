@@ -1,5 +1,5 @@
 # Use official Python image as base
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # Set working directory
 WORKDIR /app
@@ -12,10 +12,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # ripgrep: ultra-fast text searching
 # fd-find: user-friendly alternative to 'find'
 # fzf: general-purpose command-line fuzzy finder
+# libmagic: Required by neonize/python-magic for file type detection
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
     fzf \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Note: In Debian/Ubuntu, the 'fd' executable is renamed to 'fdfind'.
@@ -33,6 +35,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY agentic-framework/pyproject.toml agentic-framework/uv.lock ./agentic-framework/
 COPY agentic-framework/README.md ./agentic-framework/
 COPY agentic-framework/src ./agentic-framework/src
+COPY agentic-framework/config ./agentic-framework/config
 
 # Install dependencies using uv
 # This installs the package in editable mode with all dependencies

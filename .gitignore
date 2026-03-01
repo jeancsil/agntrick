@@ -45,3 +45,6 @@ htmlcov/
 # Logging
 agentic-framework/logs/
 !agentic-framework/logs/.gitkeep
+
+# Configuration files
+agentic-framework/config/whatsapp.yaml

@@ -3,7 +3,7 @@
 # 🤖 Agentic Framework
 **Build AI agents that *actually* do things.**
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
 [![LangChain](https://img.shields.io/badge/langchain-%23007BA7.svg?style=plastic&logo=langchain&logoColor=white)](https://python.langchain.com/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-green?style=plastic&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
 [![Docker Ready](https://img.shields.io/badge/docker-ready-blue?style=plastic&logo=docker&logoColor=white)](https://www.docker.com/)
@@ -124,8 +124,59 @@ Instead of spending days wiring together LLMs, tools, and execution environments
         </details>
       </td>
     </tr>
+    <tr>
+      <td><code>whatsapp</code></td>
+      <td><b>WhatsApp Agent:</b> Bidirectional WhatsApp communication (personal account).</td>
+      <td>-</td>
+      <td><code>WhatsAppChannel</code></td>
+    </tr>
   </tbody>
 </table>
+
+<details>
+<summary><strong>📱 WhatsApp Agent Setup</strong></summary>
+
+The WhatsApp agent enables bidirectional communication through your personal WhatsApp account using QR code authentication.
+
+**Requirements:**
+- Go 1.21+ and Git (for whatsapp-bridge backend)
+- Python 3.13+
+
+**Configuration:**
+```bash
+# Copy example config
+cp config/whatsapp.yaml.example config/whatsapp.yaml
+
+# Edit config/whatsapp.yaml with your settings:
+# - model: "claude-sonnet-4-6"
+# - privacy.allowed_contact: "+34 666 666 666"
+# - channel.storage_path: "~/storage/whatsapp"
+```
+
+**Usage:**
+```bash
+# Start the WhatsApp agent
+agentic-run whatsapp --config config/whatsapp.yaml
+
+# With custom settings
+agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
+
+# Verbose mode for debugging
+agentic-run whatsapp --verbose
+```
+
+**First Run:**
+1. Scan the QR code displayed in your terminal
+2. Wait for WhatsApp to authenticate
+3. Send a message from your allowed phone number
+4. Agent will respond automatically
+
+**Privacy:**
+- Only processes messages from the configured contact
+- All data stored locally (no cloud storage)
+- Messages from other contacts are silently ignored
+
+</details>
 
 ### 📦 Local Tools (Zero External Dependencies)
 
@@ -565,6 +616,12 @@ bin/agent.sh developer -i "Hello" -v
 
 # 📜 Access logs (same location as local)
 tail -f agentic-framework/logs/agent.log
+
+# 📱 Run the WhatsApp agent (requires config)
+agentic-run whatsapp --config config/whatsapp.yaml
+
+# 📱 Run WhatsApp with custom settings
+agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
 ```
 
 ---
@@ -578,7 +635,7 @@ Prefer running without Docker? We got you.
 <summary><strong>System Requirements & Setup</strong></summary>
 
 **Requirements:**
-- Python 3.12+
+- Python 3.13+
 - `ripgrep`, `fd`, `fzf`
 
 ```bash

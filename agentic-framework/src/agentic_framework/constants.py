@@ -208,4 +208,8 @@ def _create_model(model_name: str, temperature: float) -> Any:
     # Default fallback to OpenAI
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model=model_name, temperature=temperature)
+    return ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        base_url=os.getenv("OPENAI_BASE_URL"),
+    )
