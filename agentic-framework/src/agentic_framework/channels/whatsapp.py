@@ -9,6 +9,7 @@ for the actual WhatsApp Web protocol implementation.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import os
@@ -31,6 +32,26 @@ from agentic_framework.channels.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _change_directory(path: Path):
+    """Context manager for temporarily changing working directory.
+
+    Ensures the original directory is restored even if an exception occurs.
+
+    Args:
+        path: The directory to change to.
+
+    Yields:
+        None
+    """
+    original_dir = Path.cwd()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(original_dir)
 
 
 class WhatsAppChannel(Channel):
@@ -61,10 +82,12 @@ class WhatsAppChannel(Channel):
         allowed_contact: str,
         log_filtered_messages: bool = False,
         poll_interval: float = 1.0,  # Kept for API compatibility, not used in event mode
+        typing_indicators: bool = True,
     ) -> None:
         self.storage_path = Path(storage_path).expanduser().resolve()
         self.allowed_contact = self._normalize_phone_number(allowed_contact)
         self.log_filtered_messages = log_filtered_messages
+        self.typing_indicators = typing_indicators
         self._client: NewClient | None = None
         self._is_listening: bool = False
         self._message_callback: Callable[[IncomingMessage], Any] | None = None
@@ -72,6 +95,7 @@ class WhatsAppChannel(Channel):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_event = threading.Event()  # For signaling thread to stop
         self._original_dir = Path.cwd()  # Store original working directory
+        self._typing_jids: set[str] = set()  # Track JIDs with active typing indicators
 
         # Message deduplication using SQLite
         self._db_path = self.storage_path / "processed_messages.db"
@@ -83,7 +107,8 @@ class WhatsAppChannel(Channel):
         self._validate_storage_path()
 
         logger.info(
-            f"WhatsAppChannel initialized with storage={self.storage_path}, allowed_contact={self.allowed_contact}"
+            f"WhatsAppChannel initialized with storage={self.storage_path}, allowed_contact={self.allowed_contact}, "
+            f"typing_indicators={self.typing_indicators}"
         )
 
     @staticmethod
@@ -104,6 +129,43 @@ class WhatsAppChannel(Channel):
         cleaned = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
         # Remove + if present (whatsapp expects format without +)
         return cleaned.lstrip("+")
+
+    def _send_typing(self, jid: str) -> None:
+        """Send typing indicator to a JID.
+
+        Args:
+            jid: The JID to send typing indicator to.
+        """
+        if not self.typing_indicators or self._client is None:
+            return
+
+        try:
+            # Use neonize's chat presence methods if available
+            # Try to send typing indicator via the client
+            if hasattr(self._client, "send_chat_presence"):
+                self._client.send_chat_presence(jid, "composing")
+                self._typing_jids.add(jid)
+                logger.debug(f"Sent typing indicator to {jid}")
+        except Exception as e:
+            logger.warning(f"Failed to send typing indicator: {e}")
+
+    def _stop_typing(self, jid: str) -> None:
+        """Stop typing indicator for a JID.
+
+        Args:
+            jid: The JID to stop typing indicator for.
+        """
+        if not self.typing_indicators or self._client is None or jid not in self._typing_jids:
+            return
+
+        try:
+            # Send presence "paused" to stop typing indicator
+            if hasattr(self._client, "send_chat_presence"):
+                self._client.send_chat_presence(jid, "paused")
+                self._typing_jids.discard(jid)
+                logger.debug(f"Stopped typing indicator for {jid}")
+        except Exception as e:
+            logger.warning(f"Failed to stop typing indicator: {e}")
 
     def _validate_storage_path(self) -> None:
         """Validate that storage_path is a writable directory.
@@ -255,14 +317,21 @@ class WhatsAppChannel(Channel):
     def _close_deduplication_db(self) -> None:
         """Close all SQLite database connections.
 
-        Since we use thread-local connections, we need to close the connection
-        from the thread that created it. However, at shutdown we just close
-        the thread-local connection if it exists in the current thread.
+        Since we use thread-local connections, we close the connection
+        from the current thread. Other threads' connections will be closed
+        automatically when those threads terminate.
+
+        Note: SQLite connections are automatically closed when the thread
+        that created them terminates, but we explicitly close the
+        current thread's connection for clean shutdown.
         """
         self._db_lock.acquire()
         try:
             if hasattr(self._db_local, "conn") and self._db_local.conn is not None:
-                self._db_local.conn.close()
+                try:
+                    self._db_local.conn.close()
+                except sqlite3.Error as e:
+                    logger.warning(f"Error closing DB connection: {e}")
                 self._db_local.conn = None
                 logger.info("Closed deduplication DB connection")
         finally:
@@ -286,21 +355,19 @@ class WhatsAppChannel(Channel):
             # Change to storage directory so neonize stores session there
             # The database is created when connect() is called, so we need
             # to stay in this directory for the duration of the connection
-            os.chdir(self.storage_path)
-            logger.debug(f"Changed working directory to: {self.storage_path}")
+            with _change_directory(self.storage_path):
+                logger.debug(f"Changed working directory to: {self.storage_path}")
 
-            # Create neonize sync client (will store session in current directory)
-            self._client = NewClient("agentic-framework-whatsapp")
+                # Create neonize sync client (will store session in current directory)
+                self._client = NewClient("agentic-framework-whatsapp")
 
-            # Set up event handler for incoming messages
-            if self._client:
-                self._client.event(MessageEv)(self._on_message_event)
+                # Set up event handler for incoming messages
+                if self._client:
+                    self._client.event(MessageEv)(self._on_message_event)
 
-            logger.info("Neonize client initialized successfully")
+                logger.info("Neonize client initialized successfully")
 
         except Exception as e:
-            # Restore original directory on error
-            os.chdir(self._original_dir)
             raise ChannelError(
                 f"Failed to initialize neonize client: {e}",
                 channel_name="whatsapp",
@@ -308,6 +375,11 @@ class WhatsAppChannel(Channel):
 
     def _on_message_event(self, client: NewClient, event: MessageEv) -> None:
         """Handle incoming message events from neonize (sync callback).
+
+        IMPORTANT: This is a synchronous callback invoked by the Go backend
+        (neonize/whatsmeow). All async operations must be scheduled
+        via `asyncio.run_coroutine_threadsafe()` to be executed on the
+        main event loop.
 
         Args:
             client: The neonize client instance.
@@ -379,6 +451,9 @@ class WhatsAppChannel(Channel):
                 raw_data={"event": event},
                 timestamp=getattr(event.Info, "Timestamp", 0),
             )
+
+            # Send typing indicator if enabled
+            self._send_typing(reply_to_jid)
 
             # Schedule callback on the main event loop
             async def _invoke_callback() -> None:
@@ -488,6 +563,9 @@ class WhatsAppChannel(Channel):
                 f"Failed to send message: {e}",
                 channel_name="whatsapp",
             ) from e
+        finally:
+            # Stop typing indicator after sending (regardless of success/failure)
+            self._stop_typing(message.recipient_id)
 
     async def _send_media(self, jid: str, media_url: str, caption: str, media_type: str) -> None:
         """Send a media message.
@@ -556,6 +634,9 @@ class WhatsAppChannel(Channel):
         self._message_callback = None
         self._stop_event.set()  # Signal to client thread to stop
 
+        # Clear typing indicators
+        self._typing_jids.clear()
+
         # Close deduplication database
         self._close_deduplication_db()
 
@@ -569,10 +650,11 @@ class WhatsAppChannel(Channel):
             finally:
                 self._client = None
 
-        # Restore original working directory
+        # Restore original working directory (was changed during initialization)
+        # The client runs in the storage directory, so we restore it on shutdown
         try:
-            os.chdir(self._original_dir)
-            logger.debug(f"Restored working directory to: {self._original_dir}")
+            with _change_directory(self._original_dir):
+                logger.debug(f"Restored working directory to: {self._original_dir}")
         except Exception as e:
             logger.error(f"Error restoring working directory: {e}")
 

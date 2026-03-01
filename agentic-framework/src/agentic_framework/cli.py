@@ -23,6 +23,7 @@ app = typer.Typer(
     add_completion=True,
 )
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 def configure_logging(verbose: bool) -> None:
@@ -291,6 +292,7 @@ def whatsapp_command(
             storage_path=storage_path,
             allowed_contact=allowed_contact_value,
             log_filtered_messages=config.privacy.log_filtered_messages,
+            typing_indicators=config.features.typing_indicators,
         )
 
         # Create agent with optional MCP servers override
@@ -313,8 +315,8 @@ def whatsapp_command(
             loop = asyncio.get_running_loop()
             loop.add_signal_handler(signal.SIGINT, signal_handler)
             loop.add_signal_handler(signal.SIGTERM, signal_handler)
-        except (AttributeError, NotImplementedError):
-            pass
+        except (AttributeError, NotImplementedError) as e:
+            logger.debug(f"Signal handlers not available on this platform: {e}")
 
         # Start agent in a task
         agent_task = asyncio.create_task(agent.start())

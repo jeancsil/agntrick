@@ -2,6 +2,7 @@
 
 import time
 from datetime import datetime
+from typing import Any, Callable
 
 import pytest
 
@@ -88,7 +89,7 @@ class MockChannel(Channel):
     async def initialize(self) -> None:
         self.initialized = True
 
-    async def listen(self, callback: callable) -> None:  # type: ignore[override]
+    async def listen(self, callback: Callable[[IncomingMessage], Any]) -> None:
         self.listening = True
         # Simulate one message then stop
         await callback(
