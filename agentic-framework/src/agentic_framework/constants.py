@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from pydantic.types import SecretStr
+from pydantic import SecretStr
 
 load_dotenv()  # Load .env before reading environment variables
 
