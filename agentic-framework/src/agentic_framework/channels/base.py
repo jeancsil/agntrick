@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 @dataclass
@@ -44,8 +44,8 @@ class OutgoingMessage:
 
     text: str
     recipient_id: str
-    media_url: Optional[str] = None
-    media_type: Optional[str] = None
+    media_url: str | None = None
+    media_type: str | None = None
 
 
 class Channel(ABC):

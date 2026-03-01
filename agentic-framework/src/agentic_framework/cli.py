@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import signal
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Type
@@ -10,6 +9,7 @@ import yaml
 from rich.console import Console
 
 from agentic_framework.channels import WhatsAppChannel
+from agentic_framework.channels.whatsapp_config import WhatsAppAgentConfig
 from agentic_framework.constants import LOGS_DIR
 from agentic_framework.core.whatsapp_agent import WhatsAppAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
@@ -165,63 +165,48 @@ def agent_info(agent_name: str = typer.Argument(..., help="Name of the agent to 
         console.print("  [dim](Could not instantiate agent to list tools)[/dim]")
 
 
-def load_config(config_path: str) -> dict[str, Any]:
-    """Load configuration from a YAML file.
+def load_config(config_path: str) -> WhatsAppAgentConfig:
+    """Load and validate configuration from a YAML file.
+
+    Uses pydantic for type-safe configuration validation, ensuring
+    all required fields are present and properly typed.
 
     Args:
         config_path: Path to the configuration file.
 
     Returns:
-        Configuration dictionary.
+        Validated WhatsAppAgentConfig object.
 
     Raises:
-        typer.Exit: If config file cannot be loaded.
+        typer.Exit: If config file cannot be loaded or is invalid.
     """
     config_file = Path(config_path).expanduser()
     if not config_file.exists():
         console.print(f"[bold red]Error:[/bold red] Config file not found: {config_file}")
+        console.print("[yellow]Tip: Copy config/whatsapp.yaml.example to config/whatsapp.yaml[/yellow]")
         raise typer.Exit(code=1)
 
     try:
         with config_file.open() as f:
-            return yaml.safe_load(f) or {}
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] Failed to load config: {e}")
+            raw_config = yaml.safe_load(f) or {}
+        # Validate using pydantic model
+        return WhatsAppAgentConfig.model_validate(raw_config)
+    except yaml.YAMLError as e:
+        console.print(f"[bold red]Error:[/bold red] Failed to parse YAML: {e}")
         raise typer.Exit(code=1)
-
-
-def _parse_mcp_servers(mcp_config: str | None, config_data: dict[str, Any]) -> list[str] | None:
-    """Parse MCP servers from CLI option or config.
-
-    Args:
-        mcp_config: Comma-separated list of MCP servers from CLI.
-        config_data: Configuration dictionary from YAML file.
-
-    Returns:
-        List of MCP server names, None means use defaults from registry.
-    """
-    # CLI option takes precedence - ensure it's a string
-    if mcp_config is not None and isinstance(mcp_config, str):
-        if mcp_config.lower() in ("none", "", "disabled"):
-            return []  # Explicitly disable MCP
-        return [s.strip() for s in mcp_config.split(",") if s.strip()]
-
-    # Check config file for mcp_servers
-    config_mcp = config_data.get("mcp_servers")
-    if config_mcp is not None:
-        if isinstance(config_mcp, list):
-            return config_mcp
-        if isinstance(config_mcp, str):
-            if config_mcp.lower() in ("none", "", "disabled"):
-                return []
-            return [s.strip() for s in config_mcp.split(",") if s.strip()]
-
-    return None  # Use registry defaults
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] Invalid configuration: {e}")
+        # Provide helpful error message for common issues
+        if "allowed_contact" in str(e):
+            console.print("[yellow]Hint: Check that 'privacy.allowed_contact' is set in your config.[/yellow]")
+        elif "storage_path" in str(e):
+            console.print("[yellow]Hint: Check that 'channel.storage_path' is set in your config.[/yellow]")
+        raise typer.Exit(code=1)
 
 
 @app.command(name="whatsapp-bridge")
 def whatsapp_command(
-    config: str = typer.Option(
+    config_path: str = typer.Option(
         "config/whatsapp.yaml",
         "--config",
         "-c",
@@ -263,33 +248,28 @@ def whatsapp_command(
     if verbose:
         configure_logging(verbose=True)
 
-    # Load configuration
-    config_data = load_config(config)
+    # Load and validate configuration
+    config = load_config(config_path)
 
-    # Get model from config or use default
-    model = config_data.get("model", None)
+    # Apply CLI overrides
+    storage_path = storage or str(config.get_storage_path())
+    allowed_contact_value = allowed_contact or config.get_allowed_contact()
 
-    # Get storage path (override or from config)
-    storage_path = storage or config_data.get("channel", {}).get("storage_path", "storage/whatsapp")
-
-    # Get allowed contact (override or from config)
-    allowed_contact_value = allowed_contact or config_data.get("privacy", {}).get("allowed_contact")
-    if not allowed_contact_value:
-        console.print("[bold red]Error:[/bold red] No allowed contact configured.")
-        console.print("[yellow]Set it in config file or use --allowed-contact[/yellow]")
-        raise typer.Exit(code=1)
-
-    # Get log filtered messages setting
-    log_filtered = config_data.get("privacy", {}).get("log_filtered_messages", False)
-
-    # Parse MCP servers configuration
-    mcp_servers_list = _parse_mcp_servers(mcp_servers, config_data)
+    # Parse MCP servers from CLI override (takes precedence)
+    mcp_servers_list: list[str] | None = None
+    if mcp_servers is not None:
+        if mcp_servers.lower() in ("none", "", "disabled"):
+            mcp_servers_list = []
+        else:
+            mcp_servers_list = [s.strip() for s in mcp_servers.split(",") if s.strip()]
+    else:
+        mcp_servers_list = config.get_mcp_servers()
 
     # Display startup information
     console.print("[bold blue]Starting WhatsApp Agent...[/bold blue]")
     console.print(f"[dim]Storage:[/dim] {storage_path}")
     console.print(f"[dim]Allowed contact:[/dim] {allowed_contact_value}")
-    console.print(f"[dim]Model:[/dim] {model or 'default'}")
+    console.print(f"[dim]Model:[/dim] {config.get_model() or 'default'}")
 
     # Show MCP configuration
     if mcp_servers_list is not None:
@@ -310,13 +290,13 @@ def whatsapp_command(
         channel = WhatsAppChannel(
             storage_path=storage_path,
             allowed_contact=allowed_contact_value,
-            log_filtered_messages=log_filtered,
+            log_filtered_messages=config.privacy.log_filtered_messages,
         )
 
         # Create agent with optional MCP servers override
         agent = WhatsAppAgent(
             channel=channel,
-            model_name=model,
+            model_name=config.get_model() if config.get_model() else None,
             mcp_servers_override=mcp_servers_list,
         )
 
@@ -328,6 +308,8 @@ def whatsapp_command(
             shutdown_event.set()
 
         try:
+            import signal
+
             loop = asyncio.get_running_loop()
             loop.add_signal_handler(signal.SIGINT, signal_handler)
             loop.add_signal_handler(signal.SIGTERM, signal_handler)
@@ -365,7 +347,7 @@ def whatsapp_command(
 # Alias for backwards compatibility - "whatsapp" redirects to "whatsapp-bridge"
 @app.command(name="whatsapp", hidden=True)
 def whatsapp_alias(
-    config: str = typer.Option(
+    config_path: str = typer.Option(
         "config/whatsapp.yaml",
         "--config",
         "-c",
@@ -395,7 +377,7 @@ def whatsapp_alias(
 ) -> None:
     """Alias for whatsapp-bridge command."""
     whatsapp_command(
-        config=config,
+        config_path=config_path,
         allowed_contact=allowed_contact,
         storage=storage,
         mcp_servers=mcp_servers,

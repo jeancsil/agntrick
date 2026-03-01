@@ -127,7 +127,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
     <tr>
       <td><code>whatsapp</code></td>
       <td><b>WhatsApp Agent:</b> Bidirectional WhatsApp communication (personal account).</td>
-      <td>-</td>
+      <td><code>webfetch</code><br><code>duckduckgo-search</code></td>
       <td><code>WhatsAppChannel</code></td>
     </tr>
   </tbody>
@@ -141,40 +141,56 @@ The WhatsApp agent enables bidirectional communication through your personal Wha
 **Requirements:**
 - Go 1.21+ and Git (for whatsapp-bridge backend)
 - Python 3.13+
+- A configured LLM provider (see environment variables below)
 
 **Configuration:**
 ```bash
-# Copy example config
-cp config/whatsapp.yaml.example config/whatsapp.yaml
+# 1. Copy example config
+cp agentic-framework/config/whatsapp.yaml.example config/whatsapp.yaml
 
-# Edit config/whatsapp.yaml with your settings:
-# - model: "claude-sonnet-4-6"
-# - privacy.allowed_contact: "+34 666 666 666"
-# - channel.storage_path: "~/storage/whatsapp"
+# 2. Edit config/whatsapp.yaml with your settings:
+# - model: "claude-sonnet-4-6"  # Your LLM model
+# - privacy.allowed_contact: "+34 666 666 666"  # Your phone number (only this number can interact)
+# - channel.storage_path: "~/storage/whatsapp"  # Where to store session data
+# - mcp_servers: ["web-fetch", "duckduckgo-search"]  # Optional: MCP servers to use
 ```
 
 **Usage:**
 ```bash
 # Start the WhatsApp agent
-agentic-run whatsapp --config config/whatsapp.yaml
+bin/agent.sh whatsapp-bridge --config config/whatsapp.yaml
 
-# With custom settings
-agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
+# With custom settings (overrides config file)
+bin/agent.sh whatsapp-bridge --allowed-contact "+1234567890" --storage ~/custom/path
+
+# Customize MCP servers
+bin/agent.sh whatsapp-bridge --mcp-servers "web-fetch,duckduckgo-search"
+bin/agent.sh whatsapp-bridge --mcp-servers none  # Disable MCP
 
 # Verbose mode for debugging
-agentic-run whatsapp --verbose
+bin/agent.sh whatsapp-bridge --verbose
 ```
 
 **First Run:**
 1. Scan the QR code displayed in your terminal
 2. Wait for WhatsApp to authenticate
-3. Send a message from your allowed phone number
+3. Send a message from your configured phone number
 4. Agent will respond automatically
 
-**Privacy:**
-- Only processes messages from the configured contact
-- All data stored locally (no cloud storage)
-- Messages from other contacts are silently ignored
+**Privacy & Security:**
+- 🔒 Only processes messages from the configured contact
+- 🔒 Group chat messages are automatically filtered (not sent to LLM)
+- 🔒 All data stored locally (no cloud storage of conversations)
+- 🔒 Messages from other contacts are silently ignored
+- 🔒 Message deduplication prevents reprocessing
+
+**Configuration Options:**
+- `model`: LLM model to use (defaults to provider default)
+- `mcp_servers`: MCP servers for web search and content fetching
+- `privacy.allowed_contact`: Only this phone number can interact with the agent
+- `privacy.log_filtered_messages`: Log filtered messages for debugging
+- `channel.storage_path`: Directory for WhatsApp session and database files
+- `features.group_messages`: Currently disabled by default for privacy
 
 </details>
 

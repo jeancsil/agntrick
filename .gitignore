@@ -48,3 +48,7 @@ agentic-framework/logs/
 
 # Configuration files
 agentic-framework/config/whatsapp.yaml
+
+# WhatsApp runtime data (sessions, databases, media)
+agentic-framework/storage/whatsapp/
+!agentic-framework/storage/whatsapp/.gitkeep

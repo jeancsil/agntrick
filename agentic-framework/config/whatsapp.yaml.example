@@ -25,7 +25,7 @@ privacy:
 features:
   text_messages: true       # Enable text messages
   media_messages: true       # Enable media (images, videos, documents, audio)
-  group_messages: true       # Enable group messages
+  group_messages: false      # Enable group messages (disabled by default for privacy)
   presence_updates: true      # Enable presence (online/typing status)
   typing_indicators: true    # Send typing indicators when processing
 

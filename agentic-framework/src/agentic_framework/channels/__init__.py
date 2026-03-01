@@ -10,6 +10,7 @@ from agentic_framework.channels.base import (
     OutgoingMessage,
 )
 from agentic_framework.channels.whatsapp import WhatsAppChannel
+from agentic_framework.channels.whatsapp_config import WhatsAppAgentConfig
 
 __all__ = [
     "Channel",
@@ -20,4 +21,5 @@ __all__ = [
     "MessageError",
     "ConfigurationError",
     "WhatsAppChannel",
+    "WhatsAppAgentConfig",
 ]

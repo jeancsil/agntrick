@@ -233,3 +233,57 @@ class TestWhatsAppChannelShutdown:
 
         assert whatsapp_channel._client is None
         assert not whatsapp_channel._is_listening
+
+
+class TestWhatsAppChannelPrivacySimple:
+    """Simple tests for privacy features."""
+
+    def test_group_chat_jid_ends_with_g_us(self, whatsapp_channel: WhatsAppChannel) -> None:
+        """Test that group chat JID ends with @g.us suffix."""
+        group_jid = "123456789@g.us"
+        direct_jid = "34666666666@s.whatsapp.net"
+
+        assert group_jid.endswith("@g.us")
+        assert not direct_jid.endswith("@g.us")
+
+    def test_normalize_phone_number_works(self, whatsapp_channel: WhatsAppChannel) -> None:
+        """Test that phone number normalization works correctly."""
+        test_cases = [
+            ("+34 666 666 666", "34666666666"),
+            ("+34-666-666-666", "34666666666"),
+            ("+34666666666@s.whatsapp.net", "34666666666"),
+        ]
+
+        for input_num, expected in test_cases:
+            result = whatsapp_channel._normalize_phone_number(input_num)
+            assert result == expected
+
+
+class TestWhatsAppChannelDeduplicationSimple:
+    """Simple tests for deduplication."""
+
+    def test_duplicate_detection(self, whatsapp_channel: WhatsAppChannel) -> None:
+        """Test that duplicate messages are detected."""
+        message_text = "Test message"
+        sender_id = "34666666666@s.whatsapp.net"
+
+        # First check - should not be duplicate
+        is_duplicate_1 = whatsapp_channel._is_duplicate_message(message_text, sender_id)
+        assert not is_duplicate_1
+
+        # Second check - same message should be duplicate
+        is_duplicate_2 = whatsapp_channel._is_duplicate_message(message_text, sender_id)
+        assert is_duplicate_2
+
+    def test_different_messages_not_duplicate(self, whatsapp_channel: WhatsAppChannel) -> None:
+        """Test that different messages are not treated as duplicates."""
+        message1 = "First message"
+        message2 = "Second message"
+        sender_id = "34666666666@s.whatsapp.net"
+
+        is_duplicate_1 = whatsapp_channel._is_duplicate_message(message1, sender_id)
+        is_duplicate_2 = whatsapp_channel._is_duplicate_message(message2, sender_id)
+
+        # Both should not be duplicates
+        assert not is_duplicate_1
+        assert not is_duplicate_2

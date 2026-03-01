@@ -75,8 +75,9 @@ class WhatsAppChannel(Channel):
 
         # Message deduplication using SQLite
         self._db_path = self.storage_path / "processed_messages.db"
-        self._db: sqlite3.Connection | None = None
-        self._db_lock = threading.Lock()  # Thread-safe DB access
+        # Use thread-local storage for SQLite connections to avoid threading issues
+        self._db_local = threading.local()
+        self._db_lock = threading.Lock()  # Thread-safe DB operations
 
         # Validate storage path
         self._validate_storage_path()
@@ -122,44 +123,83 @@ class WhatsAppChannel(Channel):
                 channel_name="whatsapp",
             ) from e
 
+    def _get_db_connection(self) -> sqlite3.Connection:
+        """Get or create a thread-local SQLite connection.
+
+        Each thread gets its own connection to avoid SQLite threading issues.
+
+        Returns:
+            A SQLite connection for the current thread.
+        """
+        if not hasattr(self._db_local, "conn") or self._db_local.conn is None:
+            self._db_local.conn = sqlite3.connect(str(self._db_path))
+            # Initialize the table for this new connection
+            cursor = self._db_local.conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS processed_messages (
+                    message_hash TEXT PRIMARY KEY,
+                    sender_id TEXT NOT NULL,
+                    first_seen_at REAL NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sender
+                ON processed_messages(sender_id)
+            """)
+            self._db_local.conn.commit()
+            logger.debug(f"Created thread-local DB connection for thread {threading.get_ident()}")
+        return self._db_local.conn
+
     def _init_deduplication_db(self) -> None:
         """Initialize SQLite database for message deduplication.
 
         Creates a table to track message hashes and their first seen time.
         Uses SHA-256 hash of message content (not full text) to detect duplicates.
 
-        TODO: Consider adding cleanup for old records (e.g., delete records older than 90 days)
-              to prevent database from growing indefinitely.
+        Thread-local connections are used to avoid SQLite threading issues.
         """
         try:
-            self._db = sqlite3.connect(str(self._db_path))
+            # Test by creating a connection in the current thread
+            _ = self._get_db_connection()
+            logger.info(f"Initialized deduplication DB: {self._db_path}")
+            # Clean up old records on startup
+            self._cleanup_old_deduplication_records()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to initialize deduplication DB: {e}")
+
+    def _cleanup_old_deduplication_records(self, max_age_days: int = 90) -> None:
+        """Clean up old deduplication records to prevent database bloat.
+
+        Deletes records older than max_age_days to keep the database size manageable.
+        This is called during initialization.
+
+        Args:
+            max_age_days: Maximum age of records to keep in days. Defaults to 90.
+        """
+        try:
+            conn = self._get_db_connection()
+            cutoff_time = time.time() - (max_age_days * 86400)  # days to seconds
+
             self._db_lock.acquire()
             try:
-                cursor = self._db.cursor()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM processed_messages WHERE first_seen_at < ?",
+                    (cutoff_time,),
+                )
+                deleted_count = cursor.rowcount
+                conn.commit()
 
-                # Create table if not exists
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS processed_messages (
-                        message_hash TEXT PRIMARY KEY,
-                        sender_id TEXT NOT NULL,
-                        first_seen_at REAL NOT NULL
+                if deleted_count > 0:
+                    logger.info(
+                        f"Cleaned up {deleted_count} old deduplication records (older than {max_age_days} days)"
                     )
-                """)
-
-                # Create index for faster lookups
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_sender
-                    ON processed_messages(sender_id)
-                """)
-
-                self._db.commit()
-                logger.info(f"Initialized deduplication DB: {self._db_path}")
 
             finally:
                 self._db_lock.release()
 
         except sqlite3.Error as e:
-            logger.error(f"Failed to initialize deduplication DB: {e}")
+            logger.error(f"Error cleaning up old deduplication records: {e}")
 
     def _is_duplicate_message(self, message_text: str, sender_id: str) -> bool:
         """Check if message is a duplicate using SQLite.
@@ -171,10 +211,12 @@ class WhatsAppChannel(Channel):
         Returns:
             True if message should be skipped, False otherwise.
         """
-        if self._db is None:
-            # If DB not initialized, skip deduplication check
+        try:
+            conn = self._get_db_connection()
+        except sqlite3.Error as e:
+            # If DB not available, skip deduplication check
             # This allows agent to work if DB init fails
-            logger.warning("Deduplication DB not available, skipping duplicate check")
+            logger.warning(f"Deduplication DB not available, skipping duplicate check: {e}")
             return False
 
         # Create hash of message content
@@ -183,7 +225,7 @@ class WhatsAppChannel(Channel):
         try:
             self._db_lock.acquire()
             try:
-                cursor = self._db.cursor()
+                cursor = conn.cursor()
 
                 # Check if this exact message has been seen before
                 cursor.execute("SELECT sender_id FROM processed_messages WHERE message_hash = ?", (message_hash,))
@@ -200,7 +242,7 @@ class WhatsAppChannel(Channel):
                     "INSERT INTO processed_messages (message_hash, sender_id, first_seen_at) VALUES (?, ?, ?)",
                     (message_hash, sender_id, time.time()),
                 )
-                self._db.commit()
+                conn.commit()
                 return False
 
             finally:
@@ -211,15 +253,20 @@ class WhatsAppChannel(Channel):
             return False
 
     def _close_deduplication_db(self) -> None:
-        """Close SQLite database connection."""
-        if self._db is not None:
-            self._db_lock.acquire()
-            try:
-                self._db.close()
-                self._db = None
-                logger.info("Closed deduplication DB")
-            finally:
-                self._db_lock.release()
+        """Close all SQLite database connections.
+
+        Since we use thread-local connections, we need to close the connection
+        from the thread that created it. However, at shutdown we just close
+        the thread-local connection if it exists in the current thread.
+        """
+        self._db_lock.acquire()
+        try:
+            if hasattr(self._db_local, "conn") and self._db_local.conn is not None:
+                self._db_local.conn.close()
+                self._db_local.conn = None
+                logger.info("Closed deduplication DB connection")
+        finally:
+            self._db_lock.release()
 
     async def initialize(self) -> None:
         """Initialize the neonize client.
@@ -286,6 +333,13 @@ class WhatsAppChannel(Channel):
             # Also check chat JID (when messaging yourself, sender is LID but chat is phone number)
             chat_jid = Jid2String(event.Info.MessageSource.Chat) if event.Info.MessageSource.Chat else ""
             logger.debug(f"Chat JID: {chat_jid}")
+
+            # SECURITY: Reject group chats entirely to prevent privacy leaks
+            # Group chats have JIDs ending with @g.us
+            if chat_jid.endswith("@g.us"):
+                if self.log_filtered_messages:
+                    logger.info(f"Filtered group chat message from {chat_jid}")
+                return
 
             # Check if message is from yourself (IsFromMe flag)
             is_from_me = event.Info.MessageSource.IsFromMe
@@ -442,7 +496,7 @@ class WhatsAppChannel(Channel):
             jid: The JID to send to.
             media_url: URL to the media file.
             caption: Caption for the media.
-            media_type: Type of media (image, video, document, audio).
+            media_type: Type of media (image, video, document, audio). Used as fallback.
         """
         if self._client is None:
             raise RuntimeError("Client not initialized")
@@ -455,14 +509,19 @@ class WhatsAppChannel(Channel):
             response.raise_for_status()
             media_data = response.content
 
-        # Determine mime type
-        mime_types = {
-            "image": "image/jpeg",
-            "video": "video/mp4",
-            "document": "application/pdf",
-            "audio": "audio/mpeg",
-        }
-        mime_type = mime_types.get(media_type, "image/jpeg")
+        # Use Content-Type from response header for accurate mime type
+        # Fallback to provided media_type if header is not available
+        mime_type = response.headers.get("content-type", "image/jpeg")
+
+        # Fallback mapping if content-type is not provided
+        if "content-type" not in response.headers:
+            mime_types = {
+                "image": "image/jpeg",
+                "video": "video/mp4",
+                "document": "application/pdf",
+                "audio": "audio/mpeg",
+            }
+            mime_type = mime_types.get(media_type, "image/jpeg")
 
         # Build and send media message based on type - run in thread pool
         def _build_and_send() -> None:
