@@ -8,6 +8,14 @@ import pytest
 class TestWhatsAppAgentMCPInitialization:
     """Tests for WhatsApp agent MCP initialization and tools."""
 
+    @pytest.fixture(autouse=True)
+    def mock_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Prevent real LLM instantiation so tests run without API keys."""
+        monkeypatch.setattr(
+            "agentic_framework.core.langgraph_agent._create_model",
+            lambda model, temp: MagicMock(),
+        )
+
     def test_agent_has_local_tools(self) -> None:
         """Test that WhatsApp agent has no local tools (uses only MCP tools)."""
         from agentic_framework.core.whatsapp_agent import WhatsAppAgent
