@@ -84,11 +84,15 @@ class WhatsAppChannel(Channel):
         log_filtered_messages: bool = False,
         poll_interval: float = 1.0,  # Kept for API compatibility, not used in event mode
         typing_indicators: bool = True,
+        min_typing_duration: float = 2.0,  # Minimum time (seconds) to show typing indicator
+        dedup_window: float = 10.0,  # Time window (seconds) for duplicate detection
     ) -> None:
         self.storage_path = Path(storage_path).expanduser().resolve()
         self.allowed_contact = self._normalize_phone_number(allowed_contact)
         self.log_filtered_messages = log_filtered_messages
         self.typing_indicators = typing_indicators
+        self._min_typing_duration = min_typing_duration
+        self._dedup_window = dedup_window
         self._client: NewClient | None = None
         self._is_listening: bool = False
         self._message_callback: Callable[[IncomingMessage], Any] | None = None
@@ -97,6 +101,7 @@ class WhatsAppChannel(Channel):
         self._stop_event = threading.Event()  # For signaling thread to stop
         self._original_dir = Path.cwd()  # Store original working directory
         self._typing_jids: set[str] = set()  # Track JIDs with active typing indicators
+        self._typing_start_times: dict[str, float] = {}  # Track when typing started
 
         # Message deduplication using SQLite
         self._db_path = self.storage_path / "processed_messages.db"
@@ -109,7 +114,8 @@ class WhatsAppChannel(Channel):
 
         logger.info(
             f"WhatsAppChannel initialized with storage={self.storage_path}, allowed_contact={self.allowed_contact}, "
-            f"typing_indicators={self.typing_indicators}"
+            f"typing_indicators={self.typing_indicators}, min_typing_duration={self._min_typing_duration}, "
+            f"dedup_window={self._dedup_window}"
         )
 
     @staticmethod
@@ -138,11 +144,16 @@ class WhatsAppChannel(Channel):
             jid: The JID to send typing indicator to.
         """
         if not self.typing_indicators or self._client is None:
+            logger.debug(
+                f"Skipping typing indicator for {jid}: "
+                f"indicators={self.typing_indicators}, client={self._client is not None}"
+            )
             return
 
         try:
             # Build JID object from string
             jid_obj = build_jid(jid)
+            logger.info(f"Sending COMPOSING typing indicator to {jid}")
             # Send composing presence to show typing indicator
             self._client.send_chat_presence(
                 jid_obj,
@@ -150,22 +161,39 @@ class WhatsAppChannel(Channel):
                 ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT,
             )
             self._typing_jids.add(jid)
-            logger.debug(f"Sent typing indicator to {jid}")
+            self._typing_start_times[jid] = time.time()
+            logger.info(f"Sent typing indicator to {jid} (active: {len(self._typing_jids)})")
         except Exception as e:
             logger.warning(f"Failed to send typing indicator: {e}")
+            import traceback
 
-    def _stop_typing(self, jid: str) -> None:
+            logger.warning(f"Typing error traceback: {traceback.format_exc()}")
+
+    async def _stop_typing(self, jid: str) -> None:
         """Stop typing indicator for a JID.
 
         Args:
             jid: The JID to stop typing indicator for.
         """
         if not self.typing_indicators or self._client is None or jid not in self._typing_jids:
+            logger.debug(f"Skipping stop typing for {jid}: in_jids={jid in self._typing_jids}")
             return
+
+        # Enforce minimum typing duration
+        if jid in self._typing_start_times:
+            elapsed = time.time() - self._typing_start_times[jid]
+            if elapsed < self._min_typing_duration:
+                # Wait for minimum duration to pass
+                wait_time = self._min_typing_duration - elapsed
+                logger.info(
+                    f"Waiting {wait_time:.1f}s before stopping typing indicator for {jid} (elapsed: {elapsed:.1f}s)"
+                )
+                await asyncio.sleep(wait_time)
 
         try:
             # Build JID object from string
             jid_obj = build_jid(jid)
+            logger.info(f"Sending PAUSED typing indicator to {jid}")
             # Send paused presence to stop typing indicator
             self._client.send_chat_presence(
                 jid_obj,
@@ -173,9 +201,13 @@ class WhatsAppChannel(Channel):
                 ChatPresenceMedia.CHAT_PRESENCE_MEDIA_TEXT,
             )
             self._typing_jids.discard(jid)
-            logger.debug(f"Stopped typing indicator for {jid}")
+            self._typing_start_times.pop(jid, None)
+            logger.info(f"Stopped typing indicator for {jid} (remaining active: {len(self._typing_jids)})")
         except Exception as e:
             logger.warning(f"Failed to stop typing indicator: {e}")
+            import traceback
+
+            logger.warning(f"Stop typing error traceback: {traceback.format_exc()}")
 
     def _validate_storage_path(self) -> None:
         """Validate that storage_path is a writable directory.
@@ -211,9 +243,17 @@ class WhatsAppChannel(Channel):
                 CREATE TABLE IF NOT EXISTS processed_messages (
                     message_hash TEXT PRIMARY KEY,
                     sender_id TEXT NOT NULL,
-                    first_seen_at REAL NOT NULL
+                    first_seen_at REAL NOT NULL,
+                    last_seen_at REAL NOT NULL
                 )
             """)
+            # Check if last_seen_at column exists, add if missing (schema migration)
+            cursor.execute("PRAGMA table_info(processed_messages)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "last_seen_at" not in columns:
+                # Old schema without last_seen_at, migrate by adding the column
+                cursor.execute("ALTER TABLE processed_messages ADD COLUMN last_seen_at REAL NOT NULL DEFAULT 0")
+                logger.info("Migrated database schema: added last_seen_at column")
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_sender
                 ON processed_messages(sender_id)
@@ -274,7 +314,14 @@ class WhatsAppChannel(Channel):
             logger.error(f"Error cleaning up old deduplication records: {e}")
 
     def _is_duplicate_message(self, message_text: str, sender_id: str) -> bool:
-        """Check if message is a duplicate using SQLite.
+        """Check if message is a duplicate using time-based deduplication.
+
+        Messages from the same sender with identical content are considered duplicates
+        only if they arrive within the deduplication window (default 10 seconds).
+        After that time passes, the same message can be processed again.
+
+        This allows legitimate repeated messages (like "Oi" sent multiple times)
+        while still preventing true duplicate messages from spam.
 
         Args:
             message_text: The message content.
@@ -293,6 +340,7 @@ class WhatsAppChannel(Channel):
 
         # Create hash of message content
         message_hash = hashlib.sha256(message_text.encode()).hexdigest()
+        current_time = time.time()
 
         try:
             self._db_lock.acquire()
@@ -300,21 +348,46 @@ class WhatsAppChannel(Channel):
                 cursor = conn.cursor()
 
                 # Check if this exact message has been seen before
-                cursor.execute("SELECT sender_id FROM processed_messages WHERE message_hash = ?", (message_hash,))
+                cursor.execute(
+                    "SELECT first_seen_at, last_seen_at FROM processed_messages WHERE message_hash = ?",
+                    (message_hash,),
+                )
 
                 result = cursor.fetchone()
 
                 if result is not None:
-                    # Message was seen before - skip it
-                    logger.debug(f"Skipping duplicate message from {sender_id} (hash: {message_hash[:8]}...)")
-                    return True
+                    first_seen_at, last_seen_at = result
+                    # Check if within dedup window from last time
+                    time_since_last = current_time - last_seen_at
+                    if time_since_last < self._dedup_window:
+                        # Message was seen too recently - skip it
+                        logger.debug(
+                            f"Skipping duplicate message from {sender_id} "
+                            f"(hash: {message_hash[:8]}..., {time_since_last:.1f}s ago)"
+                        )
+                        return True
+                    else:
+                        # Update last_seen_at since enough time has passed
+                        cursor.execute(
+                            "UPDATE processed_messages SET last_seen_at = ? WHERE message_hash = ?",
+                            (current_time, message_hash),
+                        )
+                        conn.commit()
+                        logger.debug(
+                            f"Allowing message from {sender_id} (hash: {message_hash[:8]}..., "
+                            f"{time_since_last:.1f}s ago, outside window)"
+                        )
+                        return False
 
                 # First time seeing this message - store it
                 cursor.execute(
-                    "INSERT INTO processed_messages (message_hash, sender_id, first_seen_at) VALUES (?, ?, ?)",
-                    (message_hash, sender_id, time.time()),
+                    "INSERT INTO processed_messages "
+                    "(message_hash, sender_id, first_seen_at, last_seen_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (message_hash, sender_id, current_time, current_time),
                 )
                 conn.commit()
+                logger.debug(f"First time seeing message from {sender_id} (hash: {message_hash[:8]}...)")
                 return False
 
             finally:
@@ -420,6 +493,17 @@ class WhatsAppChannel(Channel):
             chat_jid = Jid2String(event.Info.MessageSource.Chat) if event.Info.MessageSource.Chat else ""
             logger.debug(f"Chat JID: {chat_jid}")
 
+            # Check SenderAlt and RecipientAlt for phone number
+            sender_alt = ""
+            if event.Info.MessageSource.SenderAlt:
+                sender_alt = Jid2String(event.Info.MessageSource.SenderAlt)
+                logger.debug(f"Sender Alt: {sender_alt}")
+
+            recipient_alt = ""
+            if event.Info.MessageSource.RecipientAlt:
+                recipient_alt = Jid2String(event.Info.MessageSource.RecipientAlt)
+                logger.debug(f"Recipient Alt: {recipient_alt}")
+
             # SECURITY: Reject group chats entirely to prevent privacy leaks
             # Group chats have JIDs ending with @g.us
             if chat_jid.endswith("@g.us"):
@@ -433,24 +517,18 @@ class WhatsAppChannel(Channel):
             # Normalize phone numbers for comparison
             normalized_sender = self._normalize_phone_number(sender_jid)
             normalized_chat = self._normalize_phone_number(chat_jid) if chat_jid else ""
+            normalized_sender_alt = self._normalize_phone_number(sender_alt) if sender_alt else ""
+            normalized_recipient_alt = self._normalize_phone_number(recipient_alt) if recipient_alt else ""
 
             # SECURITY: Only allow messages from the explicitly allowed contact.
-            # We do NOT exempt self-messages - they must match the allowed_contact
-            # number. This prevents responding to messages from unknown LIDs when
-            # messaging from different devices or contexts.
-            is_allowed = normalized_sender == self.allowed_contact or normalized_chat == self.allowed_contact
-
-            # SECURITY OVERRIDE: Allow self-messages from same device
-            # Self-messages (is_from_me=True) are allowed even if they don't match
-            # allowed_contact. This enables legitimate self-messaging use case while maintaining
-            # security because responses go back to the original sender JID, not to allowed_contact.
-            #
-            # Security rationale: You cannot "hijack" or "steal" your own self-messages.
-            # If someone else sent a message from a different device, is_from_me would be False,
-            # and it would be filtered by the strict contact check above.
-            if is_from_me:
-                is_allowed = True
-                logger.debug("Allowing self-message (from same device). Response will go back to original sender JID.")
+            # We check sender JID, chat JID, and alt fields to handle different messaging contexts.
+            # For self-messages with LIDs, the phone number might be in SenderAlt or RecipientAlt.
+            is_allowed = (
+                normalized_sender == self.allowed_contact
+                or normalized_chat == self.allowed_contact
+                or normalized_sender_alt == self.allowed_contact
+                or normalized_recipient_alt == self.allowed_contact
+            )
 
             logger.debug(
                 f"Normalized sender: {normalized_sender}, chat: {normalized_chat}, "
@@ -630,7 +708,7 @@ class WhatsAppChannel(Channel):
             ) from e
         finally:
             # Stop typing indicator after sending (regardless of success/failure)
-            self._stop_typing(message.recipient_id)
+            await self._stop_typing(message.recipient_id)
 
     async def _send_media(self, jid: str, media_url: str, caption: str, media_type: str) -> None:
         """Send a media message.

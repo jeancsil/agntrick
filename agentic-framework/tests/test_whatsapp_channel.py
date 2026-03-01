@@ -1,7 +1,7 @@
 """Tests for WhatsApp channel implementation."""
 
+import time
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -296,20 +296,22 @@ class TestWhatsAppChannelContactFiltering:
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
     @patch("asyncio.run_coroutine_threadsafe")
-    async def test_self_message_from_disallowed_lid_is_processed(
+    async def test_self_message_from_disallowed_lid_is_filtered(
         self, mock_run_coro: MagicMock, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
     ) -> None:
-        """Test that self-messages from LIDs (even if not matching allowed_contact) are processed.
+        """Test that self-messages from LIDs NOT matching allowed_contact are filtered.
 
-        With the new security model, self-messages are allowed to enable legitimate
-        self-messaging use case. The security guarantee is that responses go back to
-        the original sender (the LID), not to the allowed_contact. This prevents
-        the agent from being "hijacked" to respond to the wrong contact.
+        This is a critical security test. Self-messages from unknown LIDs (e.g., LinkedIn sync)
+        must be filtered to prevent the agent from responding to messages from contacts
+        not in allowed_contact.
 
-        The original security concern was that messages from UNKNOWN devices could get responses.
-        Self-messages from the same device don't pose this risk because:
-        1. Responses go back to the original sender JID
-        2. You can't "steal" your own self-messages
+        The security model is:
+        - Self-messages from allowed_contact phone number: ALLOWED
+        - Self-messages from unknown LIDs (even with is_from_me=True): FILTERED
+
+        This prevents issues like:
+        1. LinkedIn sync messages from other contacts being processed
+        2. Messages from other platforms that set is_from_me=True incorrectly
         """
         whatsapp_channel.allowed_contact = "34666666666"  # User's actual number
 
@@ -329,35 +331,19 @@ class TestWhatsAppChannelContactFiltering:
         whatsapp_channel._loop = MagicMock()
 
         # Create a mock self-message event from a DIFFERENT LID (IsFromMe=True)
-        # This simulates messaging from a different device or context
+        # This simulates a LinkedIn sync message from a contact not in allowed_contact
         mock_event = MagicMock()
-        mock_event.Message.conversation = "Testing self-message from different device"
+        mock_event.Message.conversation = "This should be filtered"
         mock_event.Info.MessageSource.Sender = "196859943489627@lid"  # Different LID
         mock_event.Info.MessageSource.Chat = "196859943489627@lid"
-        mock_event.Info.MessageSource.IsFromMe = True  # Self-message from device
+        mock_event.Info.MessageSource.IsFromMe = True  # Self-message but from unknown LID
         mock_event.Info.Timestamp = 1234567890
 
         with patch("agentic_framework.channels.whatsapp.Jid2String", side_effect=lambda x: str(x)):
             whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
 
-        # Verify a coroutine was scheduled (self-messages are now allowed)
-        assert len(scheduled_coroutines) == 1
-
-        # Execute the callback to capture the IncomingMessage
-        captured_message: Any = None
-
-        async def capture_callback(msg):
-            nonlocal captured_message
-            captured_message = msg
-
-        whatsapp_channel._message_callback = capture_callback
-        await scheduled_coroutines[0]
-
-        # CRITICAL: Verify that the response would go back to the original LID,
-        # NOT to the allowed_contact phone number. This is the key security guarantee.
-        assert captured_message is not None
-        assert captured_message.sender_id == "196859943489627@lid"  # Back to original LID
-        assert captured_message.sender_id != "34666666666@s.whatsapp.net"  # NOT to allowed_contact
+        # Verify NO coroutine was scheduled (message was filtered)
+        assert len(scheduled_coroutines) == 0
 
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
@@ -528,20 +514,19 @@ class TestWhatsAppChannelContactFiltering:
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
     @patch("asyncio.run_coroutine_threadsafe")
-    async def test_user_real_world_scenario_self_message_from_lid(
+    async def test_user_real_world_scenario_self_message_from_lid_is_filtered(
         self, mock_run_coro: MagicMock, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
     ) -> None:
-        """Test the exact scenario user encountered: self-message from LID not matching phone number.
+        """Test that self-messages from LIDs NOT matching allowed_contact are filtered.
 
         This reproduces the real-world scenario where:
         1. User sets allowed_contact to their phone number (+34 677 427 318)
-        2. User sends a message to themselves from their phone
-        3. Message arrives from device's LID (118657162162293@lid)
-        4. LID doesn't match phone number (118657162162293 != 34677427318)
-        5. But is_from_me=True, so message should be ALLOWED
-        6. Response should go back to the LID, not the phone number
+        2. A message arrives from an unknown LID (118657162162293@lid)
+        3. LID doesn't match phone number (118657162162293 != 34677427318)
+        4. Even with is_from_me=True, message should be FILTERED
 
-        This test ensures this scenario works without manual testing.
+        This is the security fix to prevent processing messages from unknown LIDs
+        (e.g., LinkedIn sync from other contacts).
         """
         # User's actual phone number as in config
         whatsapp_channel.allowed_contact = "34677427318"
@@ -574,47 +559,23 @@ class TestWhatsAppChannelContactFiltering:
         with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="118657162162293@lid"):
             whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
 
-        # Message should be processed (is_from_me=True allows self-messages)
-        assert len(scheduled_coroutines) == 1, "Self-message from LID should be processed"
-
-        # Verify response routing: response should go back to original LID
-        captured_message: Any = None
-
-        async def capture_callback(msg):
-            nonlocal captured_message
-            captured_message = msg
-
-        whatsapp_channel._message_callback = capture_callback
-        await scheduled_coroutines[0]
-
-        assert captured_message is not None
-        assert captured_message.sender_id == "118657162162293@lid", (
-            "Response should go back to original LID, not to phone number"
-        )
-        # Verify it's NOT going to the phone number
-        assert "34677427318" not in captured_message.sender_id, (
-            "Response should NOT be routed to phone number when self-messaging"
-        )
+        # Message should be FILTERED (LID doesn't match allowed_contact)
+        assert len(scheduled_coroutines) == 0, "Self-message from unknown LID should be filtered"
 
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
     @patch("asyncio.run_coroutine_threadsafe")
-    async def test_self_message_response_routing_always_to_original_sender(
+    async def test_self_message_from_unknown_lid_is_filtered(
         self, mock_run_coro: MagicMock, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
     ) -> None:
-        """Test that self-message responses ALWAYS go back to original sender LID.
+        """Test that self-messages from unknown LIDs are filtered.
 
-        This is a critical security test: even if someone self-messages from
-        a LID that doesn't match allowed_contact, the response must
-        go back to that same LID, never to the allowed_contact.
+        This is a critical security test: self-messages from LIDs that don't
+        match the allowed_contact must be filtered to prevent processing messages
+        from unknown sources (e.g., LinkedIn sync from other contacts).
 
-        This prevents a scenario where:
-        1. Attacker from device A sends self-message with LID A
-        2. Agent processes message (is_from_me=True)
-        3. Response could potentially be redirected to allowed_contact (phone number)
-        4. This would expose the agent's responses to the attacker
-
-        The fix ensures responses always echo back to the original sender.
+        The fix ensures that only self-messages from the user's actual phone number
+        (allowed_contact) are processed, not self-messages from arbitrary LIDs.
         """
         whatsapp_channel.allowed_contact = "34666666666"
 
@@ -643,21 +604,8 @@ class TestWhatsAppChannelContactFiltering:
         with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="999888888888@lid"):
             whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
 
-        assert len(scheduled_coroutines) == 1
-
-        captured_message: Any = None
-
-        async def capture_callback(msg):
-            nonlocal captured_message
-            captured_message = msg
-
-        whatsapp_channel._message_callback = capture_callback
-        await scheduled_coroutines[0]
-
-        # CRITICAL SECURITY CHECK: Response must go back to original LID
-        assert captured_message.sender_id == "999888888888@lid"
-        # NOT to the phone number (preventing response hijacking)
-        assert "34666666666" not in captured_message.sender_id
+        # Message should be filtered (LID doesn't match allowed_contact)
+        assert len(scheduled_coroutines) == 0
 
     @pytest.mark.asyncio
     @patch("agentic_framework.channels.whatsapp.NewClient")
@@ -965,8 +913,9 @@ class TestWhatsAppChannelTypingIndicators:
 
         jid = "34666666666@s.whatsapp.net"
         whatsapp_channel._typing_jids.add(jid)
+        whatsapp_channel._typing_start_times[jid] = time.time() - 10  # Simulate elapsed time
 
-        whatsapp_channel._stop_typing(jid)
+        await whatsapp_channel._stop_typing(jid)
 
         # Verify send_chat_presence was called with PAUSED state
         mock_client.send_chat_presence.assert_called_once()
@@ -988,11 +937,12 @@ class TestWhatsAppChannelTypingIndicators:
 
         # First call - JID is in set
         whatsapp_channel._typing_jids.add(jid)
-        whatsapp_channel._stop_typing(jid)
+        whatsapp_channel._typing_start_times[jid] = time.time() - 10  # Simulate elapsed time
+        await whatsapp_channel._stop_typing(jid)
         assert mock_client.send_chat_presence.call_count == 1
 
         # Second call - JID not in set, should not call again
-        whatsapp_channel._stop_typing(jid)
+        await whatsapp_channel._stop_typing(jid)
         assert mock_client.send_chat_presence.call_count == 1  # Still 1
 
     @pytest.mark.asyncio
