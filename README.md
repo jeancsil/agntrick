@@ -146,7 +146,7 @@ The WhatsApp agent enables bidirectional communication through your personal Wha
 **Configuration:**
 ```bash
 # 1. Copy example config
-cp agentic-framework/config/whatsapp.yaml.example config/whatsapp.yaml
+cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whatsapp.yaml
 
 # 2. Edit config/whatsapp.yaml with your settings:
 # - model: "claude-sonnet-4-6"  # Your LLM model
