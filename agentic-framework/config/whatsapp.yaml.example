@@ -12,7 +12,7 @@ model: "claude-sonnet-4-6"  # or any supported model
 
 # Channel configuration
 channel:
-  type: "whatsapp-bridge"
+  type: "whatsapp"
   storage_path: "~/storage/whatsapp"
 
 # Privacy and filtering
@@ -29,7 +29,7 @@ features:
   presence_updates: true      # Enable presence (online/typing status)
   typing_indicators: true    # Send typing indicators when processing
 
-# whatsapp-bridge specific
+# whatsapp specific
 whatsapp_bridge:
   auto_setup: true          # Auto-clone Go bridge on first run
   auto_connect: true        # Auto-connect on startup

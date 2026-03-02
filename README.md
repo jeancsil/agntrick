@@ -128,7 +128,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
       <td><code>whatsapp</code></td>
       <td><b>WhatsApp Agent:</b> Bidirectional WhatsApp communication (personal account).</td>
       <td><code>webfetch</code><br><code>duckduckgo-search</code></td>
-      <td><code>WhatsAppChannel</code></td>
+      <td>-</td>
     </tr>
   </tbody>
 </table>
@@ -139,7 +139,7 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 The WhatsApp agent enables bidirectional communication through your personal WhatsApp account using QR code authentication.
 
 **Requirements:**
-- Go 1.21+ and Git (for whatsapp-bridge backend)
+- Go 1.21+ and Git (for WhatsApp backend)
 - Python 3.13+
 - A configured LLM provider (see environment variables below)
 
@@ -158,17 +158,17 @@ cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whats
 **Usage:**
 ```bash
 # Start the WhatsApp agent
-bin/agent.sh whatsapp-bridge --config config/whatsapp.yaml
+bin/agent.sh whatsapp --config config/whatsapp.yaml
 
 # With custom settings (overrides config file)
-bin/agent.sh whatsapp-bridge --allowed-contact "+1234567890" --storage ~/custom/path
+bin/agent.sh whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
 
 # Customize MCP servers
-bin/agent.sh whatsapp-bridge --mcp-servers "web-fetch,duckduckgo-search"
-bin/agent.sh whatsapp-bridge --mcp-servers none  # Disable MCP
+bin/agent.sh whatsapp --mcp-servers "web-fetch,duckduckgo-search"
+bin/agent.sh whatsapp --mcp-servers none  # Disable MCP
 
 # Verbose mode for debugging
-bin/agent.sh whatsapp-bridge --verbose
+bin/agent.sh whatsapp --verbose
 ```
 
 **First Run:**

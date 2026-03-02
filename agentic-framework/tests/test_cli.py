@@ -328,28 +328,6 @@ def test_create_agent_command_handles_generic_error(monkeypatch: pytest.MonkeyPa
     assert any("Run with --verbose" in message for message in printed)
 
 
-def test_whatsapp_alias_forwards_to_whatsapp_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_whatsapp_command(**kwargs) -> None:
-        captured.update(kwargs)
-
-    monkeypatch.setattr(cli, "whatsapp_command", fake_whatsapp_command)
-
-    cli.whatsapp_alias(
-        config_path="cfg.yaml",
-        allowed_contact="123",
-        storage="store",
-        mcp_servers="none",
-        verbose=True,
-        reset_session=True,
-    )
-
-    assert captured["config_path"] == "cfg.yaml"
-    assert captured["allowed_contact"] == "123"
-    assert captured["reset_session"] is True
-
-
 def test_main_prints_hint_without_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
     printed: list[str] = []
     monkeypatch.setattr(cli, "configure_logging", lambda _verbose: None)

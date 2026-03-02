@@ -62,7 +62,7 @@ class Channel(ABC):
     - Graceful shutdown
 
     Example implementations:
-        - WhatsAppChannel: Uses whatsapp-bridge for personal WhatsApp accounts
+        - WhatsAppChannel: Uses WhatsApp for personal WhatsApp accounts
         - DiscordChannel: Uses discord.py for Discord
         - TelegramChannel: Uses python-telegram-bot for Telegram
     """

@@ -238,7 +238,7 @@ async def _wait_for_shutdown_or_agent_exit(
             await shutdown_wait_task
 
 
-@app.command(name="whatsapp-bridge")
+@app.command(name="whatsapp")
 def whatsapp_command(
     config_path: str = typer.Option(
         "config/whatsapp.yaml",
@@ -413,53 +413,6 @@ def whatsapp_command(
         raise typer.Exit(code=1)
 
 
-# Alias for backwards compatibility - "whatsapp" redirects to "whatsapp-bridge"
-@app.command(name="whatsapp", hidden=True)
-def whatsapp_alias(
-    config_path: str = typer.Option(
-        "config/whatsapp.yaml",
-        "--config",
-        "-c",
-        help="Path to WhatsApp configuration file.",
-    ),
-    allowed_contact: str | None = typer.Option(
-        None,
-        "--allowed-contact",
-        help="Override allowed contact phone number.",
-    ),
-    storage: str | None = typer.Option(
-        None,
-        "--storage",
-        help="Override storage directory for WhatsApp data.",
-    ),
-    mcp_servers: str | None = typer.Option(
-        None,
-        "--mcp-servers",
-        help="Comma-separated MCP servers (e.g., 'web-fetch,duckduckgo-search'). Use 'none' to disable.",
-    ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Enable verbose logging.",
-    ),
-    reset_session: bool = typer.Option(
-        False,
-        "--reset-session",
-        help="Delete existing WhatsApp session to force QR code rescan.",
-    ),
-) -> None:
-    """Alias for whatsapp-bridge command."""
-    whatsapp_command(
-        config_path=config_path,
-        allowed_contact=allowed_contact,
-        storage=storage,
-        mcp_servers=mcp_servers,
-        verbose=verbose,
-        reset_session=reset_session,
-    )
-
-
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -518,8 +471,10 @@ def create_agent_command(agent_name: str) -> Callable[[str, int], None]:
 
 
 AgentRegistry.discover_agents()
+# Exclude whatsapp-messenger from auto-registration as it has a custom CLI command
 for _name in AgentRegistry.list_agents():
-    app.command(name=_name)(create_agent_command(_name))
+    if _name != "whatsapp-messenger":
+        app.command(name=_name)(create_agent_command(_name))
 
 
 if __name__ == "__main__":

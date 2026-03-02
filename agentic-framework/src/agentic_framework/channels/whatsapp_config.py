@@ -60,7 +60,7 @@ class FeatureFlags(BaseModel):
 class ChannelConfig(BaseModel):
     """WhatsApp channel configuration."""
 
-    type: str = Field(default="whatsapp-bridge", description="Channel type.")
+    type: str = Field(default="whatsapp", description="Channel type.")
     storage_path: str = Field(
         default="~/storage/whatsapp",
         description="Directory for WhatsApp data storage.",

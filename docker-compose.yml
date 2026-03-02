@@ -15,6 +15,7 @@ services:
       # Mount source code for live updates (no rebuild needed)
       - ./agentic-framework/src:/app/agentic-framework/src
       - ./agentic-framework/tests:/app/agentic-framework/tests
+      - ./agentic-framework/config:/app/agentic-framework/config
       - ./scripts:/app/scripts
 
       # Mount logs directory for easy access from host
