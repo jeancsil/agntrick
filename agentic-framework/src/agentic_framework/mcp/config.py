@@ -18,8 +18,9 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "transport": "http",
     },
     "duckduckgo-search": {
-        "url": "https://mcp.duckduckgo.com/sse",
-        "transport": "sse",
+        "command": "uvx",
+        "args": ["duckduckgo-mcp-server"],
+        "transport": "stdio",
     },
 }
 

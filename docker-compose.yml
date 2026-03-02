@@ -5,11 +5,17 @@ services:
       dockerfile: Dockerfile
     container_name: agentic-framework
 
+    # DNS configuration for reliable network resolution
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
     # Mount volumes for live code updates and persistent logs
     volumes:
       # Mount source code for live updates (no rebuild needed)
       - ./agentic-framework/src:/app/agentic-framework/src
       - ./agentic-framework/tests:/app/agentic-framework/tests
+      - ./scripts:/app/scripts
 
       # Mount logs directory for easy access from host
       - ./agentic-framework/logs:/app/agentic-framework/logs
