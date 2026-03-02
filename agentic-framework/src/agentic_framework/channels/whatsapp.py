@@ -19,10 +19,42 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from neonize.client import NewClient  # type: ignore
-from neonize.events import MessageEv  # type: ignore
-from neonize.utils import ChatPresence, ChatPresenceMedia  # type: ignore
-from neonize.utils.jid import Jid2String, build_jid  # type: ignore
+try:
+    from neonize.client import NewClient  # type: ignore
+    from neonize.events import MessageEv  # type: ignore
+    from neonize.utils import ChatPresence, ChatPresenceMedia  # type: ignore
+    from neonize.utils.jid import Jid2String, build_jid  # type: ignore
+
+    _NEONIZE_IMPORT_ERROR: Exception | None = None
+except Exception as import_error:  # pragma: no cover - depends on system packages
+    _NEONIZE_IMPORT_ERROR = import_error
+
+    class NewClient:  # type: ignore[no-redef]
+        """Fallback client that raises a clear error when neonize is unavailable."""
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError(
+                "neonize dependency is unavailable. Install system dependencies (e.g., libmagic) and neonize extras."
+            ) from _NEONIZE_IMPORT_ERROR
+
+    MessageEv = Any  # type: ignore[misc,assignment]
+
+    class _ChatPresenceFallback:
+        CHAT_PRESENCE_COMPOSING = "composing"
+        CHAT_PRESENCE_PAUSED = "paused"
+
+    class _ChatPresenceMediaFallback:
+        CHAT_PRESENCE_MEDIA_TEXT = "text"
+
+    ChatPresence = _ChatPresenceFallback  # type: ignore[assignment]
+    ChatPresenceMedia = _ChatPresenceMediaFallback  # type: ignore[assignment]
+
+    def Jid2String(value: Any) -> str:
+        return str(value)
+
+    def build_jid(phone: str, server: str = "s.whatsapp.net") -> str:
+        return f"{phone}@{server}"
+
 
 from agentic_framework.channels.base import (
     Channel,
@@ -420,6 +452,14 @@ class WhatsAppChannel(Channel):
         finally:
             self._db_lock.release()
 
+    def _restore_working_directory(self) -> None:
+        """Restore process working directory to the original value."""
+        try:
+            os.chdir(self._original_dir)
+            logger.debug(f"Restored working directory to: {self._original_dir}")
+        except OSError as e:
+            logger.error(f"Error restoring working directory: {e}")
+
     async def initialize(self) -> None:
         """Initialize the neonize client.
 
@@ -437,12 +477,14 @@ class WhatsAppChannel(Channel):
         # Initialize deduplication database for persistent duplicate prevention
         self._init_deduplication_db()
 
+        cwd_changed = False
         try:
             # Permanently change to storage directory so neonize stores session
             # there.  We cannot use the _change_directory context manager here
             # because the background thread runs connect() *after* this method
             # returns, so we need CWD to remain changed until shutdown().
             os.chdir(self.storage_path)
+            cwd_changed = True
             logger.debug(f"Changed working directory to: {self.storage_path}")
 
             # Create neonize sync client (will store session in current directory)
@@ -455,6 +497,9 @@ class WhatsAppChannel(Channel):
             logger.info("Neonize client initialized successfully")
 
         except Exception as e:
+            if cwd_changed:
+                self._restore_working_directory()
+            self._client = None
             raise ChannelError(
                 f"Failed to initialize neonize client: {e}",
                 channel_name="whatsapp",
@@ -794,13 +839,7 @@ class WhatsAppChannel(Channel):
                 self._client = None
 
         # Restore original working directory (was changed during initialization).
-        # Use os.chdir() directly — the _change_directory context manager would
-        # temporarily enter and immediately exit the target dir, which is a no-op.
-        try:
-            os.chdir(self._original_dir)
-            logger.debug(f"Restored working directory to: {self._original_dir}")
-        except OSError as e:
-            logger.error(f"Error restoring working directory: {e}")
+        self._restore_working_directory()
 
         # Wait for thread to finish, and warn if it outlives the timeout
         if self._thread and self._thread.is_alive():

@@ -1,5 +1,7 @@
 import asyncio
+import contextlib
 import logging
+import shutil
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Type
@@ -205,6 +207,37 @@ def load_config(config_path: str) -> WhatsAppAgentConfig:
         raise typer.Exit(code=1)
 
 
+async def _wait_for_shutdown_or_agent_exit(
+    agent_task: "asyncio.Task[None]",
+    shutdown_event: asyncio.Event,
+) -> None:
+    """Wait for either shutdown signal or the agent task to exit.
+
+    Args:
+        agent_task: The running WhatsApp agent task.
+        shutdown_event: Event triggered by signal handlers.
+
+    Raises:
+        RuntimeError: If the agent exits cleanly before shutdown is requested.
+        Exception: Re-raises any exception from ``agent_task``.
+    """
+    shutdown_wait_task = asyncio.create_task(shutdown_event.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {agent_task, shutdown_wait_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if agent_task in done:
+            # Surface startup/runtime errors immediately instead of waiting forever.
+            await agent_task
+            raise RuntimeError("WhatsApp agent stopped before a shutdown signal was received.")
+    finally:
+        if not shutdown_wait_task.done():
+            shutdown_wait_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await shutdown_wait_task
+
+
 @app.command(name="whatsapp-bridge")
 def whatsapp_command(
     config_path: str = typer.Option(
@@ -272,14 +305,18 @@ def whatsapp_command(
         session_files = list(storage_dir.glob("*"))  # This catches the session file
         # Also look for whatsmeow-specific session files
         session_files.extend(list(storage_dir.glob("*.session*")))
+        unique_session_files = sorted(set(session_files), key=lambda path: path.name)
 
-        if session_files:
+        if unique_session_files:
             console.print(f"[yellow]Deleting session files from:[/yellow] {storage_dir}")
-            for session_file in session_files:
+            for session_file in unique_session_files:
                 # Keep the deduplication DB, delete everything else
                 if session_file.name != "processed_messages.db":
                     console.print(f"  [dim]Removing:[/dim] {session_file.name}")
-                    session_file.unlink()
+                    if session_file.is_dir():
+                        shutil.rmtree(session_file)
+                    else:
+                        session_file.unlink(missing_ok=True)
             console.print("[green]Session cleared. QR code will be required on next run.[/green]")
             return  # Exit after resetting session
         else:
@@ -350,17 +387,18 @@ def whatsapp_command(
         # Start agent in a task
         agent_task = asyncio.create_task(agent.start())
 
-        # Wait for shutdown signal
-        await shutdown_event.wait()
-
-        # Stop the agent
-        console.print("[yellow]Stopping agent...[/yellow]")
-        await agent.stop()
-        agent_task.cancel()
         try:
-            await agent_task
-        except asyncio.CancelledError:
-            pass
+            # Exit if startup/runtime fails so users see the actual error quickly.
+            await _wait_for_shutdown_or_agent_exit(agent_task, shutdown_event)
+
+            # Stop the agent on signal-driven shutdown
+            console.print("[yellow]Stopping agent...[/yellow]")
+            await agent.stop()
+        finally:
+            if not agent_task.done():
+                agent_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await agent_task
 
         console.print("[bold green]WhatsApp agent stopped.[/bold green]")
 

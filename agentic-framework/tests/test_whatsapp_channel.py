@@ -110,6 +110,7 @@ class TestWhatsAppChannelInitialize:
         self, mock_client_class: MagicMock, whatsapp_channel: WhatsAppChannel
     ) -> None:
         """Test that initialize handles connection errors correctly."""
+        original_dir = Path.cwd()
         mock_client_class.side_effect = Exception("Connection failed")
         mock_client_class.return_value = MagicMock()
 
@@ -117,6 +118,7 @@ class TestWhatsAppChannelInitialize:
             await whatsapp_channel.initialize()
 
         assert "Failed to initialize neonize client" in str(exc_info.value)
+        assert Path.cwd() == original_dir
 
 
 class TestWhatsAppChannelSend:
