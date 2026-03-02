@@ -46,8 +46,9 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 ## 📑 Table of Contents
 - [🧰 Available Out of the Box](#-available-out-of-the-box)
   - [🤖 Agents](#-agents)
-  - [📦 Local Tools (Zero External Dependencies)](#-local-tools-zero-external-dependencies)
-  - [🌐 MCP Servers (Context Superpowers)](#-mcp-servers-context-superpowers)
+  - [📦 Local Tools](#-local-tools)
+  - [🌐 MCP Servers](#-mcp-servers)
+  - [🧠 LLM Providers](#-llm-providers)
 - [🚀 Quick Start (Zero to Agent in 60s)](#-quick-start-zero-to-agent-in-60s)
 - [🛠️ Build Your Own Agent](#️-build-your-own-agent)
 - [🏗️ Architecture](#️-architecture)
@@ -62,293 +63,73 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 ### 🤖 Agents
 
-<table>
-  <thead>
-    <tr>
-      <th width="25%">Agent</th>
-      <th width="40%">Purpose</th>
-      <th width="15%">MCP Servers</th>
-      <th width="20%">Local Tools</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>developer</code></td>
-      <td><b>Code Master:</b> Read, search &amp; edit code.</td>
-      <td><code>webfetch</code></td>
-      <td><i>All codebase tools below</i></td>
-    </tr>
-    <tr>
-      <td><code>travel-coordinator</code></td>
-      <td><b>Trip Planner:</b> Orchestrates agents.</td>
-      <td><code>kiwi-com-flight-search</code><br><code>webfetch</code></td>
-      <td><i>Uses 3 sub-agents</i></td>
-    </tr>
-    <tr>
-      <td><code>chef</code></td>
-      <td><b>Chef:</b> Recipes from your fridge.</td>
-      <td><code>webfetch</code></td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>news</code></td>
-      <td><b>News Anchor:</b> Aggregates top stories.</td>
-      <td><code>webfetch</code></td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>travel</code></td>
-      <td><b>Flight Booker:</b> Finds the best routes.</td>
-      <td><code>kiwi-com-flight-search</code></td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>simple</code></td>
-      <td><b>Chat Buddy:</b> Vanilla conversational agent.</td>
-      <td>-</td>
-      <td>-</td>
-    </tr>
-    <tr>
-      <td><code>github-pr-reviewer</code></td>
-      <td><b>PR Reviewer:</b> Reviews diffs, posts inline comments &amp; summaries.</td>
-      <td>-</td>
-      <td>
-        <details>
-          <summary>View tools</summary>
-          <code>get_pr_diff</code><br>
-          <code>get_pr_comments</code><br>
-          <code>post_review_comment</code><br>
-          <code>post_general_comment</code><br>
-          <code>reply_to_review_comment</code><br>
-          <code>get_pr_metadata</code>
-        </details>
-      </td>
-    </tr>
-    <tr>
-      <td><code>whatsapp</code></td>
-      <td><b>WhatsApp Agent:</b> Bidirectional WhatsApp communication (personal account).</td>
-      <td><code>webfetch</code><br><code>duckduckgo-search</code></td>
-      <td>-</td>
-    </tr>
-  </tbody>
-</table>
+The framework includes several pre-built agents for common use cases:
 
-<details>
-<summary><strong>📱 WhatsApp Agent Setup</strong></summary>
+| Agent | Purpose |
+|-------|---------|
+| `developer` | Code Master: Read, search & edit code |
+| `travel-coordinator` | Trip Planner: Orchestrates agents |
+| `chef` | Chef: Recipes from your fridge |
+| `news` | News Anchor: Aggregates top stories |
+| `travel` | Flight Booker: Finds the best routes |
+| `simple` | Chat Buddy: Vanilla conversational agent |
+| `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries |
+| `whatsapp` | WhatsApp Agent: Bidirectional WhatsApp communication |
 
-The WhatsApp agent enables bidirectional communication through your personal WhatsApp account using QR code authentication.
-
-**Requirements:**
-- Go 1.21+ and Git (for WhatsApp backend)
-- Python 3.13+
-- A configured LLM provider (see environment variables below)
-
-**Configuration:**
-```bash
-# 1. Copy example config
-cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whatsapp.yaml
-
-# 2. Edit config/whatsapp.yaml with your settings:
-# - model: "claude-sonnet-4-6"  # Your LLM model
-# - privacy.allowed_contact: "+34 666 666 666"  # Your phone number (only this number can interact)
-# - channel.storage_path: "~/storage/whatsapp"  # Where to store session data
-# - mcp_servers: ["web-fetch", "duckduckgo-search"]  # Optional: MCP servers to use
-```
-
-**Usage:**
-```bash
-# Start the WhatsApp agent
-bin/agent.sh whatsapp --config config/whatsapp.yaml
-
-# With custom settings (overrides config file)
-bin/agent.sh whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
-
-# Customize MCP servers
-bin/agent.sh whatsapp --mcp-servers "web-fetch,duckduckgo-search"
-bin/agent.sh whatsapp --mcp-servers none  # Disable MCP
-
-# Verbose mode for debugging
-bin/agent.sh whatsapp --verbose
-```
-
-**First Run:**
-1. Scan the QR code displayed in your terminal
-2. Wait for WhatsApp to authenticate
-3. Send a message from your configured phone number
-4. Agent will respond automatically
-
-**Privacy & Security:**
-- 🔒 Only processes messages from the configured contact
-- 🔒 Group chat messages are automatically filtered (not sent to LLM)
-- 🔒 All data stored locally (no cloud storage of conversations)
-- 🔒 Messages from other contacts are silently ignored
-- 🔒 Message deduplication prevents reprocessing
-
-**Configuration Options:**
-- `model`: LLM model to use (defaults to provider default)
-- `mcp_servers`: MCP servers for web search and content fetching
-- `privacy.allowed_contact`: Only this phone number can interact with the agent
-- `privacy.log_filtered_messages`: Log filtered messages for debugging
-- `channel.storage_path`: Directory for WhatsApp session and database files
-- `features.group_messages`: Currently disabled by default for privacy
-
-</details>
-
-### 📦 Local Tools (Zero External Dependencies)
-
-<table>
-  <thead>
-    <tr>
-      <th width="15%">Tool</th>
-      <th width="55%">Capability</th>
-      <th width="30%">Example</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>find_files</code></td>
-      <td>Fast search via <code>fd</code></td>
-      <td><code>*.py</code> finds Python files</td>
-    </tr>
-    <tr>
-      <td><code>discover_structure</code></td>
-      <td>Directory tree mapping</td>
-      <td>Understands project layout</td>
-    </tr>
-    <tr>
-      <td><code>get_file_outline</code></td>
-      <td>AST signature parsing (Python, TS, Go, Rust, Java, C++, PHP)</td>
-      <td>Extracts classes/functions</td>
-    </tr>
-    <tr>
-      <td><code>read_file_fragment</code></td>
-      <td>Precise file reading</td>
-      <td><code>file.py:10:50</code></td>
-    </tr>
-    <tr>
-      <td><code>code_search</code></td>
-      <td>Fast search via <code>ripgrep</code></td>
-      <td>Global regex search</td>
-    </tr>
-    <tr>
-      <td><code>edit_file</code></td>
-      <td>Safe file editing</td>
-      <td>Inserts/Replaces lines</td>
-    </tr>
-  </tbody>
-</table>
-
-<details>
-<summary><strong>📝 Advanced: <code>edit_file</code> Formats</strong></summary>
-
-**RECOMMENDED: `search_replace` (no line numbers needed)**
-```json
-{"op": "search_replace", "path": "file.py", "old": "exact text", "new": "replacement text"}
-```
-
-**Line-based operations:**
-`replace:path:start:end:content` | `insert:path:after_line:content` | `delete:path:start:end`
-
-</details>
-
-### 🌐 MCP Servers (Context Superpowers)
-
-<table>
-  <thead>
-    <tr>
-      <th width="35%">Server</th>
-      <th width="45%">Purpose</th>
-      <th width="20%">API Key Needed?</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>kiwi-com-flight-search</code></td>
-      <td>Search real-time flights</td>
-      <td>🟢 No</td>
-    </tr>
-    <tr>
-      <td><code>webfetch</code></td>
-      <td>Extract clean text from URLs &amp; web search</td>
-      <td>🟢 No</td>
-    </tr>
-  </tbody>
-</table>
+📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
 
 ---
 
-### 🧠 Supported LLM Providers
+### 📦 Local Tools
 
-The framework supports **10+ LLM providers** out of the box, covering 90%+ of the LLM market:
+Fast, zero-dependency tools for working with local codebases:
 
-<table>
-  <thead>
-    <tr>
-      <th width="25%">Provider</th>
-      <th width="20%">Type</th>
-      <th width="55%">Use Case</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><b>Anthropic</b></td>
-      <td>Cloud</td>
-      <td>State-of-the-art reasoning (Claude)</td>
-    </tr>
-    <tr>
-      <td><b>OpenAI</b></td>
-      <td>Cloud</td>
-      <td>GPT-4, GPT-4.1, o1 series</td>
-    </tr>
-    <tr>
-      <td><b>Azure OpenAI</b></td>
-      <td>Cloud</td>
-      <td>Enterprise OpenAI deployments</td>
-    </tr>
-    <tr>
-      <td><b>Google GenAI</b></td>
-      <td>Cloud</td>
-      <td>Gemini models via API</td>
-    </tr>
-    <tr>
-      <td><b>Google Vertex AI</b></td>
-      <td>Cloud</td>
-      <td>Gemini models via GCP</td>
-    </tr>
-    <tr>
-      <td><b>Groq</b></td>
-      <td>Cloud</td>
-      <td>Ultra-fast inference</td>
-    </tr>
-    <tr>
-      <td><b>Mistral AI</b></td>
-      <td>Cloud</td>
-      <td>European privacy-focused models</td>
-    </tr>
-    <tr>
-      <td><b>Cohere</b></td>
-      <td>Cloud</td>
-      <td>Enterprise RAG and Command models</td>
-    </tr>
-    <tr>
-      <td><b>AWS Bedrock</b></td>
-      <td>Cloud</td>
-      <td>Anthropic, Titan, Meta via AWS</td>
-    </tr>
-    <tr>
-      <td><b>Ollama</b></td>
-      <td>Local</td>
-      <td>Run LLMs locally (zero API cost)</td>
-    </tr>
-    <tr>
-      <td><b>Hugging Face</b></td>
-      <td>Cloud</td>
-      <td>Open models from Hugging Face Hub</td>
-    </tr>
-  </tbody>
-</table>
+| Tool | Capability |
+|------|------------|
+| `find_files` | Fast search via `fd` |
+| `discover_structure` | Directory tree mapping |
+| `get_file_outline` | AST signature parsing |
+| `read_file_fragment` | Precise file reading |
+| `code_search` | Fast search via `ripgrep` |
+| `edit_file` | Safe file editing |
 
-**Provider Priority:** Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (fallback)
+📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
+
+---
+
+### 🌐 MCP Servers
+
+Model Context Protocol servers for extending agent capabilities:
+
+| Server | Purpose |
+|--------|---------|
+| `kiwi-com-flight-search` | Search real-time flights |
+| `webfetch` | Extract clean text from URLs & web search |
+| `duckduckgo-search` | Web search via DuckDuckGo |
+
+📖 **See [docs/mcp-servers.md](docs/mcp-servers.md)** for details on each server and how to add custom MCP servers.
+
+---
+
+### 🧠 LLM Providers
+
+The framework supports **11 LLM providers** out of the box, covering 90%+ of the market:
+
+| Provider | Type | Use Case |
+|----------|------|----------|
+| **Anthropic** | Cloud | State-of-the-art reasoning (Claude) |
+| **OpenAI** | Cloud | GPT-4, GPT-4.1, o1 series |
+| **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
+| **Google GenAI** | Cloud | Gemini models via API |
+| **Google Vertex AI** | Cloud | Gemini models via GCP |
+| **Groq** | Cloud | Ultra-fast inference |
+| **Mistral AI** | Cloud | European privacy-focused models |
+| **Cohere** | Cloud | Enterprise RAG and Command models |
+| **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
+| **Ollama** | Local | Run LLMs locally (zero API cost) |
+| **Hugging Face** | Cloud | Open models from Hugging Face Hub |
+
+📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed setup instructions, environment variables, and provider comparison.
 
 ---
 
@@ -409,89 +190,43 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 <details>
 <summary><strong>🔑 Required Environment Variables</strong></summary>
 
-<table>
-  <thead>
-    <tr>
-      <th width="20%">Provider</th>
-      <th width="35%">Variable</th>
-      <th width="15%">Required?</th>
-      <th width="30%">Default Model</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><b>Anthropic</b></td>
-      <td><code>ANTHROPIC_API_KEY</code></td>
-      <td>🟢 <b>Yes*</b></td>
-      <td><code>claude-haiku-4-5-20251001</code></td>
-    </tr>
-    <tr>
-      <td><b>OpenAI</b></td>
-      <td><code>OPENAI_API_KEY</code></td>
-      <td>🟢 <b>Yes*</b></td>
-      <td><code>gpt-4o-mini</code></td>
-    </tr>
-    <tr>
-      <td><b>Azure OpenAI</b></td>
-      <td><code>AZURE_OPENAI_API_KEY</code>, <code>AZURE_OPENAI_ENDPOINT</code></td>
-      <td>⚪ No</td>
-      <td><code>gpt-4o-mini</code></td>
-    </tr>
-    <tr>
-      <td><b>Google GenAI</b></td>
-      <td><code>GOOGLE_API_KEY</code></td>
-      <td>⚪ No</td>
-      <td><code>gemini-2.0-flash-exp</code></td>
-    </tr>
-    <tr>
-      <td><b>Google Vertex AI</b></td>
-      <td><code>GOOGLE_VERTEX_PROJECT_ID</code></td>
-      <td>⚪ No</td>
-      <td><code>gemini-2.0-flash-exp</code></td>
-    </tr>
-    <tr>
-      <td><b>Groq</b></td>
-      <td><code>GROQ_API_KEY</code></td>
-      <td>⚪ No</td>
-      <td><code>llama-3.3-70b-versatile</code></td>
-    </tr>
-    <tr>
-      <td><b>Mistral AI</b></td>
-      <td><code>MISTRAL_API_KEY</code></td>
-      <td>⚪ No</td>
-      <td><code>mistral-large-latest</code></td>
-    </tr>
-    <tr>
-      <td><b>Cohere</b></td>
-      <td><code>COHERE_API_KEY</code></td>
-      <td>⚪ No</td>
-      <td><code>command-r-plus</code></td>
-    </tr>
-    <tr>
-      <td><b>AWS Bedrock</b></td>
-      <td><code>AWS_PROFILE</code> or <code>AWS_ACCESS_KEY_ID</code></td>
-      <td>⚪ No</td>
-      <td><code>anthropic.claude-3-5-sonnet-20241022-v2:0</code></td>
-    </tr>
-    <tr>
-      <td><b>Ollama</b></td>
-      <td><code>OLLAMA_BASE_URL</code></td>
-      <td>⚪ No</td>
-      <td><code>llama3.2</code></td>
-    </tr>
-    <tr>
-      <td><b>Hugging Face</b></td>
-      <td><code>HUGGINGFACEHUB_API_TOKEN</code></td>
-      <td>⚪ No</td>
-      <td><code>meta-llama/Llama-3.2-3B-Instruct</code></td>
-    </tr>
-  </tbody>
-</table>
+Only one provider's API key is required. The framework auto-detects which provider to use based on available credentials.
 
-**Model Override Variables** (optional):
-- `ANTHROPIC_MODEL_NAME`, `OPENAI_MODEL_NAME`, `AZURE_OPENAI_MODEL_NAME`, `GOOGLE_GENAI_MODEL_NAME`, `GROQ_MODEL_NAME`, etc.
+```bash
+# Anthropic (Recommended)
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-> ⚠️ **Note:** Only one provider's API key is required. The framework auto-detects which provider to use based on available credentials.
+# OpenAI
+OPENAI_API_KEY=sk-your-key-here
+
+# Google GenAI / Vertex
+GOOGLE_API_KEY=your-google-key
+GOOGLE_VERTEX_PROJECT_ID=your-project-id
+
+# Groq
+GROQ_API_KEY=gsk-your-key-here
+
+# Mistral AI
+MISTRAL_API_KEY=your-mistral-key-here
+
+# Cohere
+COHERE_API_KEY=your-cohere-key-here
+
+# Azure OpenAI
+AZURE_OPENAI_API_KEY=your-azure-key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+
+# AWS Bedrock
+AWS_PROFILE=your-profile
+
+# Ollama (Local, no API key needed)
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Hugging Face
+HUGGINGFACEHUB_API_TOKEN=your-hf-token
+```
+
+📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations, model overrides, and provider comparison.
 
 </details>
 
@@ -633,7 +368,7 @@ bin/agent.sh developer -i "Hello" -v
 # 📜 Access logs (same location as local)
 tail -f agentic-framework/logs/agent.log
 
-# 📱 Run the WhatsApp agent (requires config)
+# 📱 Run the WhatsApp agent (requires config - see docs/agents.md)
 agentic-run whatsapp --config config/whatsapp.yaml
 
 # 📱 Run WhatsApp with custom settings
