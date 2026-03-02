@@ -3,7 +3,7 @@
 # 🤖 Agentic Framework
 **Build AI agents that *actually* do things.**
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
 [![LangChain](https://img.shields.io/badge/langchain-%23007BA7.svg?style=plastic&logo=langchain&logoColor=white)](https://python.langchain.com/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-green?style=plastic&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
 [![Docker Ready](https://img.shields.io/badge/docker-ready-blue?style=plastic&logo=docker&logoColor=white)](https://www.docker.com/)
@@ -124,8 +124,75 @@ Instead of spending days wiring together LLMs, tools, and execution environments
         </details>
       </td>
     </tr>
+    <tr>
+      <td><code>whatsapp</code></td>
+      <td><b>WhatsApp Agent:</b> Bidirectional WhatsApp communication (personal account).</td>
+      <td><code>webfetch</code><br><code>duckduckgo-search</code></td>
+      <td>-</td>
+    </tr>
   </tbody>
 </table>
+
+<details>
+<summary><strong>📱 WhatsApp Agent Setup</strong></summary>
+
+The WhatsApp agent enables bidirectional communication through your personal WhatsApp account using QR code authentication.
+
+**Requirements:**
+- Go 1.21+ and Git (for WhatsApp backend)
+- Python 3.13+
+- A configured LLM provider (see environment variables below)
+
+**Configuration:**
+```bash
+# 1. Copy example config
+cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whatsapp.yaml
+
+# 2. Edit config/whatsapp.yaml with your settings:
+# - model: "claude-sonnet-4-6"  # Your LLM model
+# - privacy.allowed_contact: "+34 666 666 666"  # Your phone number (only this number can interact)
+# - channel.storage_path: "~/storage/whatsapp"  # Where to store session data
+# - mcp_servers: ["web-fetch", "duckduckgo-search"]  # Optional: MCP servers to use
+```
+
+**Usage:**
+```bash
+# Start the WhatsApp agent
+bin/agent.sh whatsapp --config config/whatsapp.yaml
+
+# With custom settings (overrides config file)
+bin/agent.sh whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
+
+# Customize MCP servers
+bin/agent.sh whatsapp --mcp-servers "web-fetch,duckduckgo-search"
+bin/agent.sh whatsapp --mcp-servers none  # Disable MCP
+
+# Verbose mode for debugging
+bin/agent.sh whatsapp --verbose
+```
+
+**First Run:**
+1. Scan the QR code displayed in your terminal
+2. Wait for WhatsApp to authenticate
+3. Send a message from your configured phone number
+4. Agent will respond automatically
+
+**Privacy & Security:**
+- 🔒 Only processes messages from the configured contact
+- 🔒 Group chat messages are automatically filtered (not sent to LLM)
+- 🔒 All data stored locally (no cloud storage of conversations)
+- 🔒 Messages from other contacts are silently ignored
+- 🔒 Message deduplication prevents reprocessing
+
+**Configuration Options:**
+- `model`: LLM model to use (defaults to provider default)
+- `mcp_servers`: MCP servers for web search and content fetching
+- `privacy.allowed_contact`: Only this phone number can interact with the agent
+- `privacy.log_filtered_messages`: Log filtered messages for debugging
+- `channel.storage_path`: Directory for WhatsApp session and database files
+- `features.group_messages`: Currently disabled by default for privacy
+
+</details>
 
 ### 📦 Local Tools (Zero External Dependencies)
 
@@ -565,6 +632,12 @@ bin/agent.sh developer -i "Hello" -v
 
 # 📜 Access logs (same location as local)
 tail -f agentic-framework/logs/agent.log
+
+# 📱 Run the WhatsApp agent (requires config)
+agentic-run whatsapp --config config/whatsapp.yaml
+
+# 📱 Run WhatsApp with custom settings
+agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
 ```
 
 ---
@@ -578,7 +651,7 @@ Prefer running without Docker? We got you.
 <summary><strong>System Requirements & Setup</strong></summary>
 
 **Requirements:**
-- Python 3.12+
+- Python 3.13+
 - `ripgrep`, `fd`, `fzf`
 
 ```bash

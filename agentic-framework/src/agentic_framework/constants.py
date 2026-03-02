@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
+from pydantic import SecretStr
 
 load_dotenv()  # Load .env before reading environment variables
 
@@ -150,7 +151,6 @@ def _create_model(model_name: str, temperature: float) -> Any:
 
     if provider == "azure_openai":
         from langchain_openai import AzureChatOpenAI
-        from pydantic.types import SecretStr
 
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
         return AzureChatOpenAI(
@@ -206,6 +206,14 @@ def _create_model(model_name: str, temperature: float) -> Any:
             return ChatHuggingFace(model_id=model_name)
 
     # Default fallback to OpenAI
-    from langchain_openai import ChatOpenAI
+    # Note: In langchain-openai 0.2.0+, ChatOpenAI requires api_key.
+    # Only create the client when a model is explicitly provided.
+    from langchain_openai.chat_models.base import ChatOpenAI
 
-    return ChatOpenAI(model=model_name, temperature=temperature)
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    return ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        base_url=os.getenv("OPENAI_BASE_URL"),
+        api_key=SecretStr(openai_api_key) if openai_api_key else None,
+    )

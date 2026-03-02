@@ -45,3 +45,11 @@ htmlcov/
 # Logging
 agentic-framework/logs/
 !agentic-framework/logs/.gitkeep
+
+# Configuration files
+**/whatsapp.yaml
+agentic-framework/config/*.yaml
+
+# WhatsApp runtime data (sessions, databases, media)
+agentic-framework/storage/whatsapp/
+!agentic-framework/storage/whatsapp/.gitkeep

@@ -17,6 +17,11 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "url": "https://remote.mcpservers.org/fetch/mcp",
         "transport": "http",
     },
+    "duckduckgo-search": {
+        "command": "uvx",
+        "args": ["duckduckgo-mcp-server"],
+        "transport": "stdio",
+    },
 }
 
 

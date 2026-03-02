@@ -8,14 +8,20 @@ WORKDIR /app
 # Copy from the official installer: https://github.com/astral-sh/uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install Search Tools
+# Install Search Tools and Network Diagnostics
 # ripgrep: ultra-fast text searching
 # fd-find: user-friendly alternative to 'find'
 # fzf: general-purpose command-line fuzzy finder
+# libmagic: Required by neonize/python-magic for file type detection
+# curl: For testing HTTP/HTTPS connections
+# dnsutils: For DNS resolution troubleshooting
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
     fzf \
+    libmagic1 \
+    curl \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Note: In Debian/Ubuntu, the 'fd' executable is renamed to 'fdfind'.
@@ -33,6 +39,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY agentic-framework/pyproject.toml agentic-framework/uv.lock ./agentic-framework/
 COPY agentic-framework/README.md ./agentic-framework/
 COPY agentic-framework/src ./agentic-framework/src
+COPY agentic-framework/config ./agentic-framework/config
 
 # Install dependencies using uv
 # This installs the package in editable mode with all dependencies

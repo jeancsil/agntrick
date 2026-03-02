@@ -5,14 +5,24 @@ services:
       dockerfile: Dockerfile
     container_name: agentic-framework
 
+    # DNS configuration for reliable network resolution
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
     # Mount volumes for live code updates and persistent logs
     volumes:
       # Mount source code for live updates (no rebuild needed)
       - ./agentic-framework/src:/app/agentic-framework/src
       - ./agentic-framework/tests:/app/agentic-framework/tests
+      - ./agentic-framework/config:/app/agentic-framework/config
+      - ./scripts:/app/scripts
 
       # Mount logs directory for easy access from host
       - ./agentic-framework/logs:/app/agentic-framework/logs
+
+      # Mount storage directory for persistent WhatsApp session data
+      - ./agentic-framework/storage:/app/agentic-framework/storage
 
       # Mount pyproject.toml in case you need to update dependencies
       - ./agentic-framework/pyproject.toml:/app/agentic-framework/pyproject.toml
@@ -31,8 +41,8 @@ services:
     # Override default command - this will be overridden when running specific commands
     command: [ "uv", "--directory", "agentic-framework", "run", "agentic-run", "--help" ]
     # Keep container running for interactive use (optional)
-    # stdin_open: true
-    # tty: true
+    stdin_open: true
+    tty: true
 volumes:
   uv-cache:
   venv-data:
