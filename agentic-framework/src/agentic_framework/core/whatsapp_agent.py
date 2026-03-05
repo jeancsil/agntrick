@@ -16,7 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from agentic_framework.channels.base import Channel, IncomingMessage, OutgoingMessage
 from agentic_framework.constants import get_default_model
-from agentic_framework.core.grok_audio_transcriber import GrokAudioTranscriber
+from agentic_framework.core.grok_audio_transcriber import GroqAudioTranscriber
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
@@ -339,7 +339,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
                     message_text = "Sorry, I couldn't process your audio message (invalid path)."
                 else:
                     # Create transcriber and transcribe using Grok API
-                    transcriber = GrokAudioTranscriber()
+                    transcriber = GroqAudioTranscriber()
                     transcription = await transcriber.transcribe_audio(audio_path, audio_mime_type)
 
                     if transcription.startswith("Error:"):

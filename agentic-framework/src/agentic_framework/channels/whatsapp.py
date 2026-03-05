@@ -521,16 +521,7 @@ class WhatsAppChannel(Channel):
             return
 
         try:
-            # Extract message data
-            message_text = getattr(event.Message, "conversation", "")
-            if not message_text and hasattr(event.Message, "extended_text_message"):
-                message_text = event.Message.extended_text_message.text
-
-            if not message_text:
-                logger.debug("Skipping message without text")
-                return  # Skip messages without text
-
-            # Get sender info - use Jid2String to get proper string representation
+            # === STEP 1: Get sender info FIRST (before any message processing) ===
             sender_jid = Jid2String(event.Info.MessageSource.Sender)
             logger.debug(f"Received message from JID: {sender_jid}")
 
@@ -549,6 +540,7 @@ class WhatsAppChannel(Channel):
                 recipient_alt = Jid2String(event.Info.MessageSource.RecipientAlt)
                 logger.debug(f"Recipient Alt: {recipient_alt}")
 
+            # === STEP 2: SECURITY CHECKS FIRST ===
             # SECURITY: Reject group chats entirely to prevent privacy leaks
             # Group chats have JIDs ending with @g.us
             if chat_jid.endswith("@g.us"):
@@ -584,6 +576,53 @@ class WhatsAppChannel(Channel):
                 if self.log_filtered_messages:
                     logger.info(f"Filtered message from {sender_jid}")
                 return
+
+            # === STEP 3: Extract message content ===
+            message_text = getattr(event.Message, "conversation", "")
+            if not message_text:
+                extended_text = getattr(event.Message, "extended_text_message", None)
+                if extended_text is not None:
+                    message_text = getattr(extended_text, "text", "")
+
+            # === STEP 4: Process message by type ===
+            # If no text, check for audio message (voice notes, etc.)
+            if not message_text:
+                # Debug: log all attributes of event.Message to understand structure
+                msg_attrs = [attr for attr in dir(event.Message) if not attr.startswith("_")]
+                logger.debug(f"Message attributes: {msg_attrs}")
+
+                # Check for audio message - try different possible attribute names
+                # neonize/whatsmeow may use different naming conventions
+                audio_msg = None
+                for attr_name in ["audioMessage", "AudioMessage", "audio_message", "ptt"]:
+                    if hasattr(event.Message, attr_name):
+                        audio_msg = getattr(event.Message, attr_name)
+                        logger.debug(f"Found audio attribute: {attr_name}")
+                        break
+
+                if audio_msg is not None:
+                    # Log the audio message attributes to understand its structure
+                    audio_attrs = [attr for attr in dir(audio_msg) if not attr.startswith("_")]
+                    logger.debug(f"Audio message attributes: {audio_attrs}")
+                    logger.debug(f"Audio message type: {type(audio_msg)}")
+
+                    # Check if it has url or other download attributes
+                    # Note: neonize uses 'URL' (uppercase), not 'url' (lowercase)
+                    audio_url = getattr(audio_msg, "URL", None) or getattr(audio_msg, "url", None)
+                    if audio_url:
+                        logger.debug("Detected audio message with URL - processing...")
+                        asyncio.run_coroutine_threadsafe(
+                            self._process_audio_and_callback(client, event),
+                            self._loop,
+                        )
+                        return
+                    else:
+                        logger.warning(f"Audio message found but no 'URL' or 'url' attribute. Available: {audio_attrs}")
+                else:
+                    logger.debug("No audio message attribute found on event.Message")
+
+                logger.debug("Skipping message without text or audio")
+                return  # Skip messages without text or audio
 
             # Message deduplication using SQLite: skip if message hash exists
             if self._is_duplicate_message(message_text, sender_jid):
@@ -828,6 +867,7 @@ class WhatsAppChannel(Channel):
         # Close deduplication database
         self._close_deduplication_db()
 
+        # Disconnect client and clear reference
         if self._client:
             try:
                 # Disconnect the client
@@ -848,3 +888,147 @@ class WhatsAppChannel(Channel):
                 logger.warning("Worker thread did not stop within timeout — possible resource leak")
 
         logger.info("WhatsApp channel shutdown complete")
+
+    async def _process_audio_and_callback(self, client: NewClient, event: MessageEv) -> None:
+        """Process audio message and invoke callback with result.
+
+        Security checks (group filtering, allowed contact) are already done in _on_message_event
+        before this method is called.
+
+        Args:
+            client: The neonize client instance.
+            event: The MessageEv containing the audio message.
+        """
+        if self._message_callback is None:
+            return
+
+        try:
+            # Get sender info for reply
+            sender_jid = Jid2String(event.Info.MessageSource.Sender)
+            chat_jid = Jid2String(event.Info.MessageSource.Chat) if event.Info.MessageSource.Chat else ""
+            is_from_me = event.Info.MessageSource.IsFromMe
+
+            # Process the audio message
+            incoming = await self._process_audio_message(client, event)
+            if incoming is None:
+                logger.warning("Audio processing returned None")
+                return
+
+            # For self-messages, use chat_jid (phone number) as sender_id
+            reply_to_jid = chat_jid if is_from_me and chat_jid else sender_jid
+            # Update sender_id to correct JID for reply
+            incoming.sender_id = reply_to_jid
+
+            # Send typing indicator if enabled
+            self._send_typing(reply_to_jid)
+
+            # Invoke the callback
+            await self._message_callback(incoming)
+
+        except Exception as e:
+            logger.error(f"Error processing audio message event: {e}")
+            import traceback
+
+            logger.error(f"Audio event processing traceback: {traceback.format_exc()}")
+
+    async def _process_audio_message(self, client: NewClient, event: MessageEv) -> IncomingMessage | None:
+        """Process an audio message by downloading and saving it for transcription.
+
+        Args:
+            client: The neonize client instance.
+            event: The MessageEv containing the audio message.
+
+        Returns:
+            IncomingMessage with audio metadata for transcription, or None if processing fails.
+
+        Note:
+            whatsmeow handles decryption automatically. The download methods return
+            decrypted audio data. Transcription is handled by WhatsAppAgent,
+            not here (see whatsapp_agent.py lines 327-350).
+        """
+        import tempfile
+
+        # Get sender info
+        sender_jid = Jid2String(event.Info.MessageSource.Sender)
+        logger.info(f"Processing audio message from {sender_jid}")
+
+        try:
+            audio_msg = event.Message.audioMessage
+
+            # Download audio data using neonize client
+            # Note: This runs in a thread pool to avoid blocking
+            loop = asyncio.get_running_loop()
+
+            def _download_audio() -> tuple[bytes, str, str]:
+                assert client is not None
+                # Use neonize's download_any which handles decryption automatically
+                # download_any takes the Message object and returns decrypted bytes
+                if hasattr(client, "download_any"):
+                    audio_data = client.download_any(event.Message)
+                    if audio_data:
+                        return (
+                            audio_data,
+                            getattr(audio_msg, "mimetype", "audio/ogg"),
+                            str(getattr(audio_msg, "seconds", 0)),
+                        )
+
+                # Fallback error if download_any not available
+                raise ValueError(
+                    "Audio download failed: neonize client does not have download_any method. "
+                    "Encrypted media cannot be decrypted without proper download method."
+                )
+
+            audio_data, mime_type, duration = await loop.run_in_executor(None, _download_audio)
+            logger.info(f"Downloaded {len(audio_data)} bytes of audio data")
+
+            # Determine file extension from mime type
+            # WhatsApp voice messages are typically OGG/OPUS format
+            mime_to_ext = {
+                "audio/mpeg": ".mp3",
+                "audio/mp3": ".mp3",
+                "audio/wav": ".wav",
+                "audio/wave": ".wav",
+                "audio/ogg": ".ogg",
+                "audio/opus": ".ogg",
+                "audio/x-opus": ".ogg",
+                "audio/aac": ".m4a",
+                "audio/mp4": ".m4a",
+                "audio/webm": ".webm",
+            }
+            ext = mime_to_ext.get(mime_type, ".ogg")  # Default to .ogg for WhatsApp voice
+
+            # Save audio to temporary file for transcription
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+                tmp_file.write(audio_data)
+                audio_path = tmp_file.name
+            logger.info(f"Saved audio to temporary file: {audio_path}")
+
+            # Return IncomingMessage with audio metadata for WhatsAppAgent to transcribe
+            # Note: Transcription happens in WhatsAppAgent, not here
+            return IncomingMessage(
+                text="[Audio message received]",  # Placeholder, agent will transcribe
+                sender_id=sender_jid,
+                channel_type="whatsapp",
+                raw_data={
+                    "event": event,
+                    "is_audio": True,
+                    "audio_path": audio_path,
+                    "audio_mime_type": mime_type,
+                    "audio_duration": duration,
+                },
+                timestamp=getattr(event.Info, "Timestamp", 0),
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing audio message: {e}")
+            import traceback
+
+            logger.error(f"Audio processing traceback: {traceback.format_exc()}")
+            # Return error message as IncomingMessage
+            return IncomingMessage(
+                text=f"[Audio download error: {str(e)}]",
+                sender_id=sender_jid,
+                channel_type="whatsapp",
+                raw_data={"event": event},
+                timestamp=getattr(event.Info, "Timestamp", 0),
+            )

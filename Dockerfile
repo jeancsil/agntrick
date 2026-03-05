@@ -15,6 +15,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # libmagic: Required by neonize/python-magic for file type detection
 # curl: For testing HTTP/HTTPS connections
 # dnsutils: For DNS resolution troubleshooting
+# ffmpeg: Required by pydub for audio conversion (WhatsApp voice messages are OGG format)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     fd-find \
@@ -22,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     curl \
     dnsutils \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Note: In Debian/Ubuntu, the 'fd' executable is renamed to 'fdfind'.

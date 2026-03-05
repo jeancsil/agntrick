@@ -7,22 +7,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from agentic_framework.core.grok_audio_transcriber import _AVAILABLE_MODELS, GrokAudioTranscriber
+from agentic_framework.core.grok_audio_transcriber import _AVAILABLE_MODELS, GroqAudioTranscriber
 
 
-class TestGrokAudioTranscriberInit:
-    """Tests for GrokAudioTranscriber initialization."""
+class TestGroqAudioTranscriberInit:
+    """Tests for GroqAudioTranscriber initialization."""
 
     def test_init_with_explicit_api_key(self) -> None:
         """Test initialization with explicit API key."""
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         assert transcriber.api_key == "test-key"
         assert transcriber.is_configured
 
     def test_init_with_env_api_key(self) -> None:
         """Test initialization with API key from environment variable."""
-        with patch.dict(os.environ, {"GROK_API_KEY": "env-key"}):
-            transcriber = GrokAudioTranscriber()
+        with patch.dict(os.environ, {"GROQ_API_KEY": "env-key"}):
+            transcriber = GroqAudioTranscriber()
             assert transcriber.api_key == "env-key"
             assert transcriber.is_configured
 
@@ -30,54 +30,54 @@ class TestGrokAudioTranscriberInit:
         """Test initialization without API key."""
         # Remove from environment if present
         env = os.environ.copy()
-        env.pop("GROK_API_KEY", None)
+        env.pop("GROQ_API_KEY", None)
         with patch.dict(os.environ, env, clear=True):
-            transcriber = GrokAudioTranscriber()
+            transcriber = GroqAudioTranscriber()
             assert transcriber.api_key is None
             assert not transcriber.is_configured
 
     def test_init_with_custom_model(self) -> None:
         """Test initialization with custom model."""
-        transcriber = GrokAudioTranscriber(model="whisper-large-v3")
+        transcriber = GroqAudioTranscriber(model="whisper-large-v3")
         assert transcriber.model == "whisper-large-v3"
 
     def test_init_with_default_model(self) -> None:
         """Test initialization with default model."""
         env = os.environ.copy()
-        env.pop("GROK_WHISPER_MODEL", None)
+        env.pop("GROQ_WHISPER_MODEL", None)
         with patch.dict(os.environ, env, clear=True):
-            transcriber = GrokAudioTranscriber()
+            transcriber = GroqAudioTranscriber()
             assert transcriber.model == "whisper-large-v3-turbo"
 
     def test_init_with_model_from_env(self) -> None:
         """Test initialization with model from environment variable."""
-        with patch.dict(os.environ, {"GROK_WHISPER_MODEL": "whisper-large-v3"}):
-            transcriber = GrokAudioTranscriber()
+        with patch.dict(os.environ, {"GROQ_WHISPER_MODEL": "whisper-large-v3"}):
+            transcriber = GroqAudioTranscriber()
             assert transcriber.model == "whisper-large-v3"
 
     def test_create_default_factory(self) -> None:
         """Test the create_default factory method."""
-        with patch.dict(os.environ, {"GROK_API_KEY": "test-key"}):
-            transcriber = GrokAudioTranscriber.create_default()
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            transcriber = GroqAudioTranscriber.create_default()
             assert transcriber.api_key == "test-key"
             assert transcriber.is_configured
 
     def test_get_available_models(self) -> None:
         """Test getting available models."""
-        transcriber = GrokAudioTranscriber()
+        transcriber = GroqAudioTranscriber()
         models = transcriber.get_available_models()
         assert models == _AVAILABLE_MODELS
         assert "whisper-large-v3" in models
         assert "whisper-large-v3-turbo" in models
 
 
-class TestGrokAudioTranscriberValidation:
+class TestGroqAudioTranscriberValidation:
     """Tests for input validation."""
 
     @pytest.mark.asyncio
     async def test_transcribe_empty_path(self) -> None:
         """Test handling when file path is empty."""
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio("")
 
         assert result.startswith("Error:")
@@ -86,7 +86,7 @@ class TestGrokAudioTranscriberValidation:
     @pytest.mark.asyncio
     async def test_transcribe_file_not_found(self) -> None:
         """Test handling when audio file doesn't exist."""
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio("/nonexistent/file.mp3")
 
         assert result.startswith("Error:")
@@ -96,13 +96,13 @@ class TestGrokAudioTranscriberValidation:
     async def test_transcribe_no_api_key(self) -> None:
         """Test handling when API key is not set."""
         env = os.environ.copy()
-        env.pop("GROK_API_KEY", None)
+        env.pop("GROQ_API_KEY", None)
         with patch.dict(os.environ, env, clear=True):
-            transcriber = GrokAudioTranscriber()
+            transcriber = GroqAudioTranscriber()
             result = await transcriber.transcribe_audio(__file__)
 
         assert result.startswith("Error:")
-        assert "GROK_API_KEY" in result
+        assert "GROQ_API_KEY" in result
 
     @pytest.mark.asyncio
     async def test_transcribe_large_file(self, tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ class TestGrokAudioTranscriberValidation:
         large_file = tmp_path / "large.mp3"
         large_file.write_bytes(b"x" * (26 * 1024 * 1024))  # 26MB
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(large_file))
 
         assert result.startswith("Error:")
@@ -121,7 +121,7 @@ class TestGrokAudioTranscriberValidation:
         large_file.unlink()
 
 
-class TestGrokAudioTranscriberAPI:
+class TestGroqAudioTranscriberAPI:
     """Tests for Grok API interaction."""
 
     @pytest.mark.asyncio
@@ -148,7 +148,7 @@ class TestGrokAudioTranscriberAPI:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result == "Hello, this is a test transcription"
@@ -176,7 +176,7 @@ class TestGrokAudioTranscriberAPI:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key", model="whisper-large-v3")
+        transcriber = GroqAudioTranscriber(api_key="test-key", model="whisper-large-v3")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result == "Test"
@@ -204,7 +204,7 @@ class TestGrokAudioTranscriberAPI:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(wav_path), mime_type="audio/wav")
 
         assert result == "Test"
@@ -212,7 +212,7 @@ class TestGrokAudioTranscriberAPI:
         wav_path.unlink()
 
 
-class TestGrokAudioTranscriberConversion:
+class TestGroqAudioTranscriberConversion:
     """Tests for audio format conversion."""
 
     @pytest.mark.asyncio
@@ -244,7 +244,7 @@ class TestGrokAudioTranscriberConversion:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(ogg_path))
 
         assert result == "Converted and transcribed"
@@ -259,7 +259,7 @@ class TestGrokAudioTranscriberConversion:
 
         # Mock pydub import error
         with patch.dict("sys.modules", {"pydub": None}):
-            transcriber = GrokAudioTranscriber(api_key="test-key")
+            transcriber = GroqAudioTranscriber(api_key="test-key")
             result = await transcriber.transcribe_audio(str(unsupported_path))
 
         assert result.startswith("Error:")
@@ -267,7 +267,7 @@ class TestGrokAudioTranscriberConversion:
         unsupported_path.unlink()
 
 
-class TestGrokAudioTranscriberErrorHandling:
+class TestGroqAudioTranscriberErrorHandling:
     """Tests for error handling."""
 
     @pytest.mark.asyncio
@@ -285,7 +285,7 @@ class TestGrokAudioTranscriberErrorHandling:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="invalid-key")
+        transcriber = GroqAudioTranscriber(api_key="invalid-key")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result.startswith("Error:")
@@ -307,7 +307,7 @@ class TestGrokAudioTranscriberErrorHandling:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key", timeout=1.0)
+        transcriber = GroqAudioTranscriber(api_key="test-key", timeout=1.0)
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result.startswith("Error:")
@@ -330,7 +330,7 @@ class TestGrokAudioTranscriberErrorHandling:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result.startswith("Error:")
@@ -358,7 +358,7 @@ class TestGrokAudioTranscriberErrorHandling:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result.startswith("Error:")
@@ -386,7 +386,7 @@ class TestGrokAudioTranscriberErrorHandling:
         mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        transcriber = GrokAudioTranscriber(api_key="test-key")
+        transcriber = GroqAudioTranscriber(api_key="test-key")
         result = await transcriber.transcribe_audio(str(mp3_path))
 
         assert result.startswith("Error:")

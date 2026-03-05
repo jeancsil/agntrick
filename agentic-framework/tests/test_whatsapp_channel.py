@@ -1172,3 +1172,225 @@ class TestWhatsAppChannelTypingIndicators:
 
         # Typing indicator should be stopped (JID removed from set)
         assert jid not in whatsapp_channel._typing_jids
+
+
+class TestWhatsAppChannelAudioMessages:
+    """Tests for audio message handling."""
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.run_coroutine_threadsafe")
+    async def test_audio_message_from_allowed_contact_is_processed(
+        self,
+        mock_run_coro: MagicMock,
+        mock_client_class: MagicMock,
+        whatsapp_channel: WhatsAppChannel,
+    ) -> None:
+        """Test that audio messages from allowed contact are processed.
+
+        This test verifies the the fix for the audio message detection:
+        - Audio messages have no text (conversation is empty)
+        - Audio messages have audioMessage attribute with url
+        - Should trigger _process_audio_and_callback
+        """
+        whatsapp_channel.allowed_contact = "34666666666"
+
+        scheduled_coroutines: list = []
+
+        def capture_run_coro(coro, loop):
+            scheduled_coroutines.append(coro)
+            return MagicMock()
+
+        mock_run_coro.side_effect = capture_run_coro
+
+        async def mock_callback(msg):
+            pass
+
+        whatsapp_channel._message_callback = mock_callback
+        whatsapp_channel._loop = MagicMock()
+
+        # Create a mock audio message event
+        # This simulates the neonize structure for audio messages
+        mock_event = MagicMock()
+        mock_event.Message.conversation = ""  # Audio messages have no text
+        mock_event.Message.extended_text_message = None
+
+        # Create a mock audioMessage with url attribute (real neonize structure)
+        mock_audio_msg = MagicMock()
+        mock_audio_msg.url = "https://example.com/audio.ogg"
+        mock_audio_msg.mimetype = "audio/ogg"
+        mock_audio_msg.seconds = 5
+        mock_event.Message.audioMessage = mock_audio_msg
+
+        # Set sender info
+        mock_event.Info.MessageSource.Sender = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.Chat = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.SenderAlt = None
+        mock_event.Info.MessageSource.RecipientAlt = None
+        mock_event.Info.MessageSource.IsFromMe = False
+        mock_event.Info.Timestamp = 1234567890
+
+        with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="34666666666@s.whatsapp.net"):
+            whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
+
+        # Audio message should trigger audio processing coroutine
+        assert len(scheduled_coroutines) == 1, "Audio message should trigger audio processing"
+        # Verify it's the audio processing coroutine
+        assert "_process_audio_and_callback" in str(scheduled_coroutines[0])
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.run_coroutine_threadsafe")
+    async def test_audio_message_without_url_is_skipped(
+        self,
+        mock_run_coro: MagicMock,
+        mock_client_class: MagicMock,
+        whatsapp_channel: WhatsAppChannel,
+    ) -> None:
+        """Test that audio messages without url attribute are skipped.
+
+        This verifies the check for hasattr(audio_msg, "url") works correctly.
+        """
+        whatsapp_channel.allowed_contact = "34666666666"
+
+        scheduled_coroutines: list = []
+
+        def capture_run_coro(coro, loop):
+            scheduled_coroutines.append(coro)
+            return MagicMock()
+
+        mock_run_coro.side_effect = capture_run_coro
+
+        async def mock_callback(msg):
+            pass
+
+        whatsapp_channel._message_callback = mock_callback
+        whatsapp_channel._loop = MagicMock()
+
+        # Create a mock audio message event WITHOUT url attribute
+        mock_event = MagicMock()
+        mock_event.Message.conversation = ""
+        mock_event.Message.extended_text_message = None
+
+        # Create a mock audioMessage WITHOUT url attribute (incomplete/malformed)
+        mock_audio_msg = MagicMock(spec=["mimetype", "seconds"])  # Only has these attrs, no url
+        mock_event.Message.audioMessage = mock_audio_msg
+
+        mock_event.Info.MessageSource.Sender = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.Chat = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.SenderAlt = None
+        mock_event.Info.MessageSource.RecipientAlt = None
+        mock_event.Info.MessageSource.IsFromMe = False
+        mock_event.Info.Timestamp = 1234567890
+
+        with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="34666666666@s.whatsapp.net"):
+            whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
+
+        # Should be skipped (no url attribute)
+        assert len(scheduled_coroutines) == 0, "Audio message without url should be skipped"
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.run_coroutine_threadsafe")
+    async def test_audio_message_from_disallowed_contact_is_filtered(
+        self,
+        mock_run_coro: MagicMock,
+        mock_client_class: MagicMock,
+        whatsapp_channel: WhatsAppChannel,
+    ) -> None:
+        """Test that audio messages from disallowed contacts are filtered.
+
+        Security: Audio messages should respect the allowed_contact filter.
+        """
+        whatsapp_channel.allowed_contact = "34666666666"
+
+        scheduled_coroutines: list = []
+
+        def capture_run_coro(coro, loop):
+            scheduled_coroutines.append(coro)
+            return MagicMock()
+
+        mock_run_coro.side_effect = capture_run_coro
+
+        async def mock_callback(msg):
+            pass
+
+        whatsapp_channel._message_callback = mock_callback
+        whatsapp_channel._loop = MagicMock()
+
+        # Create a mock audio message from a DIFFERENT contact
+        mock_event = MagicMock()
+        mock_event.Message.conversation = ""
+        mock_event.Message.extended_text_message = None
+
+        mock_audio_msg = MagicMock()
+        mock_audio_msg.url = "https://example.com/audio.ogg"
+        mock_audio_msg.mimetype = "audio/ogg"
+        mock_audio_msg.seconds = 5
+        mock_event.Message.audioMessage = mock_audio_msg
+
+        # Sender is DIFFERENT from allowed contact
+        mock_event.Info.MessageSource.Sender = "1234567890@s.whatsapp.net"
+        mock_event.Info.MessageSource.Chat = "1234567890@s.whatsapp.net"
+        mock_event.Info.MessageSource.SenderAlt = None
+        mock_event.Info.MessageSource.RecipientAlt = None
+        mock_event.Info.MessageSource.IsFromMe = False
+        mock_event.Info.Timestamp = 1234567890
+
+        with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="1234567890@s.whatsapp.net"):
+            whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
+
+        # Should be filtered (disallowed contact)
+        assert len(scheduled_coroutines) == 0, "Audio from disallowed contact should be filtered"
+
+    @pytest.mark.asyncio
+    @patch("agentic_framework.channels.whatsapp.NewClient")
+    @patch("asyncio.run_coroutine_threadsafe")
+    async def test_text_message_is_not_treated_as_audio(
+        self,
+        mock_run_coro: MagicMock,
+        mock_client_class: MagicMock,
+        whatsapp_channel: WhatsAppChannel,
+    ) -> None:
+        """Test that regular text messages are not mistakenly treated as audio.
+
+        Regression test: ensures text messages with audioMessage=None are not
+        treated as audio messages.
+        """
+        whatsapp_channel.allowed_contact = "34666666666"
+
+        scheduled_coroutines: list = []
+
+        def capture_run_coro(coro, loop):
+            scheduled_coroutines.append(coro)
+            return MagicMock()
+
+        mock_run_coro.side_effect = capture_run_coro
+
+        async def mock_callback(msg):
+            pass
+
+        whatsapp_channel._message_callback = mock_callback
+        whatsapp_channel._loop = MagicMock()
+
+        # Create a regular text message (no audio)
+        mock_event = MagicMock()
+        mock_event.Message.conversation = "Hello, this is a text message"
+        mock_event.Message.extended_text_message = None
+        # audioMessage is None (default for text messages)
+        mock_event.Message.audioMessage = None
+
+        mock_event.Info.MessageSource.Sender = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.Chat = "34666666666@s.whatsapp.net"
+        mock_event.Info.MessageSource.SenderAlt = None
+        mock_event.Info.MessageSource.RecipientAlt = None
+        mock_event.Info.MessageSource.IsFromMe = False
+        mock_event.Info.Timestamp = 1234567890
+
+        with patch("agentic_framework.channels.whatsapp.Jid2String", return_value="34666666666@s.whatsapp.net"):
+            whatsapp_channel._on_message_event(mock_client_class.return_value, mock_event)
+
+        # Text message should trigger regular callback (not audio processing)
+        assert len(scheduled_coroutines) == 1, "Text message should trigger callback"
+        # Verify it's NOT the audio processing coroutine
+        assert "_process_audio_and_callback" not in str(scheduled_coroutines[0])

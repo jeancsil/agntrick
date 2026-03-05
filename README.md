@@ -75,8 +75,12 @@ The framework includes several pre-built agents for common use cases:
 | `simple` | Chat Buddy: Vanilla conversational agent |
 | `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries |
 | `whatsapp` | WhatsApp Agent: Bidirectional WhatsApp communication |
+| `audio-transcriber` | Audio Transcriber: Transcribes audio using Groq Whisper API |
+| `groq-audio-transcriber` | Groq Audio Transcriber: Ultra-fast transcription with Groq Whisper models |
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
+
+📖 **See [docs/audio-transcriber.md](docs/audio-transcriber.md)** for detailed documentation on audio transcription with Groq Whisper models.
 
 ---
 
@@ -92,6 +96,7 @@ Fast, zero-dependency tools for working with local codebases:
 | `read_file_fragment` | Precise file reading |
 | `code_search` | Fast search via `ripgrep` |
 | `edit_file` | Safe file editing |
+| `audio_transcriber` | Transcribes audio using GLM-ASR-2512 API |
 
 📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
 
@@ -166,6 +171,10 @@ cp .env.example .env
 
 # For Hugging Face:
 # HUGGINGFACEHUB_API_TOKEN=your-hf-token
+
+# For Groq audio transcription (used by WhatsApp agent for audio messages):
+# GROQ_API_KEY=gsk-your-key-here
+# GROQ_WHISPER_MODEL=whisper-large-v3-turbo  # Optional, default is turbo
 ```
 > ⚠️ **Note:** Set your preferred provider's API key. Priority: Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (default fallback).
 
@@ -224,6 +233,9 @@ OLLAMA_BASE_URL=http://localhost:11434
 
 # Hugging Face
 HUGGINGFACEHUB_API_TOKEN=your-hf-token
+
+# GLM-ASR (Audio transcription - optional, for WhatsApp audio messages)
+ZAI_API_KEY=your-zai-key-here
 ```
 
 📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations, model overrides, and provider comparison.
