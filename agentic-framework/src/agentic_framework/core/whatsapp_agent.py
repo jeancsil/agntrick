@@ -16,6 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from agentic_framework.channels.base import Channel, IncomingMessage, OutgoingMessage
 from agentic_framework.constants import get_default_model
+from agentic_framework.core.grok_audio_transcriber import GrokAudioTranscriber
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
@@ -323,8 +324,33 @@ class WhatsAppAgent(LangGraphMCPAgent):
         try:
             logger.info(f"Processing message from {incoming.sender_id}")
 
+            # Check if message contains audio
+            is_audio = incoming.raw_data.get("is_audio", False)
+            message_text = incoming.text
+
+            if is_audio:
+                logger.info("Processing audio message - transcribing...")
+                audio_path = incoming.raw_data.get("audio_path")
+                audio_mime_type = incoming.raw_data.get("audio_mime_type")
+
+                # Validate audio path exists
+                if not audio_path or not isinstance(audio_path, str):
+                    logger.warning("Audio path missing or invalid")
+                    message_text = "Sorry, I couldn't process your audio message (invalid path)."
+                else:
+                    # Create transcriber and transcribe using Grok API
+                    transcriber = GrokAudioTranscriber()
+                    transcription = await transcriber.transcribe_audio(audio_path, audio_mime_type)
+
+                    if transcription.startswith("Error:"):
+                        logger.warning(f"Transcription failed: {transcription}")
+                        message_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
+                    else:
+                        logger.info(f"Transcription successful: {transcription[:100]}...")
+                        message_text = f"Transcribed: {transcription}"
+
             # Get agent response
-            response = await self.run(incoming.text)
+            response = await self.run(message_text)
 
             # Convert to string if needed
             response_text = str(response) if isinstance(response, BaseMessage) else response
