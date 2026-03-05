@@ -1,4 +1,3 @@
-from .audio_transcriber import AudioTranscriberTool
 from .code_searcher import CodeSearcher
 from .codebase_explorer import (
     FileEditorTool,
@@ -22,5 +21,4 @@ __all__ = [
     "SyntaxValidator",
     "ValidationResult",
     "get_validator",
-    "AudioTranscriberTool",
 ]
