@@ -339,7 +339,10 @@ class WhatsAppAgent(LangGraphMCPAgent):
                 # Validate audio path exists
                 if not audio_path or not isinstance(audio_path, str):
                     logger.warning("Audio path missing or invalid")
-                    message_text = "Sorry, I couldn't process your audio message (invalid path)."
+                    response_text = "Sorry, I couldn't process your audio message (invalid path)."
+                    outgoing = OutgoingMessage(text=response_text, recipient_id=incoming.sender_id)
+                    await self.channel.send(outgoing)
+                    return
                 else:
                     # Create transcriber and transcribe using Groq API with config
                     if self._audio_transcriber_config:
@@ -354,12 +357,19 @@ class WhatsAppAgent(LangGraphMCPAgent):
 
                     if transcription.startswith("Error:"):
                         logger.warning(f"Transcription failed: {transcription}")
-                        message_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
+                        response_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
+                        outgoing = OutgoingMessage(text=response_text, recipient_id=incoming.sender_id)
+                        await self.channel.send(outgoing)
+                        return
                     else:
                         logger.info(f"Transcription successful: {transcription[:100]}...")
-                        message_text = transcription
+                        # Send transcription directly word-for-word, bypassing the LLM
+                        # This is intentional: the user wants the exact transcription, not a comment about it
+                        outgoing = OutgoingMessage(text=transcription, recipient_id=incoming.sender_id)
+                        await self.channel.send(outgoing)
+                        return
 
-            # Get agent response
+            # Get agent response (for non-audio messages)
             response = await self.run(message_text)
 
             # Convert to string if needed
