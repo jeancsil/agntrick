@@ -17,10 +17,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from agentic_framework.channels.base import Channel, IncomingMessage, OutgoingMessage
 from agentic_framework.channels.whatsapp_config import AudioTranscriberConfig
 from agentic_framework.constants import get_default_model
-from agentic_framework.services.audio_transcriber import AudioTranscriber
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
+from agentic_framework.services.audio_transcriber import AudioTranscriber
 
 logger = logging.getLogger(__name__)
 

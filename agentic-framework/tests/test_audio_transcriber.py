@@ -1,14 +1,12 @@
-import os
 """Tests for audio transcriber."""
 
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from agentic_framework.services.audio_transcriber import AudioTranscriber, _AVAILABLE_MODELS
+from agentic_framework.services.audio_transcriber import _AVAILABLE_MODELS, AudioTranscriber
 
 
 class TestAudioTranscriberInit:
@@ -22,6 +20,8 @@ class TestAudioTranscriberInit:
 
     def test_init_with_env_api_key(self) -> None:
         """Test initialization with API key from environment variable."""
+        import os
+
         with patch.dict(os.environ, {"GROQ_API_KEY": "env-key"}):
             transcriber = AudioTranscriber()
             assert transcriber.api_key == "env-key"
@@ -30,6 +30,8 @@ class TestAudioTranscriberInit:
     def test_init_without_api_key(self) -> None:
         """Test initialization without API key."""
         # Remove from environment if present
+        import os
+
         env = os.environ.copy()
         env.pop("GROQ_API_KEY", None)
         with patch.dict(os.environ, env, clear=True):
@@ -44,6 +46,8 @@ class TestAudioTranscriberInit:
 
     def test_init_with_default_model(self) -> None:
         """Test initialization with default model."""
+        import os
+
         env = os.environ.copy()
         env.pop("GROQ_WHISPER_MODEL", None)
         with patch.dict(os.environ, env, clear=True):
@@ -52,12 +56,16 @@ class TestAudioTranscriberInit:
 
     def test_init_with_model_from_env(self) -> None:
         """Test initialization with model from environment variable."""
+        import os
+
         with patch.dict(os.environ, {"GROQ_WHISPER_MODEL": "whisper-large-v3"}):
             transcriber = AudioTranscriber()
             assert transcriber.model == "whisper-large-v3"
 
     def test_create_default_factory(self) -> None:
         """Test the create_default factory method."""
+        import os
+
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             transcriber = AudioTranscriber.create_default()
             assert transcriber.api_key == "test-key"
@@ -96,6 +104,8 @@ class TestAudioTranscriberValidation:
     @pytest.mark.asyncio
     async def test_transcribe_no_api_key(self) -> None:
         """Test handling when API key is not set."""
+        import os
+
         env = os.environ.copy()
         env.pop("GROQ_API_KEY", None)
         with patch.dict(os.environ, env, clear=True):
