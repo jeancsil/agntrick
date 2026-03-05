@@ -262,7 +262,7 @@ class AudioTranscriber:
 
         # Check API key
         if not self._api_key:
-            return "Error: GROQ_API_KEY environment variable is not set."
+            return "Error: GROQ_AUDIO_API_KEY or GROQ_API_KEY environment variable is not set."
 
         # Check if format is supported, convert if needed
         converted_path = None

@@ -75,8 +75,6 @@ The framework includes several pre-built agents for common use cases:
 | `simple` | Chat Buddy: Vanilla conversational agent |
 | `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries |
 | `whatsapp` | WhatsApp Agent: Bidirectional WhatsApp communication |
-| `audio-transcriber` | Audio Transcriber: Transcribes audio using Groq Whisper API |
-| `groq-audio-transcriber` | Groq Audio Transcriber: Ultra-fast transcription with Groq Whisper models |
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
 
@@ -96,7 +94,7 @@ Fast, zero-dependency tools for working with local codebases:
 | `read_file_fragment` | Precise file reading |
 | `code_search` | Fast search via `ripgrep` |
 | `edit_file` | Safe file editing |
-| `audio_transcriber` | Transcribes audio using GLM-ASR-2512 API |
+| `audio_transcriber` | Transcribes audio using Groq Whisper API |
 
 📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
 

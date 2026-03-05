@@ -1,10 +1,10 @@
 # Audio Transcriber
 
-The Groq Audio Transcriber provides high-quality audio transcription using Groq's ultra-fast Whisper models. It's designed for WhatsApp agents but can be used standalone.
+The Audio Transcriber provides high-quality audio transcription using Groq's ultra-fast Whisper models. It's designed for WhatsApp agents but can be used standalone.
 
 ## Overview
 
-The `GroqAudioTranscriber` is a standalone class that provides:
+The `AudioTranscriber` is a standalone class that provides:
 - Ultra-fast transcription (~30-50ms for 30s audio with whisper-large-v3-turbo)
 - Support for multiple audio formats (.wav, .mp3, .ogg, .oga, .m4a, .webm, .flac, .wma)
 - Automatic format conversion to MP3 when needed
@@ -22,7 +22,8 @@ The `GroqAudioTranscriber` is a standalone class that provides:
 
 | Variable | Required | Description |
 |----------|-----------|-------------|
-| `GROQ_API_KEY` | Yes | Your Groq API key (get free account at console.groq.com) |
+| `GROQ_AUDIO_API_KEY` | Yes | Your Groq API key (get free account at console.groq.com) |
+| `GROQ_API_KEY` | Yes | Alternative to GROQ_AUDIO_API_KEY (fallback) |
 | `GROQ_WHISPER_MODEL` | No | Model name (default: whisper-large-v3-turbo) |
 
 ## Supported Audio Formats
@@ -61,10 +62,10 @@ uv add pydub
 ### Basic Usage
 
 ```python
-from agentic_framework.core.grok_audio_transcriber import GroqAudioTranscriber
+from agentic_framework.services.audio_transcriber import AudioTranscriber
 
-# Create transcriber (reads GROQ_API_KEY from environment)
-transcriber = GroqAudioTranscriber()
+# Create transcriber (reads GROQ_AUDIO_API_KEY or GROQ_API_KEY from environment)
+transcriber = AudioTranscriber()
 
 # Transcribe audio file
 transcription = await transcriber.transcribe_audio("voice_message.mp3")
@@ -79,7 +80,7 @@ else:
 ### With Custom Model
 
 ```python
-transcriber = GroqAudioTranscriber(
+transcriber = AudioTranscriber(
     api_key="your-api-key",
     model="whisper-large-v3",  # Slower but more accurate
     timeout=120.0,  # Longer timeout for large files
@@ -89,7 +90,7 @@ transcriber = GroqAudioTranscriber(
 ### Check Configuration
 
 ```python
-transcriber = GroqAudioTranscriber()
+transcriber = AudioTranscriber()
 
 if not transcriber.is_configured:
     print("API key not set!")
@@ -105,7 +106,7 @@ All errors are returned as strings with "Error:" prefix for easy identification:
 
 | Error | Cause | Solution |
 |-------|--------|----------|
-| `GROQ_API_KEY not set` | Environment variable missing | Set `GROQ_API_KEY` |
+| `GROQ_AUDIO_API_KEY or GROQ_API_KEY not set` | Environment variable missing | Set `GROQ_AUDIO_API_KEY` |
 | `exceeds maximum allowed size` | File larger than 25MB | Compress or trim audio |
 | `Cannot convert format` | Unsupported audio format | Install `pydub` and `ffmpeg` |
 | `not found` | Audio file doesn't exist | Check file path |
@@ -121,13 +122,13 @@ All errors are returned as strings with "Error:" prefix for easy identification:
 
 ## Integration with WhatsApp Agent
 
-The WhatsApp agent automatically uses `GroqAudioTranscriber` for audio messages. No additional configuration needed beyond setting `GROQ_API_KEY`.
+The WhatsApp agent automatically uses `AudioTranscriber` for audio messages. No additional configuration needed beyond setting `GROQ_AUDIO_API_KEY` or `GROQ_API_KEY`.
 
 ## Getting a Groq API Key
 
 1. Go to [console.groq.com](https://console.groq.com)
 2. Create a free account
 3. Generate an API key
-4. Set as environment variable: `export GROQ_API_KEY=gsk-your-key-here`
+4. Set as environment variable: `export GROQ_AUDIO_API_KEY=gsk-your-key-here`
 
 Free tier includes generous limits for transcription use.

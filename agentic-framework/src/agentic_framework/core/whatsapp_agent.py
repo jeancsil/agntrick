@@ -355,6 +355,15 @@ class WhatsAppAgent(LangGraphMCPAgent):
                         transcriber = AudioTranscriber()
                     transcription = await transcriber.transcribe_audio(audio_path, audio_mime_type)
 
+                    # Clean up temporary audio file after transcription
+                    try:
+                        import os as os_module
+
+                        os_module.unlink(audio_path)
+                        logger.debug(f"Cleaned up temporary audio file: {audio_path}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to clean up audio file {audio_path}: {cleanup_error}")
+
                     if transcription.startswith("Error:"):
                         logger.warning(f"Transcription failed: {transcription}")
                         response_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
