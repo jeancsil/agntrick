@@ -227,9 +227,6 @@ OLLAMA_BASE_URL=http://localhost:11434
 
 # Hugging Face
 HUGGINGFACEHUB_API_TOKEN=your-hf-token
-
-# GLM-ASR (Audio transcription - optional, for WhatsApp audio messages)
-ZAI_API_KEY=your-zai-key-here
 ```
 
 📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations, model overrides, and provider comparison.
