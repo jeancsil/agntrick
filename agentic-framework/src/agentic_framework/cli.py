@@ -366,6 +366,7 @@ def whatsapp_command(
             channel=channel,
             model_name=config.model if config.model else None,
             mcp_servers_override=mcp_servers_list,
+            audio_transcriber_config=config.audio_transcriber,
         )
 
         # Set up signal handlers for graceful shutdown

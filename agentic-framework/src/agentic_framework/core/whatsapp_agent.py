@@ -15,8 +15,9 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agentic_framework.channels.base import Channel, IncomingMessage, OutgoingMessage
+from agentic_framework.channels.whatsapp_config import AudioTranscriberConfig
 from agentic_framework.constants import get_default_model
-from agentic_framework.core.grok_audio_transcriber import GroqAudioTranscriber
+from agentic_framework.services.audio_transcriber import AudioTranscriber
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
@@ -64,6 +65,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
         temperature: float = 0.7,
         thread_id: str = "whatsapp",
         mcp_servers_override: list[str] | None = None,
+        audio_transcriber_config: AudioTranscriberConfig | None = None,
     ) -> None:
         # Initialize with None MCP provider - we'll set it up in start()
         super().__init__(
@@ -80,6 +82,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
         self._mcp_tools: list[Any] = []
         self._mcp_servers: list[str] = []
         self._mcp_servers_override = mcp_servers_override
+        self._audio_transcriber_config = audio_transcriber_config
 
         logger.info(f"WhatsAppAgent initialized with model={model_name or get_default_model()}")
 
@@ -338,8 +341,15 @@ class WhatsAppAgent(LangGraphMCPAgent):
                     logger.warning("Audio path missing or invalid")
                     message_text = "Sorry, I couldn't process your audio message (invalid path)."
                 else:
-                    # Create transcriber and transcribe using Grok API
-                    transcriber = GroqAudioTranscriber()
+                    # Create transcriber and transcribe using Groq API with config
+                    if self._audio_transcriber_config:
+                        transcriber = AudioTranscriber(
+                            config_file=self._audio_transcriber_config.config_file,
+                            model=self._audio_transcriber_config.model,
+                            timeout=self._audio_transcriber_config.timeout,
+                        )
+                    else:
+                        transcriber = AudioTranscriber()
                     transcription = await transcriber.transcribe_audio(audio_path, audio_mime_type)
 
                     if transcription.startswith("Error:"):
@@ -347,7 +357,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
                         message_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
                     else:
                         logger.info(f"Transcription successful: {transcription[:100]}...")
-                        message_text = f"Transcribed: {transcription}"
+                        message_text = transcription
 
             # Get agent response
             response = await self.run(message_text)
