@@ -15,7 +15,7 @@ from agentic_framework.tools import (
 )
 
 
-@AgentRegistry.register("developer", mcp_servers=["webfetch"])
+@AgentRegistry.register("developer", mcp_servers=["web-fetch"])
 class DeveloperAgent(LangGraphMCPAgent):
     """
     A specialized agent for codebase exploration and development.
@@ -35,7 +35,7 @@ Your goal is to help the user understand and maintain their codebase.
 4. **read_file_fragment** - Read specific line ranges (format: 'path:start:end')
 5. **code_search** - Fast pattern search via ripgrep
 6. **edit_file** - Edit files with line-based or text-based operations
-7. **webfetch** (MCP) - Fetch web content
+7. **web-fetch** (MCP) - Fetch web content
 
 ## MANDATORY FILE EDITING WORKFLOW
 
