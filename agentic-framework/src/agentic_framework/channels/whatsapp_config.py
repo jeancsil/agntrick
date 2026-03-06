@@ -1,7 +1,10 @@
 """Pydantic models for WhatsApp channel configuration validation.
 
-This module provides type-safe configuration validation for the WhatsApp agent,
-ensuring all required fields are present and properly typed before runtime.
+This module provides type-safe configuration validation for WhatsApp agent,
+ensuring all required fields are present and properly typed.
+
+This module provides type-safe configuration validation for WhatsApp agent,
+ensuring all required fields are present and properly typed.
 """
 
 from pathlib import Path
@@ -14,11 +17,11 @@ def parse_mcp_servers_str(value: str) -> list[str]:
     """Parse a comma-separated MCP server string into a list.
 
     Accepts:
-        - ``"none"`` / ``""`` / ``"disabled"`` → empty list (MCP disabled)
+        - ``none`` / `````` / ``disabled`` → empty list (MCP disabled)
         - ``"web-fetch,duckduckgo-search"`` → ``["web-fetch", "duckduckgo-search"]``
 
     Args:
-        value: The raw string value from the CLI or config file.
+        value: The raw string value from CLI or config file.
 
     Returns:
         List of server names, possibly empty.
@@ -74,6 +77,33 @@ class LoggingConfig(BaseModel):
     file: str = Field(default="logs/agent.log", description="Log file location.")
 
 
+class AudioTranscriberConfig(BaseModel):
+    """Audio transcriber configuration for Groq API."""
+
+    model: str = Field(
+        default="whisper-large-v3-turbo",
+        description="Groq Whisper model name (default: whisper-large-v3-turbo).",
+    )
+    timeout: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Request timeout in seconds.",
+    )
+    config_file: str | None = Field(
+        default=None,
+        description="Path to audio transcriber config file (optional).",
+    )
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        """Validate model name is a supported Groq Whisper model."""
+        available_models = {"whisper-large-v3", "whisper-large-v3-turbo"}
+        if v not in available_models:
+            raise ValueError(f"Model must be one of: {', '.join(available_models)}. Got: {v}")
+        return v
+
+
 class WhatsAppBridgeConfig(BaseModel):
     """WhatsApp bridge specific configuration."""
 
@@ -95,6 +125,8 @@ class WhatsAppAgentConfig(BaseModel):
         >>> config = WhatsAppAgentConfig.model_validate_yaml("config/whatsapp.yaml")
         >>> config.privacy.allowed_contact
         '+34 666 666 666'
+        >>> config.audio_transcriber.model
+        'whisper-large-v3-turbo'
     """
 
     model: str | None = Field(default=None, description="LLM model name.")
@@ -102,8 +134,13 @@ class WhatsAppAgentConfig(BaseModel):
     channel: ChannelConfig = Field(default_factory=ChannelConfig, description="Channel configuration.")
     privacy: PrivacyConfig = Field(..., description="Privacy configuration.")
     features: FeatureFlags = Field(default_factory=FeatureFlags, description="Feature flags.")
+    audio_transcriber: AudioTranscriberConfig = Field(
+        default_factory=AudioTranscriberConfig,
+        description="Audio transcriber configuration for Groq API.",
+    )
     whatsapp_bridge: WhatsAppBridgeConfig = Field(
-        default_factory=WhatsAppBridgeConfig, description="Bridge configuration."
+        default_factory=WhatsAppBridgeConfig,
+        description="Bridge configuration.",
     )
     logging: LoggingConfig = Field(default_factory=LoggingConfig, description="Logging configuration.")
 
@@ -128,7 +165,7 @@ class WhatsAppAgentConfig(BaseModel):
             if storage_path.startswith("~"):
                 storage_path = str(Path(storage_path).expanduser())
                 v["storage_path"] = storage_path
-            v = ChannelConfig(**v)
+                v = ChannelConfig(**v)
         return v
 
     def get_storage_path(self) -> Path:

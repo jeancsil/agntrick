@@ -144,6 +144,7 @@ def test_whatsapp_reset_session_removes_directories(monkeypatch: pytest.MonkeyPa
         model=None,
         mcp_servers=None,
         features=SimpleNamespace(typing_indicators=True),
+        audio_transcriber=SimpleNamespace(model="whisper-large-v3-turbo", timeout=60.0, config_file=None),
     )
 
     monkeypatch.setattr(cli, "load_config", lambda path: fake_config)
@@ -358,6 +359,7 @@ def test_whatsapp_command_surfaces_startup_failure(monkeypatch: pytest.MonkeyPat
         model=None,
         mcp_servers=None,
         features=SimpleNamespace(typing_indicators=True),
+        audio_transcriber=SimpleNamespace(model="whisper-large-v3-turbo", timeout=60.0, config_file=None),
     )
 
     monkeypatch.setattr(cli, "load_config", lambda _path: fake_config)

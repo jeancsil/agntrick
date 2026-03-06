@@ -78,6 +78,8 @@ The framework includes several pre-built agents for common use cases:
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
 
+📖 **See [docs/audio-transcriber.md](docs/audio-transcriber.md)** for detailed documentation on audio transcription with Groq Whisper models.
+
 ---
 
 ### 📦 Local Tools
@@ -92,6 +94,7 @@ Fast, zero-dependency tools for working with local codebases:
 | `read_file_fragment` | Precise file reading |
 | `code_search` | Fast search via `ripgrep` |
 | `edit_file` | Safe file editing |
+| `audio_transcriber` | Transcribes audio using Groq Whisper API |
 
 📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
 
@@ -113,7 +116,7 @@ Model Context Protocol servers for extending agent capabilities:
 
 ### 🧠 LLM Providers
 
-The framework supports **11 LLM providers** out of the box, covering 90%+ of the market:
+The framework supports **10 LLM providers** out of the box, covering 90%+ of the market:
 
 | Provider | Type | Use Case |
 |----------|------|----------|
@@ -122,7 +125,6 @@ The framework supports **11 LLM providers** out of the box, covering 90%+ of the
 | **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
 | **Google GenAI** | Cloud | Gemini models via API |
 | **Google Vertex AI** | Cloud | Gemini models via GCP |
-| **Groq** | Cloud | Ultra-fast inference |
 | **Mistral AI** | Cloud | European privacy-focused models |
 | **Cohere** | Cloud | Enterprise RAG and Command models |
 | **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
@@ -147,7 +149,7 @@ cp .env.example .env
 # OPENAI_API_KEY=sk-your-key-here
 # ANTHROPIC_API_KEY=sk-ant-your-key-here
 # GOOGLE_API_KEY=your-google-key
-# GROQ_API_KEY=gsk-your-key-here
+# GROQ_AUDIO_API_KEY=gsk-your-key-here  # For audio transcription only (e.g., WhatsApp)
 # MISTRAL_API_KEY=your-mistral-key-here
 # COHERE_API_KEY=your-cohere-key-here
 
@@ -166,8 +168,12 @@ cp .env.example .env
 
 # For Hugging Face:
 # HUGGINGFACEHUB_API_TOKEN=your-hf-token
+
+# For Groq audio transcription (used by WhatsApp agent for audio messages):
+# GROQ_AUDIO_API_KEY=gsk-your-key-here  # For audio transcription only (e.g., WhatsApp)
+# GROQ_WHISPER_MODEL=whisper-large-v3-turbo  # Optional, default is turbo
 ```
-> ⚠️ **Note:** Set your preferred provider's API key. Priority: Anthropic > Google Vertex > Google GenAI > Azure > Groq > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (default fallback).
+> ⚠️ **Note:** Set your preferred provider's API key. Priority: Anthropic > Google Vertex > Google GenAI > Azure > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (default fallback).
 
 ### 2. Build & Run
 No `pip`, no `virtualenv`, no *"it works on my machine"* excuses.
@@ -202,9 +208,6 @@ OPENAI_API_KEY=sk-your-key-here
 # Google GenAI / Vertex
 GOOGLE_API_KEY=your-google-key
 GOOGLE_VERTEX_PROJECT_ID=your-project-id
-
-# Groq
-GROQ_API_KEY=gsk-your-key-here
 
 # Mistral AI
 MISTRAL_API_KEY=your-mistral-key-here

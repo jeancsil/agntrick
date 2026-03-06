@@ -17,7 +17,6 @@ Provider = Literal[
     "azure_openai",
     "google_vertexai",
     "google_genai",
-    "groq",
     "mistralai",
     "cohere",
     "bedrock",
@@ -32,7 +31,6 @@ DEFAULT_MODELS: dict[Provider, str] = {
     "azure_openai": "gpt-4o-mini",
     "google_vertexai": "gemini-2.0-flash-exp",
     "google_genai": "gemini-2.0-flash-exp",
-    "groq": "llama-3.3-70b-versatile",
     "mistralai": "mistral-large-latest",
     "cohere": "command-r-plus",
     "bedrock": "anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -49,18 +47,20 @@ def detect_provider() -> Provider:
         2. google_vertexai (GOOGLE_VERTEX_PROJECT_ID or GOOGLE_VERTEX_CREDENTIALS)
         3. google_genai (GOOGLE_API_KEY)
         4. azure_openai (AZURE_OPENAI_API_KEY)
-        5. groq (GROQ_API_KEY)
-        6. mistralai (MISTRAL_API_KEY)
-        7. cohere (COHERE_API_KEY)
-        8. bedrock (AWS_PROFILE or AWS_ACCESS_KEY_ID)
-        9. huggingface (HUGGINGFACEHUB_API_TOKEN)
-        10. ollama (OLLAMA_BASE_URL or localhost:11434)
-        11. openai (OPENAI_API_KEY)
-        12. openai (fallback)
+        5. mistralai (MISTRAL_API_KEY)
+        6. cohere (COHERE_API_KEY)
+        7. bedrock (AWS_PROFILE or AWS_ACCESS_KEY_ID)
+        8. huggingface (HUGGINGFACEHUB_API_TOKEN)
+        9. ollama (OLLAMA_BASE_URL or localhost:11434)
+        10. openai (OPENAI_API_KEY)
+        11. openai (fallback)
 
     Note:
         Ollama is special as it runs locally without an API key.
         It's checked via OLLAMA_BASE_URL environment variable.
+
+        Groq is reserved for audio transcription only (GROQ_AUDIO_API_KEY).
+        It is NOT used as an LLM provider.
     """
     # Check in order of priority
     if os.getenv("ANTHROPIC_API_KEY"):
@@ -71,8 +71,6 @@ def detect_provider() -> Provider:
         return "google_genai"
     if os.getenv("AZURE_OPENAI_API_KEY"):
         return "azure_openai"
-    if os.getenv("GROQ_API_KEY"):
-        return "groq"
     if os.getenv("MISTRAL_API_KEY"):
         return "mistralai"
     if os.getenv("COHERE_API_KEY"):
@@ -106,7 +104,6 @@ def get_default_model() -> str:
         "azure_openai": os.getenv("AZURE_OPENAI_MODEL_NAME"),
         "google_vertexai": os.getenv("GOOGLE_VERTEX_MODEL_NAME"),
         "google_genai": os.getenv("GOOGLE_GENAI_MODEL_NAME"),
-        "groq": os.getenv("GROQ_MODEL_NAME"),
         "mistralai": os.getenv("MISTRAL_MODEL_NAME"),
         "cohere": os.getenv("COHERE_MODEL_NAME"),
         "bedrock": os.getenv("BEDROCK_MODEL_NAME"),
@@ -124,7 +121,7 @@ DEFAULT_MODEL = get_default_model()
 
 
 def _create_model(model_name: str, temperature: float) -> Any:
-    """Create the appropriate LLM model instance based on detected provider.
+    """Create the appropriate LLM model instance based on the detected provider.
 
     Args:
         model_name: Name of the model to use.
@@ -172,11 +169,6 @@ def _create_model(model_name: str, temperature: float) -> Any:
 
         return ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
 
-    if provider == "groq":
-        from langchain_groq import ChatGroq
-
-        return ChatGroq(model=model_name, temperature=temperature)
-
     if provider == "mistralai":
         from langchain_mistralai import ChatMistralAI
 
@@ -206,8 +198,8 @@ def _create_model(model_name: str, temperature: float) -> Any:
             return ChatHuggingFace(model_id=model_name)
 
     # Default fallback to OpenAI
-    # Note: In langchain-openai 0.2.0+, ChatOpenAI requires api_key.
-    # Only create the client when a model is explicitly provided.
+    # Note: In langchain-openai 0.2.0+, ChatOpenAI requires an api_key.
+    # Only create a client when a model is explicitly provided.
     from langchain_openai.chat_models.base import ChatOpenAI
 
     openai_api_key = os.getenv("OPENAI_API_KEY")

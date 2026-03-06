@@ -15,10 +15,12 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agentic_framework.channels.base import Channel, IncomingMessage, OutgoingMessage
+from agentic_framework.channels.whatsapp_config import AudioTranscriberConfig
 from agentic_framework.constants import get_default_model
 from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
+from agentic_framework.services.audio_transcriber import AudioTranscriber
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
         temperature: float = 0.7,
         thread_id: str = "whatsapp",
         mcp_servers_override: list[str] | None = None,
+        audio_transcriber_config: AudioTranscriberConfig | None = None,
     ) -> None:
         # Initialize with None MCP provider - we'll set it up in start()
         super().__init__(
@@ -79,6 +82,7 @@ class WhatsAppAgent(LangGraphMCPAgent):
         self._mcp_tools: list[Any] = []
         self._mcp_servers: list[str] = []
         self._mcp_servers_override = mcp_servers_override
+        self._audio_transcriber_config = audio_transcriber_config
 
         logger.info(f"WhatsAppAgent initialized with model={model_name or get_default_model()}")
 
@@ -323,8 +327,59 @@ class WhatsAppAgent(LangGraphMCPAgent):
         try:
             logger.info(f"Processing message from {incoming.sender_id}")
 
-            # Get agent response
-            response = await self.run(incoming.text)
+            # Check if message contains audio
+            is_audio = incoming.raw_data.get("is_audio", False)
+            message_text = incoming.text
+
+            if is_audio:
+                logger.info("Processing audio message - transcribing...")
+                audio_path = incoming.raw_data.get("audio_path")
+                audio_mime_type = incoming.raw_data.get("audio_mime_type")
+
+                # Validate audio path exists
+                if not audio_path or not isinstance(audio_path, str):
+                    logger.warning("Audio path missing or invalid")
+                    response_text = "Sorry, I couldn't process your audio message (invalid path)."
+                    outgoing = OutgoingMessage(text=response_text, recipient_id=incoming.sender_id)
+                    await self.channel.send(outgoing)
+                    return
+                else:
+                    # Create transcriber and transcribe using Groq API with config
+                    if self._audio_transcriber_config:
+                        transcriber = AudioTranscriber(
+                            config_file=self._audio_transcriber_config.config_file,
+                            model=self._audio_transcriber_config.model,
+                            timeout=self._audio_transcriber_config.timeout,
+                        )
+                    else:
+                        transcriber = AudioTranscriber()
+                    transcription = await transcriber.transcribe_audio(audio_path, audio_mime_type)
+
+                    # Clean up temporary audio file after transcription
+                    try:
+                        import os as os_module
+
+                        os_module.unlink(audio_path)
+                        logger.debug(f"Cleaned up temporary audio file: {audio_path}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to clean up audio file {audio_path}: {cleanup_error}")
+
+                    if transcription.startswith("Error:"):
+                        logger.warning(f"Transcription failed: {transcription}")
+                        response_text = f"Sorry, I couldn't transcribe your audio message. {transcription}"
+                        outgoing = OutgoingMessage(text=response_text, recipient_id=incoming.sender_id)
+                        await self.channel.send(outgoing)
+                        return
+                    else:
+                        logger.info(f"Transcription successful: {transcription[:100]}...")
+                        # Send transcription directly word-for-word, bypassing the LLM
+                        # This is intentional: the user wants the exact transcription, not a comment about it
+                        outgoing = OutgoingMessage(text=transcription, recipient_id=incoming.sender_id)
+                        await self.channel.send(outgoing)
+                        return
+
+            # Get agent response (for non-audio messages)
+            response = await self.run(message_text)
 
             # Convert to string if needed
             response_text = str(response) if isinstance(response, BaseMessage) else response

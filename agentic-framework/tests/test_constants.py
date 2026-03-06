@@ -35,7 +35,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -60,7 +59,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -85,7 +83,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -110,7 +107,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -135,7 +131,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -151,31 +146,6 @@ class TestDetectProvider:
 
         assert detect_provider() == "azure_openai"
 
-    def test_detect_groq_provider(self, monkeypatch):
-        """Test provider detection returns groq when GROQ_API_KEY is set."""
-        for key in list(os.environ.keys()):
-            if any(
-                x in key.upper()
-                for x in [
-                    "ANTHROPIC",
-                    "GOOGLE",
-                    "AZURE",
-                    "GROQ",
-                    "MISTRAL",
-                    "COHERE",
-                    "AWS",
-                    "HUGGINGFACE",
-                    "OLLAMA",
-                    "OPENAI",
-                ]
-            ):
-                monkeypatch.delenv(key, raising=False)
-
-        monkeypatch.setenv("GROQ_API_KEY", "test-key")
-        from agentic_framework.constants import detect_provider
-
-        assert detect_provider() == "groq"
-
     def test_detect_mistralai_provider(self, monkeypatch):
         """Test provider detection returns mistralai when MISTRAL_API_KEY is set."""
         for key in list(os.environ.keys()):
@@ -185,7 +155,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -210,7 +179,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -235,7 +203,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -260,7 +227,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -285,7 +251,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -310,7 +275,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -335,7 +299,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -360,7 +323,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -385,7 +347,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -409,7 +370,6 @@ class TestDetectProvider:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -440,7 +400,6 @@ class TestGetDefaultModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -466,7 +425,6 @@ class TestGetDefaultModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -492,7 +450,6 @@ class TestGetDefaultModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -509,32 +466,6 @@ class TestGetDefaultModel:
 
         assert get_default_model() == "llama3.2"
 
-    def test_default_model_groq(self, monkeypatch):
-        """Test default model for Groq provider."""
-        for key in list(os.environ.keys()):
-            if any(
-                x in key.upper()
-                for x in [
-                    "ANTHROPIC",
-                    "GOOGLE",
-                    "AZURE",
-                    "GROQ",
-                    "MISTRAL",
-                    "COHERE",
-                    "AWS",
-                    "HUGGINGFACE",
-                    "OLLAMA",
-                    "OPENAI",
-                    "MODEL_NAME",
-                ]
-            ):
-                monkeypatch.delenv(key, raising=False)
-
-        monkeypatch.setenv("GROQ_API_KEY", "test-key")
-        from agentic_framework.constants import get_default_model
-
-        assert get_default_model() == "llama-3.3-70b-versatile"
-
     def test_default_model_override(self, monkeypatch):
         """Test model override via environment variable."""
         for key in list(os.environ.keys()):
@@ -544,7 +475,6 @@ class TestGetDefaultModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -583,7 +513,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -611,7 +540,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -640,7 +568,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -669,7 +596,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -686,35 +612,6 @@ class TestCreateModel:
         model = _create_model("llama3.2", 0.5)
         assert model.base_url == "http://remote-host:11434"
 
-    def test_create_groq_model(self, monkeypatch):
-        """Test creating Groq model."""
-        for key in list(os.environ.keys()):
-            if any(
-                x in key.upper()
-                for x in [
-                    "ANTHROPIC",
-                    "GOOGLE",
-                    "AZURE",
-                    "GROQ",
-                    "MISTRAL",
-                    "COHERE",
-                    "AWS",
-                    "HUGGINGFACE",
-                    "OLLAMA",
-                    "OPENAI",
-                ]
-            ):
-                monkeypatch.delenv(key, raising=False)
-
-        monkeypatch.setenv("GROQ_API_KEY", "test-key")
-        from agentic_framework.constants import _create_model
-
-        model = _create_model("llama-3.3-70b-versatile", 0.3)
-        assert model.__class__.__name__ == "ChatGroq"
-        model_attr = getattr(model, "model_name", model.model if hasattr(model, "model") else None)
-        assert model_attr == "llama-3.3-70b-versatile"
-        assert model.temperature == 0.3
-
     def test_create_mistralai_model(self, monkeypatch):
         """Test creating MistralAI model."""
         for key in list(os.environ.keys()):
@@ -724,7 +621,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -754,7 +650,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -782,7 +677,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -815,7 +709,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -846,7 +739,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -876,7 +768,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
@@ -906,7 +797,6 @@ class TestCreateModel:
                     "ANTHROPIC",
                     "GOOGLE",
                     "AZURE",
-                    "GROQ",
                     "MISTRAL",
                     "COHERE",
                     "AWS",
