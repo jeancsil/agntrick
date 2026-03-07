@@ -39,12 +39,7 @@ class LearningAgent(LangGraphMCPAgent):
         """System prompt for the learning agent."""
         from datetime import datetime
 
-        current_date = datetime.now()
-        date_context = (
-            f"CURRENT DATE: {current_date.strftime('%Y-%m-%d')}\n"
-            f"Current year: {current_date.year}\n"
-            f"Current month: {current_date.strftime('%B')}\n\n"
-        )
+        date_context = f"Current date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
 
         return (
             f"{date_context}"
@@ -57,7 +52,8 @@ class LearningAgent(LangGraphMCPAgent):
             "3. Provide clear explanations for each step\n"
             "4. Include practical examples and code snippets when relevant\n"
             "5. Anticipate common questions and address them proactively\n"
-            "6. Summarize key takeaways at the end\n\n"
+            "6. Summarize key takeaways at the end\n"
+            "7. Do not create multi message tutorials, always create a single message tutorial\n\n"
             "CAPABILITIES:\n"
             "- You have access to web search (DuckDuckGo) and web content fetching\n"
             "- Use these tools to find current information and best practices\n"
@@ -68,7 +64,8 @@ class LearningAgent(LangGraphMCPAgent):
             "- Number steps when providing sequential instructions\n"
             "- Use code blocks with language hints for code examples\n"
             "- Include 'Why this matters' explanations for context\n"
-            "- Add tips and warnings where appropriate\n\n"
+            "- Add tips and warnings where appropriate\n"
+            "- Add sources for the information you provide\n"
             "COMMUNICATION STYLE:\n"
             "- Be encouraging and patient\n"
             "- Explain technical terms when you first use them\n"
@@ -80,7 +77,12 @@ class LearningAgent(LangGraphMCPAgent):
             "- Provide real-world examples\n"
             "- Address common misconceptions\n"
             "- Suggest next steps for further learning\n\n"
-            "Always prioritize clarity and practical application over theoretical completeness."
+            "Always prioritize clarity and practical application over theoretical completeness.\n\n"
+            "GUARDRAILS:\n"
+            "- SAFETY: If the topic involves physical risk (tools, chemicals,...), you MUST include a safety warning.\n"
+            "- BREVITY: Be punchy. If a sentence doesn't add educational value, remove it.\n"
+            "- FACTUAL INTEGRITY: Use your search tools to verify modern standards. "
+            "If information is debated, show both sides."
         )
 
     def local_tools(self) -> Sequence[Any]:
