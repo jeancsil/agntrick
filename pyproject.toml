@@ -1,12 +1,12 @@
 [project]
 name = "agntrick"
 version = "0.2.0"
-description = "Build AI agents that actually do things - a Python framework combining local tools and MCP servers"
+description = "Agntrick: An agentic framework for building AI-powered applications"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.15"
 authors = [
-    { name = "Jean Carlo Silva", email = "jeancsil@gmail.com" }
+    { name = "jeancsil", email = "me@jeancsil.com" }
 ]
 keywords = [
     "ai",
