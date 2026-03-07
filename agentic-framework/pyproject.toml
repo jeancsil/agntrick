@@ -38,6 +38,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "ffmpeg-python>=0.2.0",
     "langchain-ollama>=1.0.1",
+    "youtube-transcript-api>=1.2.4",
 ]
 
 [project.scripts]
