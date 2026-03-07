@@ -1,4 +1,4 @@
-.PHONY: help install run test clean fix check docker-build docker-clean
+.PHONY: help install run test clean format check docker-build docker-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -36,7 +36,7 @@ check: ## Run all checks (mypy, ruff lint, ruff format) - no modifications
 	@$(UV) --project $(PROJECT_DIR) run ruff check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 	@$(UV) --project $(PROJECT_DIR) run ruff format --check $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
-fix: ## Auto-fix lint and format issues (runs ruff check --fix and ruff format)
+format: ## Auto-fix lint and format issues (runs ruff check --fix and ruff format)
 	@$(UV) --project $(PROJECT_DIR) run ruff check --fix $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 	@$(UV) --project $(PROJECT_DIR) run ruff format $(PROJECT_DIR)/src/ $(PROJECT_DIR)/tests/
 
