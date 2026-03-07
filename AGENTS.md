@@ -40,6 +40,7 @@ You are an LLM agent tasked with improving, fixing, or extending the **agentic-f
 10. **NEVER** ignore deprecation warnings - fix them.
 11. **NEVER** use pip, pipenv, poetry, or any package manager other than `uv`.
 12. **NEVER** install dependencies locally when Docker can be used instead.
+13. **NEVER** add deprecated or outdated libraries as dependencies. Always verify the library is actively maintained and doesn't produce deprecation warnings.
 
 ### BEFORE Rules
 
