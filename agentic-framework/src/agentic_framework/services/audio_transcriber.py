@@ -234,7 +234,7 @@ class AudioTranscriber:
 
                 try:
                     os_module.close(fd)
-                except Exception:
+                except:
                     pass
                 raise conversion_error
 
