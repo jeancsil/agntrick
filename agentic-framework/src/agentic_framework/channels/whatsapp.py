@@ -580,17 +580,13 @@ class WhatsAppChannel(Channel):
             # === STEP 3: Extract message content ===
             message_text = getattr(event.Message, "conversation", "")
             if not message_text:
-                extended_text = getattr(event.Message, "extended_text_message", None)
+                extended_text = getattr(event.Message, "extendedTextMessage", None)
                 if extended_text is not None:
                     message_text = getattr(extended_text, "text", "")
 
             # === STEP 4: Process message by type ===
             # If no text, check for audio message (voice notes, etc.)
             if not message_text:
-                # Debug: log all attributes of event.Message to understand structure
-                msg_attrs = [attr for attr in dir(event.Message) if not attr.startswith("_")]
-                logger.debug(f"Message attributes: {msg_attrs}")
-
                 # Check for audio message - try different possible attribute names
                 # neonize/whatsmeow may use different naming conventions
                 audio_msg = None
@@ -601,15 +597,11 @@ class WhatsAppChannel(Channel):
                         break
 
                 if audio_msg is not None:
-                    # Log the audio message attributes to understand its structure
-                    audio_attrs = [attr for attr in dir(audio_msg) if not attr.startswith("_")]
-                    logger.debug(f"Audio message attributes: {audio_attrs}")
-                    logger.debug(f"Audio message type: {type(audio_msg)}")
-
-                    # Check if it has url or other download attributes
+                    # Check if it has URL or other download attributes
                     # Note: neonize uses 'URL' (uppercase), not 'url' (lowercase)
                     audio_url = getattr(audio_msg, "URL", None) or getattr(audio_msg, "url", None)
                     if audio_url:
+                        # This is a real audio message (voice note)
                         logger.debug("Detected audio message with URL - processing...")
                         asyncio.run_coroutine_threadsafe(
                             self._process_audio_and_callback(client, event),
@@ -617,7 +609,7 @@ class WhatsAppChannel(Channel):
                         )
                         return
                     else:
-                        logger.warning(f"Audio message found but no 'URL' or 'url' attribute. Available: {audio_attrs}")
+                        logger.warning("Audio message found but no 'URL' or 'url' attribute")
                 else:
                     logger.debug("No audio message attribute found on event.Message")
 

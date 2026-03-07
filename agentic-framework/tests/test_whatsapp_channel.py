@@ -1213,7 +1213,7 @@ class TestWhatsAppChannelAudioMessages:
         # This simulates the neonize structure for audio messages
         mock_event = MagicMock()
         mock_event.Message.conversation = ""  # Audio messages have no text
-        mock_event.Message.extended_text_message = None
+        mock_event.Message.extendedTextMessage = None
 
         # Create a mock audioMessage with url attribute (real neonize structure)
         mock_audio_msg = MagicMock()
@@ -1270,7 +1270,7 @@ class TestWhatsAppChannelAudioMessages:
         # Create a mock audio message event WITHOUT url attribute
         mock_event = MagicMock()
         mock_event.Message.conversation = ""
-        mock_event.Message.extended_text_message = None
+        mock_event.Message.extendedTextMessage = None
 
         # Create a mock audioMessage WITHOUT url attribute (incomplete/malformed)
         mock_audio_msg = MagicMock(spec=["mimetype", "seconds"])  # Only has these attrs, no url
@@ -1321,7 +1321,7 @@ class TestWhatsAppChannelAudioMessages:
         # Create a mock audio message from a DIFFERENT contact
         mock_event = MagicMock()
         mock_event.Message.conversation = ""
-        mock_event.Message.extended_text_message = None
+        mock_event.Message.extendedTextMessage = None
 
         mock_audio_msg = MagicMock()
         mock_audio_msg.url = "https://example.com/audio.ogg"
@@ -1376,7 +1376,7 @@ class TestWhatsAppChannelAudioMessages:
         # Create a regular text message (no audio)
         mock_event = MagicMock()
         mock_event.Message.conversation = "Hello, this is a text message"
-        mock_event.Message.extended_text_message = None
+        mock_event.Message.extendedTextMessage = None
         # audioMessage is None (default for text messages)
         mock_event.Message.audioMessage = None
 
