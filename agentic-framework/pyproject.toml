@@ -1,7 +1,7 @@
 [project]
-name = "agentic-framework"
-version = "0.1.0"
-description = "Agentic Framework"
+name = "agntrick"
+version = "0.2.0"
+description = "Agntrick: An agentic framework for building AI-powered applications"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 
@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agentic-run = "agentic_framework.cli:app"
+agntrick = "agntrick.cli:app"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -66,7 +66,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.coverage.run]
-source = ["src/agentic_framework"]
+source = ["src/agntrick"]
 
 [tool.coverage.report]
 fail_under = 60
