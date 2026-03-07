@@ -13,7 +13,7 @@ from rich.console import Console
 from agentic_framework.channels import WhatsAppChannel
 from agentic_framework.channels.whatsapp_config import WhatsAppAgentConfig
 from agentic_framework.constants import LOGS_DIR
-from agentic_framework.core.whatsapp_agent import WhatsAppAgent
+from agentic_framework.core.whatsapp_router_agent import WhatsAppRouterAgent
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
 
@@ -273,12 +273,16 @@ def whatsapp_command(
         help="Enable verbose logging.",
     ),
 ) -> None:
-    """Run the WhatsApp agent for bidirectional communication.
+    """Run the WhatsApp router agent for bidirectional communication.
 
     This command starts a WhatsApp agent that listens for messages and
     responds using the configured LLM model. Use Ctrl+C to stop.
 
     First run will display a QR code for WhatsApp authentication.
+
+    AVAILABLE COMMANDS:
+    - /learn <topic> - Get step-by-step tutorials and explanations
+    - (default) - General assistant mode
 
     MCP Servers: By default, uses web-fetch and duckduckgo-search.
     Use --mcp-servers to customize or 'none' to disable.
@@ -361,8 +365,8 @@ def whatsapp_command(
             typing_indicators=config.features.typing_indicators,
         )
 
-        # Create agent with optional MCP servers override
-        agent = WhatsAppAgent(
+        # Create router agent with optional MCP servers override
+        agent = WhatsAppRouterAgent(
             channel=channel,
             model_name=config.model if config.model else None,
             mcp_servers_override=mcp_servers_list,
