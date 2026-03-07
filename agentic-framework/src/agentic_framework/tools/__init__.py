@@ -8,6 +8,8 @@ from .codebase_explorer import (
 )
 from .example import CalculatorTool, WeatherTool
 from .syntax_validator import SyntaxValidator, ValidationResult, get_validator
+from .youtube_cache import YouTubeTranscriptCache
+from .youtube_transcript import YouTubeTranscriptTool
 
 __all__ = [
     "CalculatorTool",
@@ -21,4 +23,6 @@ __all__ = [
     "SyntaxValidator",
     "ValidationResult",
     "get_validator",
+    "YouTubeTranscriptCache",
+    "YouTubeTranscriptTool",
 ]

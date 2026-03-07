@@ -75,6 +75,7 @@ The framework includes several pre-built agents for common use cases:
 | `simple` | Chat Buddy: Vanilla conversational agent |
 | `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries |
 | `whatsapp` | WhatsApp Agent: Bidirectional WhatsApp communication |
+| `youtube` | Video Analyst: Extract insights from YouTube videos |
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
 
@@ -95,6 +96,7 @@ Fast, zero-dependency tools for working with local codebases:
 | `code_search` | Fast search via `ripgrep` |
 | `edit_file` | Safe file editing |
 | `audio_transcriber` | Transcribes audio using Groq Whisper API |
+| `youtube_transcript` | Extract transcripts from YouTube videos |
 
 📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
 
