@@ -376,6 +376,10 @@ agentic-run whatsapp --config config/whatsapp.yaml
 
 # 📱 Run WhatsApp with custom settings
 agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
+
+# 📱 WhatsApp slash commands (send these in WhatsApp):
+# /learn <topic> - Get step-by-step tutorials and explanations
+# <any message> - General assistant mode (web search & chat)
 ```
 
 ---

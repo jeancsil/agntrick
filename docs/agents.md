@@ -13,7 +13,7 @@ This document provides detailed information about all available agents in the Ag
 | `travel` | **Flight Booker:** Finds the best routes. | `kiwi-com-flight-search` | - |
 | `simple` | **Chat Buddy:** Vanilla conversational agent. | - | - |
 | `github-pr-reviewer` | **PR Reviewer:** Reviews diffs, posts inline comments & summaries. | - | Custom GitHub tools |
-| `whatsapp` | **WhatsApp Agent:** Bidirectional WhatsApp communication (personal account). | `webfetch`, `duckduckgo-search` | - |
+| `whatsapp` | **WhatsApp Agent:** Bidirectional WhatsApp communication (personal account) with slash commands. | `webfetch`, `duckduckgo-search` | - |
 
 ---
 
@@ -237,6 +237,46 @@ bin/agent.sh whatsapp --verbose
 ### MCP Servers
 - `webfetch` - For fetching web content
 - `duckduckgo-search` - For web search capabilities
+
+### Slash Commands
+
+The WhatsApp agent uses a router architecture that responds to special command prefixes, providing different modes of interaction:
+
+| Command | Description |
+|---------|-------------|
+| `/learn <topic>` | **Learning Mode:** Get step-by-step tutorials and detailed explanations. The agent breaks down complex topics into clear, logical steps with practical examples. |
+| `<any message>` | **Default Mode:** General assistant with web search and chat capabilities. |
+
+#### Learning Mode (`/learn`)
+
+Use the `/learn` command when you want in-depth tutorials and explanations on any topic:
+
+```
+You: /learn how to build a REST API with Python
+
+Agent: *Here's a step-by-step tutorial on building a REST API with Python:*
+
+1. **Choose a Framework** - Flask or FastAPI are popular options
+2. **Install Dependencies** - `pip install flask`
+3. [continues with detailed steps...]
+```
+
+The learning mode is designed for education, providing:
+- Structured, step-by-step breakdowns
+- Clear explanations of technical terms
+- Practical examples and analogies
+- Encouraging and patient communication style
+
+#### Default Mode
+
+For quick questions, web searches, or general conversation, just send a message without any command prefix:
+
+```
+You: What's the weather like in Madrid?
+
+Agent: I'll check the current weather in Madrid for you...
+[uses web search to fetch and summarize current conditions]
+```
 
 ---
 

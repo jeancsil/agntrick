@@ -138,7 +138,7 @@ def _create_model(model_name: str, temperature: float) -> Any:
         return ChatAnthropic(model=model_name, temperature=temperature)  # type: ignore[call-arg]
 
     if provider == "ollama":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
 
         return ChatOllama(
             model=model_name,

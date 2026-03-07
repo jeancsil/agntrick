@@ -364,7 +364,7 @@ def test_whatsapp_command_surfaces_startup_failure(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(cli, "load_config", lambda _path: fake_config)
     monkeypatch.setattr(cli, "WhatsAppChannel", lambda **_kwargs: object())
-    monkeypatch.setattr(cli, "WhatsAppAgent", lambda **_kwargs: FailingAgent())
+    monkeypatch.setattr(cli, "WhatsAppRouterAgent", lambda **_kwargs: FailingAgent())
     monkeypatch.setattr(cli.AgentRegistry, "get_mcp_servers", lambda _name: [])
     monkeypatch.setattr(cli.console, "print", lambda msg: printed.append(str(msg)))
 

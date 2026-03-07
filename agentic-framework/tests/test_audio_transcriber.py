@@ -228,19 +228,22 @@ class TestAudioTranscriberConversion:
 
     @pytest.mark.asyncio
     @patch("httpx.AsyncClient")
-    @patch("pydub.AudioSegment")
+    @patch("ffmpeg.input")
     async def test_convert_ogg_to_mp3_and_transcribe(
-        self, mock_audio_segment: MagicMock, mock_client_class: MagicMock, tmp_path: Path
+        self, mock_ffmpeg_input: MagicMock, mock_client_class: MagicMock, tmp_path: Path
     ) -> None:
         """Test OGG to MP3 conversion followed by transcription."""
         # Create a mock OGG file
         ogg_path = tmp_path / "test.ogg"
         ogg_path.write_bytes(b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00")
 
-        # Mock pydub conversion
-        mock_audio = MagicMock()
-        mock_audio.export = MagicMock()
-        mock_audio_segment.from_file.return_value = mock_audio
+        # Mock ffmpeg-python conversion
+        mock_conversion = MagicMock()
+        mock_ffmpeg_input.return_value.return_value = mock_conversion
+        mock_conversion.audio_codec.return_value = mock_conversion
+        mock_conversion.output.return_value = mock_conversion
+        mock_conversion.overwrite_output.return_value = mock_conversion
+        mock_conversion.run.return_value = None
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -264,12 +267,12 @@ class TestAudioTranscriberConversion:
 
     @pytest.mark.asyncio
     async def test_convert_unsupported_format_returns_error(self, tmp_path: Path) -> None:
-        """Test that unsupported formats return error when pydub not available."""
+        """Test that unsupported formats return error when ffmpeg not available."""
         unsupported_path = tmp_path / "test.xyz"
         unsupported_path.write_bytes(b"fake audio data")
 
-        # Mock pydub import error
-        with patch.dict("sys.modules", {"pydub": None}):
+        # Mock ffmpeg import error
+        with patch.dict("sys.modules", {"ffmpeg": None}):
             transcriber = AudioTranscriber(api_key="test-key")
             result = await transcriber.transcribe_audio(str(unsupported_path))
 

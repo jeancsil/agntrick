@@ -22,7 +22,7 @@ Usage:
 Troubleshooting:
     - "GROQ_AUDIO_API_KEY or GROQ_API_KEY not set": Set environment variable with your Groq API key.
     - "exceeds maximum allowed size": Audio file is larger than 25MB limit.
-    - "Cannot convert format": Install pydub: `uv add pydub` (requires ffmpeg).
+    - "Cannot convert format": Install ffmpeg-python: `uv add ffmpeg-python` (requires ffmpeg).
 
 Performance:
     - whisper-large-v3-turbo: ~30-50ms transcription time for 30s audio
@@ -192,7 +192,7 @@ class AudioTranscriber:
         return resolved_path
 
     def _convert_to_mp3(self, audio_path: Path) -> Path | None:
-        """Convert audio file to MP3 format using pydub.
+        """Convert audio file to MP3 format using ffmpeg-python.
 
         This method converts unsupported audio formats to MP3 for compatibility
         with the Whisper API. The conversion is performed in a temporary file.
@@ -204,10 +204,9 @@ class AudioTranscriber:
             Path to the converted MP3 file, or None if conversion fails.
         """
         try:
-            from pydub import AudioSegment  # type: ignore[import-untyped]
+            import ffmpeg  # type: ignore[import-untyped]
 
             logger.info(f"Converting {audio_path.suffix} to MP3 format...")
-            audio = AudioSegment.from_file(str(audio_path))
 
             # Use mkstemp instead of NamedTemporaryFile to avoid race condition
             # The file is created, written, and only then accessible
@@ -215,17 +214,32 @@ class AudioTranscriber:
 
             fd, temp_path = tf.mkstemp(suffix=".mp3", text=False)
             try:
-                audio.export(temp_path, format="mp3", bitrate=_MP3_BITRATE)
-                logger.info(f"Converted to MP3: {temp_path}")
-                return Path(temp_path)
-            finally:
-                # Close file descriptor but keep file
+                # Close file descriptor before ffmpeg writes to it
                 import os as os_module
 
                 os_module.close(fd)
 
+                # Perform conversion using ffmpeg-python
+                ffmpeg.input(str(audio_path)).output(
+                    str(temp_path),
+                    overwrite_output=True,
+                    quiet=True,
+                ).run()
+
+                logger.info(f"Converted to MP3: {temp_path}")
+                return Path(temp_path)
+            except Exception as conversion_error:
+                # Clean up on any error
+                import os as os_module
+
+                try:
+                    os_module.close(fd)
+                except Exception:
+                    pass
+                raise conversion_error
+
         except ImportError:
-            logger.error("pydub not installed - cannot convert audio format")
+            logger.error("ffmpeg-python not installed - cannot convert audio format")
             return None
         except Exception as e:
             logger.error(f"Failed to convert audio: {e}")
