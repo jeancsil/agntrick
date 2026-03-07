@@ -19,6 +19,7 @@ from agentic_framework.constants import get_default_model
 from agentic_framework.mcp import MCPConnectionError, MCPProvider
 from agentic_framework.registry import AgentRegistry
 from agentic_framework.services.audio_transcriber import AudioTranscriber
+from agentic_framework.tools.youtube_transcript import YouTubeTranscriptTool
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,28 @@ COMMUNICATION STYLE:
 Always prioritize clarity and practical application."""
 
 
+YOUTUBE_SYSTEM_PROMPT = """You are a YouTube video analyst specialized in extracting
+insights from video transcripts through WhatsApp.
+
+Your capabilities:
+1. **Summarization**: Provide concise, accurate summaries of video content
+2. **Q&A**: Answer specific questions about topics covered in videos
+3. **Key Points**: Extract main ideas with relevant timestamps
+4. **Analysis**: Identify themes, arguments, and conclusions
+5. **Comparison**: Compare content across multiple videos when asked
+
+Guidelines:
+- Always cite timestamps when referencing specific content
+- Distinguish between facts stated in the video and your analysis
+- If a video lacks captions, inform the user gracefully
+- For long videos, organize summaries into sections with timestamps
+- When asked about specific topics, quote relevant parts directly
+- Keep responses concise for WhatsApp messaging
+
+Use the youtube_transcript tool to fetch video transcripts, then provide
+thoughtful analysis based on the transcript content."""
+
+
 class WhatsAppRouterAgent:
     """WhatsApp agent that routes commands to different specialist modes.
 
@@ -92,6 +115,7 @@ class WhatsAppRouterAgent:
 
     Supported commands:
     - /learn <topic> - Use learning/tutorial mode
+    - /youtube <url|query> - Use YouTube analysis mode
     - (default) - Use general assistant mode
 
     Args:
@@ -160,10 +184,24 @@ class WhatsAppRouterAgent:
         """Get or create an agent graph for the given mode."""
         if mode not in self._graphs:
             tools = list(self._mcp_tools)
+
+            # Add YouTube transcript tool for youtube mode
+            if mode == "youtube":
+                youtube_tool = YouTubeTranscriptTool()
+                from langchain_core.tools import StructuredTool
+
+                tools.append(
+                    StructuredTool.from_function(
+                        func=youtube_tool.invoke,
+                        name=youtube_tool.name,
+                        description=youtube_tool.description,
+                    )
+                )
+
             self._graphs[mode] = create_agent(
                 model=self.model,
                 tools=tools,
-                system_prompt=system_prompt,
+                # system_prompt=system_prompt,
                 checkpointer=InMemorySaver(),
             )
         return self._graphs[mode]
@@ -172,7 +210,7 @@ class WhatsAppRouterAgent:
         """Parse message text to extract command and query.
 
         Returns:
-            Tuple of (mode, query) where mode is 'learn' or 'default'.
+            Tuple of (mode, query) where mode is 'learn', 'youtube', or 'default'.
         """
         text = text.strip()
 
@@ -180,6 +218,10 @@ class WhatsAppRouterAgent:
             return "learn", text[7:].strip()
         elif text.lower() == "/learn":
             return "learn", "What would you like to learn about? Please provide a topic."
+        elif text.lower().startswith("/youtube "):
+            return "youtube", text[9:].strip()
+        elif text.lower() == "/youtube":
+            return "youtube", "Please provide a YouTube URL or tell me what you'd like to know about a video."
         else:
             return "default", text
 
@@ -233,6 +275,8 @@ class WhatsAppRouterAgent:
             # Get appropriate system prompt
             if mode == "learn":
                 system_prompt = LEARNING_SYSTEM_PROMPT
+            elif mode == "youtube":
+                system_prompt = YOUTUBE_SYSTEM_PROMPT
             else:
                 system_prompt = DEFAULT_SYSTEM_PROMPT
 
