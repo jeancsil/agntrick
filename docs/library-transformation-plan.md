@@ -1229,3 +1229,33 @@ These task groups can be worked on in parallel:
 - **fetch**: https://remote.mcpservers.org/fetch/mcp
 - Package name confirmed: `agntrick`
 - Version: 0.2.0
+
+### 4.11 Phase 11: Cleanup (Remove Legacy Code)
+| ID | Task | Status | Assignee | Dependencies |
+|----|------|--------|----------|--------------|
+| 11.1 | Verify all agents migrated to `agntrick` package | [ ] | - | 4.3 |
+| 11.2 | Verify all tools work in `agntrick` package | [ ] | - | 4.3 |
+| 11.3 | Verify CI passes with both packages | [ ] | - | 9.7, 10.3 |
+| 11.4 | Update main README to point to `agntrick` only | [x] | - | 11.1-11.3 |
+| 11.5 | Remove `src/agentic_framework/` directory | [ ] | - | 11.4 |
+| 11.6 | Remove `tests/test_*.py` files for legacy code | [ ] | - | 11.5 |
+| 11.7 | Update Makefile to remove legacy references | [ ] | - | 11.5 |
+| 11.8 | Remove `bin/agent.sh` script | [ ] | - | 11.7 |
+| 11.9 | Verify no imports of `agentic_framework` remain | [ ] | - | 11.5-11.8 |
+| 11.10 | Update AGENTS.md to reference new package only | [ ] | - | 11.4 |
+
+---
+
+## Updated Critical Path
+
+```
+1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 3.3-3.7 → 3.9 → 4.4 → 6.4 → 6.6 → 10.1 → 10.2 → 10.3 → 10.4 → 11.4 → 11.5 → 11.6-11.10
+```
+
+## Updated Notes
+
+- **web-forager**: https://github.com/CyranoB/web-forager
+- **fetch**: https://remote.mcpservers.org/fetch/mcp
+- Package name confirmed: `agntrick`
+- Version: 0.2.0
+- CI fix applied: moved `OPENAI_API_KEY` env var to test step (commit bdced50)
