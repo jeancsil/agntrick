@@ -455,7 +455,7 @@ def load_prompt(agent_name: str) -> Optional[str]:
 |----|------|--------|----------|--------------|
 | 10.1 | Update `pyproject.toml` for `agntrick` | [x] | - | - |
 | 10.2 | Create `agntrick-whatsapp/pyproject.toml` | [x] | - | 5.2 |
-| 10.3 | Set up CI/CD for PyPI publishing | [ ] | - | 10.1, 10.2 |
+| 10.3 | Set up CI/CD for PyPI publishing | [x] | - | 10.1, 10.2 |
 | 10.4 | Create GitHub release | [ ] | - | 10.3 |
 | 10.5 | Publish to PyPI | [ ] | - | 10.4 |
 
@@ -1259,3 +1259,6 @@ These task groups can be worked on in parallel:
 - Package name confirmed: `agntrick`
 - Version: 0.2.0
 - CI fix applied: moved `OPENAI_API_KEY` env var to test step (commit bdced50)
+- Documentation imports updated (commit 2ad7644): docs/tools.md, docs/mcp-servers.md, docs/audio-transcriber.md
+- Makefile updated for WhatsApp package build (commit 2ad7644): added build-whatsapp target, updated build and build-clean
+- Release workflow updated (commit 2ad7644): added WhatsApp package build and publish jobs (PyPI and TestPyPI)
