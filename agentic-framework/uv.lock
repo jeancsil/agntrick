@@ -47,6 +47,15 @@ dependencies = [
     { name = "youtube-transcript-api" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
@@ -82,16 +91,22 @@ requires-dist = [
     { name = "langgraph-cli", specifier = ">=0.4.9" },
     { name = "langsmith", specifier = ">=0.4.43" },
     { name = "mcp", specifier = ">=1.21.1" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.9.0" },
     { name = "neonize" },
     { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rich", specifier = ">=13.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "tree-sitter", specifier = "==0.21.3" },
     { name = "tree-sitter-languages", specifier = ">=1.10.2" },
     { name = "typer", specifier = ">=0.12.0" },
+    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.32.4.20260107" },
     { name = "youtube-transcript-api", specifier = ">=1.2.4" },
 ]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [

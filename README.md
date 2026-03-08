@@ -1,29 +1,28 @@
 <div align="center">
 
-# 🤖 Agentic Framework
+# 🎩 Agntrick
 **Build AI agents that *actually* do things.**
 
-[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
+[![PyPI version](https://img.shields.io/pypi/v/agntrick?style=plastic&logo=pypi&logoColor=white)](https://pypi.org/project/agntrick/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
 [![LangChain](https://img.shields.io/badge/langchain-%23007BA7.svg?style=plastic&logo=langchain&logoColor=white)](https://python.langchain.com/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-green?style=plastic&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
-[![Docker Ready](https://img.shields.io/badge/docker-ready-blue?style=plastic&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/github/license/jeancsil/agentic-framework?style=plastic)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/jeancsil/agentic-framework/ci.yml?style=plastic&logo=github&label=Build)](https://github.com/jeancsil/agentic-framework/actions)
-[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen?style=plastic)](https://github.com/jeancsil/agentic-framework)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=plastic&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jeancsil)
+[![License](https://img.shields.io/github/license/jeancsil/agntrick?style=plastic)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/jeancsil/agntrick/ci.yml?style=plastic&logo=github&label=Build)](https://github.com/jeancsil/agntrick/actions)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen?style=plastic)](https://github.com/jeancsil/agntrick)
 
 <br>
 
-Combine **local tools** and **MCP servers** in a single, elegant runtime.  
+Combine **local tools** and **MCP servers** in a single, elegant runtime.
 Write agents in **5 lines of code**. Run them anywhere.
 
 </div>
 
 ---
 
-## 💡 Why Agentic Framework?
+## 💡 Why Agntrick?
 
-Instead of spending days wiring together LLMs, tools, and execution environments, Agentic Framework gives you a production-ready setup instantly.
+Instead of spending days wiring together LLMs, tools, and execution environments, Agntrick gives you a production-ready setup instantly.
 
 *   **Write Less, Do More:** Create a fully functional agent with just 5 lines of Python using the zero-config `@AgentRegistry.register` decorator.
 *   **Context is King (MCP):** Native integration with Model Context Protocol (MCP) servers to give your agents live data (Web search, APIs, internal databases).
@@ -33,114 +32,32 @@ Instead of spending days wiring together LLMs, tools, and execution environments
 
 ---
 
-## 🎬 See it in Action
+## 📦 Installation
 
-> *In this single command, the framework orchestrates 3 distinct AI sub-agents working together to plan a trip—built entirely in just **126 lines of Python**.*
+### From PyPI
 
-<p align="center">
-  <img src="docs/resources/demo.gif" alt="Agentic Framework Demo" width="100%" style="max-width: 800px; border-radius: 8px;">
-</p>
+```bash
+pip install agntrick
 
----
+# Or with development dependencies
+pip install "agntrick[dev]"
+```
 
-## 📑 Table of Contents
-- [🧰 Available Out of the Box](#-available-out-of-the-box)
-  - [🤖 Agents](#-agents)
-  - [📦 Local Tools](#-local-tools)
-  - [🌐 MCP Servers](#-mcp-servers)
-  - [🧠 LLM Providers](#-llm-providers)
-- [🚀 Quick Start (Zero to Agent in 60s)](#-quick-start-zero-to-agent-in-60s)
-- [🛠️ Build Your Own Agent](#️-build-your-own-agent)
-- [🏗️ Architecture](#️-architecture)
-- [💻 CLI Reference](#-cli-reference)
-- [🧑‍💻 Local Development](#local-development)
-- [🎬 See it in Action](#-see-it-in-action)
-- [🤝 Contributing](#-contributing)
+### From Source
+
+```bash
+git clone https://github.com/jeancsil/agntrick.git
+cd agntrick
+make install
+```
 
 ---
 
-## 🧰 Available Out of the Box
-
-### 🤖 Agents
-
-The framework includes several pre-built agents for common use cases:
-
-| Agent | Purpose |
-|-------|---------|
-| `developer` | Code Master: Read, search & edit code |
-| `travel-coordinator` | Trip Planner: Orchestrates agents |
-| `chef` | Chef: Recipes from your fridge |
-| `news` | News Anchor: Aggregates top stories |
-| `travel` | Flight Booker: Finds the best routes |
-| `simple` | Chat Buddy: Vanilla conversational agent |
-| `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries |
-| `whatsapp` | WhatsApp Agent: Bidirectional WhatsApp communication |
-| `youtube` | Video Analyst: Extract insights from YouTube videos |
-
-📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent, including configuration options and usage examples.
-
-📖 **See [docs/audio-transcriber.md](docs/audio-transcriber.md)** for detailed documentation on audio transcription with Groq Whisper models.
-
----
-
-### 📦 Local Tools
-
-Fast, zero-dependency tools for working with local codebases:
-
-| Tool | Capability |
-|------|------------|
-| `find_files` | Fast search via `fd` |
-| `discover_structure` | Directory tree mapping |
-| `get_file_outline` | AST signature parsing |
-| `read_file_fragment` | Precise file reading |
-| `code_search` | Fast search via `ripgrep` |
-| `edit_file` | Safe file editing |
-| `audio_transcriber` | Transcribes audio using Groq Whisper API |
-| `youtube_transcript` | Extract transcripts from YouTube videos |
-
-📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool, including parameters and examples.
-
----
-
-### 🌐 MCP Servers
-
-Model Context Protocol servers for extending agent capabilities:
-
-| Server | Purpose |
-|--------|---------|
-| `kiwi-com-flight-search` | Search real-time flights |
-| `webfetch` | Extract clean text from URLs & web search |
-| `duckduckgo-search` | Web search via DuckDuckGo |
-
-📖 **See [docs/mcp-servers.md](docs/mcp-servers.md)** for details on each server and how to add custom MCP servers.
-
----
-
-### 🧠 LLM Providers
-
-The framework supports **10 LLM providers** out of the box, covering 90%+ of the market:
-
-| Provider | Type | Use Case |
-|----------|------|----------|
-| **Anthropic** | Cloud | State-of-the-art reasoning (Claude) |
-| **OpenAI** | Cloud | GPT-4, GPT-4.1, o1 series |
-| **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
-| **Google GenAI** | Cloud | Gemini models via API |
-| **Google Vertex AI** | Cloud | Gemini models via GCP |
-| **Mistral AI** | Cloud | European privacy-focused models |
-| **Cohere** | Cloud | Enterprise RAG and Command models |
-| **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
-| **Ollama** | Local | Run LLMs locally (zero API cost) |
-| **Hugging Face** | Cloud | Open models from Hugging Face Hub |
-
-📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed setup instructions, environment variables, and provider comparison.
-
----
-
-## 🚀 Quick Start (Zero to Agent in 60s)
+## 🚀 Quick Start
 
 ### 1. Add your Brain (API Key)
-You need an **LLM API key** to breathe life into your agents. The framework supports 10+ LLM providers via LangChain!
+
+You need an **LLM API key** to breathe life into your agents. Agntrick supports 10+ LLM providers via LangChain!
 
 ```bash
 # Copy the template
@@ -151,52 +68,29 @@ cp .env.example .env
 # OPENAI_API_KEY=sk-your-key-here
 # ANTHROPIC_API_KEY=sk-ant-your-key-here
 # GOOGLE_API_KEY=your-google-key
-# GROQ_AUDIO_API_KEY=gsk-your-key-here  # For audio transcription only (e.g., WhatsApp)
+# GROQ_API_KEY=gsk-your-key-here
 # MISTRAL_API_KEY=your-mistral-key-here
 # COHERE_API_KEY=your-cohere-key-here
 
 # For Ollama (local), no API key needed:
 # OLLAMA_BASE_URL=http://localhost:11434
-
-# For Azure OpenAI:
-# AZURE_OPENAI_API_KEY=your-azure-key
-# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-
-# For Google Vertex AI:
-# GOOGLE_VERTEX_PROJECT_ID=your-project-id
-
-# For AWS Bedrock:
-# AWS_PROFILE=your-profile
-
-# For Hugging Face:
-# HUGGINGFACEHUB_API_TOKEN=your-hf-token
-
-# For Groq audio transcription (used by WhatsApp agent for audio messages):
-# GROQ_AUDIO_API_KEY=gsk-your-key-here  # For audio transcription only (e.g., WhatsApp)
-# GROQ_WHISPER_MODEL=whisper-large-v3-turbo  # Optional, default is turbo
 ```
-> ⚠️ **Note:** Set your preferred provider's API key. Priority: Anthropic > Google Vertex > Google GenAI > Azure > Mistral > Cohere > Bedrock > HuggingFace > Ollama > OpenAI (default fallback).
 
-### 2. Build & Run
-No `pip`, no `virtualenv`, no *"it works on my machine"* excuses.
+### 2. Run Your First Agent
 
 ```bash
-# Clone the repository
-git clone https://github.com/jeancsil/agentic-framework.git
-cd agentic-framework
+# List all available agents
+agntrick list
 
-# Build the Docker image
-make docker-build
+# Run an agent with input
+agntrick developer -i "Explain this codebase"
 
-# Unleash your first agent!
-bin/agent.sh developer -i "Explain this codebase"
-
-# Or try the chef agent
-bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
+# Or try the learning agent with web search
+agntrick learning -i "Explain quantum computing in simple terms"
 ```
 
 <details>
-<summary><strong>🔑 Required Environment Variables</strong></summary>
+<summary><strong>🔑 Supported Environment Variables</strong></summary>
 
 Only one provider's API key is required. The framework auto-detects which provider to use based on available credentials.
 
@@ -231,9 +125,80 @@ OLLAMA_BASE_URL=http://localhost:11434
 HUGGINGFACEHUB_API_TOKEN=your-hf-token
 ```
 
-📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations, model overrides, and provider comparison.
+📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations and provider comparison.
 
 </details>
+
+---
+
+## 🧰 Available Out of the Box
+
+### 🤖 Bundled Agents
+
+Agntrick includes several pre-built agents for common use cases:
+
+| Agent | Purpose | MCP Servers |
+|-------|---------|-------------|
+| `developer` | Code Master: Read, search & edit code | `fetch` |
+| `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries | - |
+| `learning` | Tutor: Step-by-step tutorials and explanations | `fetch`, `web-forager` |
+| `news` | News Anchor: Aggregates top stories | `fetch` |
+| `youtube` | Video Analyst: Extract insights from YouTube videos | `fetch` |
+
+📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent.
+
+---
+
+### 📦 Local Tools
+
+Fast, zero-dependency tools for working with local codebases:
+
+| Tool | Capability |
+|------|------------|
+| `find_files` | Fast search via `fd` |
+| `discover_structure` | Directory tree mapping |
+| `get_file_outline` | AST signature parsing |
+| `read_file_fragment` | Precise file reading |
+| `code_search` | Fast search via `ripgrep` |
+| `edit_file` | Safe file editing |
+| `youtube_transcript` | Extract transcripts from YouTube videos |
+
+📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool.
+
+---
+
+### 🌐 MCP Servers
+
+Model Context Protocol servers for extending agent capabilities:
+
+| Server | Purpose |
+|--------|---------|
+| `fetch` | Extract clean text from URLs |
+| `web-forager` | Web search and content fetching |
+| `kiwi-com-flight-search` | Search real-time flights |
+
+📖 **See [docs/mcp-servers.md](docs/mcp-servers.md)** for details on each server and how to add custom MCP servers.
+
+---
+
+### 🧠 LLM Providers
+
+Agntrick supports **10 LLM providers** out of the box, covering 90%+ of the market:
+
+| Provider | Type | Use Case |
+|----------|------|----------|
+| **Anthropic** | Cloud | State-of-the-art reasoning (Claude) |
+| **OpenAI** | Cloud | GPT-4, GPT-4.1, o1 series |
+| **Azure OpenAI** | Cloud | Enterprise OpenAI deployments |
+| **Google GenAI** | Cloud | Gemini models via API |
+| **Google Vertex AI** | Cloud | Gemini models via GCP |
+| **Mistral AI** | Cloud | European privacy-focused models |
+| **Cohere** | Cloud | Enterprise RAG and Command models |
+| **AWS Bedrock** | Cloud | Anthropic, Titan, Meta via AWS |
+| **Ollama** | Local | Run LLMs locally (zero API cost) |
+| **Hugging Face** | Cloud | Open models from Hugging Face Hub |
+
+📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed setup instructions.
 
 ---
 
@@ -242,11 +207,10 @@ HUGGINGFACEHUB_API_TOKEN=your-hf-token
 ### The 5-Line Superhero 🦸‍♂️
 
 ```python
-from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
-from agentic_framework.registry import AgentRegistry
+from agntrick import AgentBase, AgentRegistry
 
-@AgentRegistry.register("my-agent", mcp_servers=["webfetch"])
-class MyAgent(LangGraphMCPAgent):
+@AgentRegistry.register("my-agent", mcp_servers=["fetch"])
+class MyAgent(AgentBase):
     @property
     def system_prompt(self) -> str:
         return "You are my custom agent with the power to fetch websites."
@@ -254,7 +218,7 @@ class MyAgent(LangGraphMCPAgent):
 
 Boom. Run it instantly:
 ```bash
-bin/agent.sh my-agent -i "Summarize https://example.com"
+agntrick my-agent -i "Summarize https://example.com"
 ```
 
 ### Advanced: Custom Local Tools 🔧
@@ -263,11 +227,10 @@ Want to add your own Python logic? Easy.
 
 ```python
 from langchain_core.tools import StructuredTool
-from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
-from agentic_framework.registry import AgentRegistry
+from agntrick import AgentBase, AgentRegistry
 
 @AgentRegistry.register("data-processor")
-class DataProcessorAgent(LangGraphMCPAgent):
+class DataProcessorAgent(AgentBase):
     @property
     def system_prompt(self) -> str:
         return "You process data files like a boss."
@@ -288,6 +251,55 @@ class DataProcessorAgent(LangGraphMCPAgent):
 
 ---
 
+## ⚙️ Configuration
+
+Agntrick can be configured via a `.agntrick.yaml` file in your project root or home directory:
+
+```yaml
+# .agntrick.yaml
+llm:
+  provider: anthropic  # or openai, google, ollama, etc.
+  model: claude-sonnet-4-6  # optional model override
+  temperature: 0.7
+
+mcp:
+  servers:
+    - fetch
+    - web-forager
+
+logging:
+  level: INFO
+  file: logs/agent.log
+```
+
+---
+
+## 💻 CLI Reference
+
+Command your agents directly from the terminal.
+
+```bash
+# 📋 List all registered agents
+agntrick list
+
+# 🕵️ Get detailed info about what an agent can do
+agntrick info developer
+
+# 🚀 Run an agent with input
+agntrick developer -i "Analyze the architecture of this project"
+
+# ⏱️ Run with an execution timeout (seconds)
+agntrick developer -i "Refactor this module" -t 120
+
+# 📝 Run with debug-level verbosity
+agntrick developer -i "Hello" -v
+
+# 📜 View logs
+tail -f logs/agent.log
+```
+
+---
+
 ## 🏗️ Architecture
 
 Under the hood, we seamlessly bridge the gap between user intent and execution:
@@ -298,7 +310,7 @@ flowchart TB
         Input[User Input]
     end
 
-    subgraph CLI [💻 CLI - agentic-run]
+    subgraph CLI [💻 CLI - agntrick]
         Typer[Typer Interface]
     end
 
@@ -308,13 +320,13 @@ flowchart TB
     end
 
     subgraph Agents [🤖 Agents]
-        Chef[chef agent]
         Dev[developer agent]
-        Travel[travel agent]
+        Learning[learning agent]
+        News[news agent]
     end
 
     subgraph Core [🧠 Core Engine]
-        LGA[LangGraphMCPAgent]
+        AB[AgentBase]
         LG[LangGraph Runtime]
         CP[(Checkpointing)]
     end
@@ -332,14 +344,14 @@ flowchart TB
     Input --> Typer
     Typer --> AR
     AR --> AD
-    AR -->|Routes to| Chef & Dev & Travel
+    AR -->|Routes to| Dev & Learning & News
 
-    Chef & Dev & Travel -->|Inherits from| LGA
+    Dev & Learning & News -->|Inherits from| AB
 
-    LGA --> LG
+    AB --> LG
     LG <--> CP
-    LGA -->|Uses| LT
-    LGA -->|Uses| MCP
+    AB -->|Uses| LT
+    AB -->|Uses| MCP
 
     LT -->|Reasoning| LLM
     MCP -->|Queries| MCPS
@@ -350,53 +362,15 @@ flowchart TB
 
 ---
 
-## 💻 CLI Reference
-
-Command your agents directly from the terminal.
-
-```bash
-# 📋 List all registered agents
-bin/agent.sh list
-
-# 🕵️ Get detailed info about what an agent can do
-bin/agent.sh info developer
-
-# 🚀 Run an agent with input
-bin/agent.sh developer -i "Analyze the architecture of this project"
-
-# ⏱️ Run with an execution timeout (seconds)
-bin/agent.sh developer -i "Refactor this module" -t 120
-
-# 📝 Run with debug-level verbosity
-bin/agent.sh developer -i "Hello" -v
-
-# 📜 Access logs (same location as local)
-tail -f agentic-framework/logs/agent.log
-
-# 📱 Run the WhatsApp agent (requires config - see docs/agents.md)
-agentic-run whatsapp --config config/whatsapp.yaml
-
-# 📱 Run WhatsApp with custom settings
-agentic-run whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
-
-# 📱 WhatsApp slash commands (send these in WhatsApp):
-# /learn <topic> - Get step-by-step tutorials and explanations
-# <any message> - General assistant mode (web search & chat)
-```
-
----
-
-<a id="local-development"></a>
 ## 🧑‍💻 Local Development
-
-Prefer running without Docker? We got you.
 
 <details>
 <summary><strong>System Requirements & Setup</strong></summary>
 
 **Requirements:**
-- Python 3.13+
-- `ripgrep`, `fd`, `fzf`
+- Python 3.12+
+- `uv` package manager
+- `ripgrep`, `fd`, `fzf` (for local tools)
 
 ```bash
 # Install dependencies (blazingly fast with uv ⚡)
@@ -405,8 +379,8 @@ make install
 # Run the test suite
 make test
 
-# Run agents directly in your environment
-uv --directory agentic-framework run agentic-run developer -i "Hello"
+# Run agents directly
+agntrick developer -i "Hello"
 ```
 </details>
 
@@ -418,6 +392,8 @@ make install    # Install dependencies with uv
 make test       # Run pytest with coverage
 make format     # Auto-format codebase with ruff
 make check      # Strict linting (mypy + ruff)
+make build      # Build wheel and sdist packages
+make build-clean # Remove build artifacts
 ```
 </details>
 
@@ -449,8 +425,8 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 
 <p align="center">
   If you find this useful, please consider giving it a ⭐ or buying me a coffee!<br>
-  <a href="https://github.com/jeancsil/agentic-framework/stargazers">
-    <img src="https://img.shields.io/github/stars/jeancsil/agentic-framework?style=social&size=large" height="28" alt="Star the repo" style="vertical-align: middle;">
+  <a href="https://github.com/jeancsil/agntrick/stargazers">
+    <img src="https://img.shields.io/github/stars/jeancsil/agntrick?style=social&size=large" height="28" alt="Star the repo" style="vertical-align: middle;">
   </a>
   &nbsp;
   <a href="https://buymeacoffee.com/jeancsil" target="_blank">

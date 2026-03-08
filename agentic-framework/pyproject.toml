@@ -1,9 +1,34 @@
 [project]
 name = "agntrick"
 version = "0.2.0"
-description = "Agntrick: An agentic framework for building AI-powered applications"
+description = "Build AI agents that actually do things - a Python framework combining local tools and MCP servers"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12,<3.15"
+authors = [
+    { name = "Jean Carlo Silva", email = "jeancsil@gmail.com" }
+]
+keywords = [
+    "ai",
+    "agents",
+    "llm",
+    "langchain",
+    "langgraph",
+    "mcp",
+    "model-context-protocol",
+    "framework",
+    "automation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "neonize",
@@ -41,6 +66,22 @@ dependencies = [
     "youtube-transcript-api>=1.2.4",
 ]
 
+[project.urls]
+Homepage = "https://github.com/jeancsil/agntrick"
+Documentation = "https://github.com/jeancsil/agntrick#readme"
+Repository = "https://github.com/jeancsil/agntrick.git"
+Issues = "https://github.com/jeancsil/agntrick/issues"
+Changelog = "https://github.com/jeancsil/agntrick/releases"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+    "types-requests>=2.32.4.20260107",
+]
+
 [project.scripts]
 agntrick = "agntrick.cli:app"
 
@@ -51,10 +92,10 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
- "pytest-cov>=5.0.0",
- "ruff>=0.3.0",
- "mypy>=1.9.0",
- "types-requests>=2.32.4.20260107",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
+    "types-requests>=2.32.4.20260107",
 ]
 
 [tool.setuptools.packages.find]

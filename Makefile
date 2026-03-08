@@ -1,4 +1,4 @@
-.PHONY: help install run test clean format check docker-build docker-clean
+.PHONY: help install run test clean format check docker-build docker-clean build build-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -73,3 +73,19 @@ docker-clean: ## Remove Docker containers, images, and volumes
 	@docker compose down -v 2>/dev/null || true
 	@docker rmi agents-agentic-framework 2>/dev/null || true
 	@echo "✓ Cleanup complete!"
+
+## -- Build Commands --
+
+build: ## Build wheel and sdist packages
+	@$(UV) --directory $(PROJECT_DIR) build
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "Packages are in $(PROJECT_DIR)/dist/"
+	@ls -la $(PROJECT_DIR)/dist/ 2>/dev/null || true
+
+build-clean: ## Remove build artifacts
+	rm -rf $(PROJECT_DIR)/dist/
+	rm -rf $(PROJECT_DIR)/build/
+	rm -rf $(PROJECT_DIR)/src/*.egg-info
+	rm -rf $(PROJECT_DIR)/src/agntrick.egg-info/
+	@echo "✓ Build artifacts cleaned!"
