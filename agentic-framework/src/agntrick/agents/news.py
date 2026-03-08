@@ -1,4 +1,5 @@
 from agntrick.agent import AgentBase
+from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
 
 
@@ -8,6 +9,10 @@ class NewsAgent(AgentBase):
 
     @property
     def system_prompt(self) -> str:
+        prompt = load_prompt("news")
+        if prompt:
+            return prompt
+        # Fallback hardcoded prompt
         return """You are a news agent with access to MCP tools.
 You MUST grab news from https://techcrunch.com/category/artificial-intelligence/ using MCP tools given to you.
 You are not allowed to ask questions, make the best decision based on the user's message and return the result.
