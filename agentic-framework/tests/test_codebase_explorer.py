@@ -359,13 +359,7 @@ class TestFileEditorTool:
 
             tool = FileEditorTool(root_dir=tmpdir)
 
-            input_json = json.dumps({
-                "op": "replace",
-                "path": "test.txt",
-                "start": 2,
-                "end": 2,
-                "content": "REPLACED"
-            })
+            input_json = json.dumps({"op": "replace", "path": "test.txt", "start": 2, "end": 2, "content": "REPLACED"})
 
             result = tool.invoke(input_json)
             assert "Replaced lines 2-2" in result
@@ -427,12 +421,9 @@ class TestFileEditorTool:
 
             tool = FileEditorTool(root_dir=tmpdir)
 
-            input_json = json.dumps({
-                "op": "search_replace",
-                "path": "test.txt",
-                "old": "TARGET_LINE",
-                "new": "REPLACED"
-            })
+            input_json = json.dumps(
+                {"op": "search_replace", "path": "test.txt", "old": "TARGET_LINE", "new": "REPLACED"}
+            )
 
             result = tool.invoke(input_json)
             assert "Replaced text at lines" in result
@@ -450,12 +441,7 @@ class TestFileEditorTool:
 
             tool = FileEditorTool(root_dir=tmpdir)
 
-            input_json = json.dumps({
-                "op": "search_replace",
-                "path": "test.txt",
-                "old": "NOT_FOUND",
-                "new": "REPLACED"
-            })
+            input_json = json.dumps({"op": "search_replace", "path": "test.txt", "old": "NOT_FOUND", "new": "REPLACED"})
 
             result = tool.invoke(input_json)
             assert "Error: Search text not found" in result
@@ -469,12 +455,7 @@ class TestFileEditorTool:
 
             tool = FileEditorTool(root_dir=tmpdir)
 
-            input_json = json.dumps({
-                "op": "search_replace",
-                "path": "test.txt",
-                "old": "TARGET",
-                "new": "REPLACED"
-            })
+            input_json = json.dumps({"op": "search_replace", "path": "test.txt", "old": "TARGET", "new": "REPLACED"})
 
             result = tool.invoke(input_json)
             assert "Found 2 occurrences" in result
@@ -551,10 +532,7 @@ class TestFileEditorTool:
         with tempfile.TemporaryDirectory() as tmpdir:
             tool = FileEditorTool(root_dir=tmpdir)
 
-            input_json = json.dumps({
-                "op": "unknown",
-                "path": "test.txt"
-            })
+            input_json = json.dumps({"op": "unknown", "path": "test.txt"})
 
             result = tool.invoke(input_json)
             assert "Error: Unknown operation 'unknown'" in result

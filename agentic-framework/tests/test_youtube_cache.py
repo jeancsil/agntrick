@@ -22,11 +22,7 @@ def test_youtube_cache_initialization_custom():
     """Test cache initialization with custom settings."""
     with tempfile.TemporaryDirectory() as tmpdir:
         cache_dir = Path(tmpdir)
-        cache = YouTubeTranscriptCache(
-            cache_dir=cache_dir,
-            max_size_mb=50,
-            ttl_days=7
-        )
+        cache = YouTubeTranscriptCache(cache_dir=cache_dir, max_size_mb=50, ttl_days=7)
 
         assert cache._cache_dir == cache_dir
         assert cache._max_size_bytes == 50 * 1024 * 1024  # 50MB
@@ -53,7 +49,7 @@ def test_youtube_cache_set_and_get():
             transcript_text="test transcript",
             video_url="https://youtube.com/watch?v=video123",
             video_title="Test Video",
-            language="en"
+            language="en",
         )
         assert success is True
 
@@ -196,7 +192,7 @@ def test_youtube_cache_ttl_expiration():
         # Create cache with 1 second TTL
         cache = YouTubeTranscriptCache(
             cache_dir=Path(tmpdir),
-            ttl_days=0  # 0 days means no TTL in this implementation
+            ttl_days=0,  # 0 days means no TTL in this implementation
         )
 
         cache.set(
@@ -215,7 +211,7 @@ def test_youtube_cache_no_ttl():
     with tempfile.TemporaryDirectory() as tmpdir:
         cache = YouTubeTranscriptCache(
             cache_dir=Path(tmpdir),
-            ttl_days=0  # No TTL
+            ttl_days=0,  # No TTL
         )
 
         cache.set(

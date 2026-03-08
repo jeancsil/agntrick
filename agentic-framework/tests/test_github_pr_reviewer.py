@@ -59,8 +59,10 @@ def test_github_request_retry_429():
         MagicMock(status_code=200),  # Second attempt (success)
     ]
 
-    with patch("agntrick.agents.github_pr_reviewer.requests.get", side_effect=mock_responses), \
-         patch("agntrick.agents.github_pr_reviewer.time.sleep"):
+    with (
+        patch("agntrick.agents.github_pr_reviewer.requests.get", side_effect=mock_responses),
+        patch("agntrick.agents.github_pr_reviewer.time.sleep"),
+    ):
         response = _github_request("get", "https://api.github.com/test")
         assert response.status_code == 200
 
@@ -73,8 +75,10 @@ def test_github_request_retry_503():
         MagicMock(status_code=200),
     ]
 
-    with patch("agntrick.agents.github_pr_reviewer.requests.get", side_effect=mock_responses), \
-         patch("agntrick.agents.github_pr_reviewer.time.sleep"):
+    with (
+        patch("agntrick.agents.github_pr_reviewer.requests.get", side_effect=mock_responses),
+        patch("agntrick.agents.github_pr_reviewer.time.sleep"),
+    ):
         response = _github_request("get", "https://api.github.com/test")
         assert response.status_code == 200
 
@@ -83,8 +87,10 @@ def test_github_request_max_retries():
     """Test _github_request gives up after max retries."""
     mock_response = MagicMock(status_code=429)
 
-    with patch("agntrick.agents.github_pr_reviewer.requests.get", return_value=mock_response), \
-         patch("agntrick.agents.github_pr_reviewer.time.sleep"):
+    with (
+        patch("agntrick.agents.github_pr_reviewer.requests.get", return_value=mock_response),
+        patch("agntrick.agents.github_pr_reviewer.time.sleep"),
+    ):
         response = _github_request("get", "https://api.github.com/test")
         assert response.status_code == 429
 
@@ -98,13 +104,15 @@ def test_github_get_pr_diff_success():
             "status": "modified",
             "additions": 10,
             "deletions": 5,
-            "patch": "@@ -1,1 +1,2 @@\n-old\n+new\n"
+            "patch": "@@ -1,1 +1,2 @@\n-old\n+new\n",
         }
     ]
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = get_pr_diff("owner/repo", 123)
         assert "PR #123 diff for owner/repo" in result
         assert "test.py" in result
@@ -120,8 +128,10 @@ def test_github_get_pr_diff_missing_token():
 
 def test_github_get_pr_diff_error():
     """Test get_pr_diff with API error."""
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request") as mock_request:
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request") as mock_request,
+    ):
         mock_request.side_effect = Exception("API error")
         result = get_pr_diff("owner/repo", 123)
         assert "Error fetching PR diff" in result
@@ -131,28 +141,18 @@ def test_github_get_pr_comments_success():
     """Test get_pr_comments with successful response."""
     review_response = MagicMock()
     review_response.json.return_value = [
-        {
-            "id": 1,
-            "user": {"login": "user1"},
-            "path": "test.py",
-            "line": 10,
-            "body": "comment1"
-        }
+        {"id": 1, "user": {"login": "user1"}, "path": "test.py", "line": 10, "body": "comment1"}
     ]
     review_response.raise_for_status = MagicMock()
 
     issue_response = MagicMock()
-    issue_response.json.return_value = [
-        {
-            "id": 2,
-            "user": {"login": "user2"},
-            "body": "comment2"
-        }
-    ]
+    issue_response.json.return_value = [{"id": 2, "user": {"login": "user2"}, "body": "comment2"}]
     issue_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", side_effect=[review_response, issue_response]):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", side_effect=[review_response, issue_response]),
+    ):
         result = get_pr_comments("owner/repo", 123)
         assert "Comments for PR #123 in owner/repo:" in result
         assert "Inline Review Comments" in result
@@ -169,8 +169,10 @@ def test_github_get_pr_comments_empty():
     issue_response.json.return_value = []
     issue_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", side_effect=[review_response, issue_response]):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", side_effect=[review_response, issue_response]),
+    ):
         result = get_pr_comments("owner/repo", 123)
         assert "None" in result
 
@@ -181,8 +183,10 @@ def test_github_post_review_comment_success():
     mock_response.json.return_value = {"html_url": "https://github.com/repo/pull/123#comment-1"}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = post_review_comment("owner/repo", 123, "abc123", "test.py", 10, "test comment")
         assert "Posted inline review comment on test.py:10" in result
         assert "https://github.com/" in result
@@ -211,8 +215,10 @@ def test_github_post_general_comment_success():
     mock_response.json.return_value = {"html_url": "https://github.com/repo/pull/123#comment-2"}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = post_general_comment("owner/repo", 123, "general comment")
         assert "Posted general comment on PR #123" in result
         assert "https://github.com/" in result
@@ -231,8 +237,10 @@ def test_github_reply_to_review_comment_success():
     mock_response.json.return_value = {"html_url": "https://github.com/repo/pull/123#comment-3"}
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = reply_to_review_comment("owner/repo", 123, 456, "reply text")
         assert "Replied to comment #456 on PR #123" in result
         assert "https://github.com/" in result
@@ -261,8 +269,10 @@ def test_github_get_pr_metadata_success():
     }
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = get_pr_metadata("owner/repo", 123)
         assert "PR #123: Test PR" in result
         assert "Author: testuser" in result
@@ -294,8 +304,10 @@ def test_github_get_pr_metadata_long_description():
     }
     mock_response.raise_for_status = MagicMock()
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}), \
-         patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response):
+    with (
+        patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}),
+        patch("agntrick.agents.github_pr_reviewer._github_request", return_value=mock_response),
+    ):
         result = get_pr_metadata("owner/repo", 123)
         # Description should be truncated to 2000 characters
         assert len(result.split("Description:\n")[1]) <= 2000
