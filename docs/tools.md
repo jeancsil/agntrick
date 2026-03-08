@@ -201,8 +201,7 @@ To add your own local tools to an agent:
 
 ```python
 from langchain_core.tools import StructuredTool
-from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
-from agentic_framework.registry import AgentRegistry
+from agntrick import AgentBase, AgentRegistry
 
 @AgentRegistry.register("my-agent")
 class MyAgent(LangGraphMCPAgent):

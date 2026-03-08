@@ -23,14 +23,24 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build package
-        run: make build
+      - name: Build main package
+        run: $(MAKE) build
+
+      - name: Build WhatsApp package
+        run: $(MAKE) build-whatsapp
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-main
           path: agentic-framework/dist/
+          retention-days: 7
+
+      - name: Upload WhatsApp artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-whatsapp
+          path: packages/agntrick-whatsapp/dist/
           retention-days: 7
 
   publish-pypi:
@@ -45,7 +55,25 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-main
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-whatsapp-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agntrick-whatsapp
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-whatsapp
           path: dist/
 
       - name: Publish to PyPI
@@ -64,7 +92,28 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-main
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-whatsapp-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == true
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/agntrick-whatsapp
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-whatsapp
           path: dist/
 
       - name: Publish to TestPyPI

@@ -1,4 +1,4 @@
-.PHONY: help install run test clean format check docker-build docker-clean build build-clean
+.PHONY: help install run test clean format check docker-build docker-clean build build-whatsapp build-clean
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -76,16 +76,27 @@ docker-clean: ## Remove Docker containers, images, and volumes
 
 ## -- Build Commands --
 
-build: ## Build wheel and sdist packages
+build-whatsapp: ## Build WhatsApp package
+	@cd packages/agntrick-whatsapp && $(UV) --directory . build
+	@echo ""
+	@echo "✓ WhatsApp build complete!"
+	@ls -la packages/agntrick-whatsapp/dist/ 2>/dev/null || true
+
+build: build-whatsapp ## Build wheel and sdist packages (both main and whatsapp)
 	@$(UV) --directory $(PROJECT_DIR) build
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "Packages are in $(PROJECT_DIR)/dist/"
+	@echo "Main packages are in $(PROJECT_DIR)/dist/"
 	@ls -la $(PROJECT_DIR)/dist/ 2>/dev/null || true
+	@echo ""
+	@echo "WhatsApp package is in packages/agntrick-whatsapp/dist/"
+	@ls -la packages/agntrick-whatsapp/dist/ 2>/dev/null || true
 
 build-clean: ## Remove build artifacts
 	rm -rf $(PROJECT_DIR)/dist/
 	rm -rf $(PROJECT_DIR)/build/
 	rm -rf $(PROJECT_DIR)/src/*.egg-info
 	rm -rf $(PROJECT_DIR)/src/agntrick.egg-info/
+	rm -rf packages/agntrick-whatsapp/dist/
+	rm -rf packages/agntrick-whatsapp/build/
 	@echo "✓ Build artifacts cleaned!"
