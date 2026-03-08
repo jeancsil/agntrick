@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# agent.sh - Docker wrapper for agentic-framework CLI
+# agent.sh - Docker wrapper for Agntrick CLI
 # Usage: bin/agent.sh [-v|--verbose] <agent-command> [args...]
-# Example: bin/agent.sh chef -i "I have eggs and cheese"
-# Example: bin/agent.sh -v travel-coordinator -i "Plan a trip to Paris"
+# Example: bin/agent.sh developer -i "Explain this codebase"
+# Example: bin/agent.sh -v news -i "What's the latest tech news?"
 
 set -e
 
@@ -46,11 +46,11 @@ if [[ $# -eq 0 ]]; then
     echo "  bin/agent.sh list"
     echo "  bin/agent.sh chef -i \"I have eggs and cheese\""
     echo "  bin/agent.sh -v travel-coordinator -i \"Plan a trip to Paris\""
-    echo "  bin/agent.sh simple --input \"Tell me a joke\" --timeout 120"
+    echo "  bin/agent.sh developer --input \"Explain the project\" --timeout 120"
     echo ""
     echo "Available agents:"
     docker compose -f "$PROJECT_ROOT/docker-compose.yml" run --rm agentic-framework \
-        uv --directory agentic-framework run agentic-run list #2>/dev/null || echo "  (run 'make docker-build' first)"
+        uv --directory agentic-framework run agntrick list 2>/dev/null || echo "  (run 'make docker-build' first)"
     exit 0
 fi
 
@@ -66,12 +66,12 @@ if [[ -n "$VERBOSE" ]]; then
 fi
 
 # Run the command in Docker
-echo -e "${BLUE}Running:${NC} agentic-run ${CMD_ARGS[*]}"
+echo -e "${BLUE}Running:${NC} agntrick ${CMD_ARGS[*]}"
 echo ""
 
 cd "$PROJECT_ROOT"
 docker compose run --rm agentic-framework \
-    uv --directory agentic-framework run agentic-run "${CMD_ARGS[@]}"
+    uv --directory agentic-framework run agntrick "${CMD_ARGS[@]}"
 
 EXIT_CODE=$?
 

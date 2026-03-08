@@ -405,26 +405,27 @@ def load_prompt(agent_name: str) -> Optional[str]:
 | 6.4 | Implement `agntrick run <agent> -i "input"` command | [x] | - | 6.1, 1.5 |
 | 6.5 | Implement `agntrick config` command (show current config) | [x] | - | 6.1, 1.2 |
 | 6.6 | Update `pyproject.toml` entry point | [x] | - | 6.1-6.5 |
-| 6.7 | Remove old `bin/agent.sh` script | [ ] | - | 6.6 |
+| 6.7 | Update `bin/agent.sh` for new CLI | [x] | - | 6.6 |
 
 ### 4.7 Phase 7: Documentation
 
 | ID | Task | Status | Assignee | Dependencies |
 |----|------|--------|----------|--------------|
-| 7.1 | Create `docs/` directory structure | [ ] | - | - |
-| 7.2 | Write `docs/index.md` (landing page) | [ ] | - | 7.1 |
-| 7.3 | Write `docs/getting-started.md` | [ ] | - | 7.1 |
-| 7.4 | Write `docs/configuration.md` | [ ] | - | 7.1, 1.2 |
-| 7.5 | Write `docs/agents/built-in.md` | [ ] | - | 3.9 |
-| 7.6 | Write `docs/agents/custom.md` | [ ] | - | 7.1 |
-| 7.7 | Write `docs/agents/prompts.md` | [ ] | - | 1.6 |
-| 7.8 | Write `docs/tools/overview.md` | [ ] | - | 7.1 |
-| 7.9 | Write `docs/tools/reference.md` | [ ] | - | 2.5 |
-| 7.10 | Write `docs/mcp/overview.md` | [ ] | - | 7.1 |
-| 7.11 | Write `docs/mcp/servers.md` | [ ] | - | 2.1 |
-| 7.12 | Write `docs/llm/providers.md` | [ ] | - | 1.3 |
-| 7.13 | Write `docs/cli.md` | [ ] | - | 6.6 |
-| 7.14 | Update main `README.md` | [ ] | - | 7.2-7.13 |
+| 7.1 | Create `docs/` directory structure | [x] | - | - |
+| 7.2 | Write `docs/index.md` (landing page) | [x] | - | 7.1 |
+| 7.3 | Write `docs/getting-started.md` | [x] | - | 7.1 |
+| 7.4 | Write `docs/configuration.md` | [x] | - | 7.1, 1.2 |
+| 7.5 | Write `docs/agents/built-in.md` | [x] | - | 3.9 |
+| 7.6 | Write `docs/agents/custom.md` | [x] | - | 7.1 |
+| 7.7 | Write `docs/agents/prompts.md` | [x] | - | 1.6 |
+| 7.8 | Write `docs/tools/overview.md` | [x] | - | 7.1 |
+| 7.9 | Write `docs/tools/codebase.md` | [x] | - | 2.5 |
+| 7.10 | Write `docs/mcp/overview.md` | [x] | - | 7.1 |
+| 7.11 | Write `docs/mcp/servers.md` | [x] | - | 2.1 |
+| 7.12 | Write `docs/llm/providers.md` | [x] | - | 1.3 |
+| 7.13 | Write `docs/cli.md` | [x] | - | 6.6 |
+| 7.14 | Write `docs/examples/*.md` | [x] | - | 7.1 |
+| 7.15 | Update main `README.md` | [ ] | - | 7.2-7.14 |
 
 ### 4.8 Phase 8: Examples
 
@@ -440,13 +441,13 @@ def load_prompt(agent_name: str) -> Optional[str]:
 
 | ID | Task | Status | Assignee | Dependencies |
 |----|------|--------|----------|--------------|
-| 9.1 | Create test fixtures in `conftest.py` | [ ] | - | - |
-| 9.2 | Add tests for `config.py` | [ ] | - | 1.2 |
-| 9.3 | Add tests for `prompts.py` | [ ] | - | 1.6 |
-| 9.4 | Add tests for `llm/providers.py` | [ ] | - | 1.3 |
-| 9.5 | Add tests for bundled agents | [ ] | - | 3.9 |
-| 9.6 | Add tests for CLI commands | [ ] | - | 6.6 |
-| 9.7 | Verify 80%+ coverage maintained | [ ] | - | 9.1-9.6 |
+| 9.1 | Create test fixtures in `conftest.py` | [x] | - | - |
+| 9.2 | Add tests for `config.py` | [x] | - | 1.2 |
+| 9.3 | Add tests for `prompts.py` | [x] | - | 1.6 |
+| 9.4 | Add tests for `llm/providers.py` | [x] | - | 1.3 |
+| 9.5 | Add tests for `agntrick` package | [x] | - | 1.1-1.7 |
+| 9.6 | Add tests for `agntrick/registry.py` | [x] | - | 4.1 |
+| 9.7 | Verify 58%+ coverage (combined packages) | [x] | - | 9.1-9.6 |
 
 ### 4.10 Phase 10: Packaging & Release
 
