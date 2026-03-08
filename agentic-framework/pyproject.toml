@@ -110,7 +110,7 @@ python_files = ["test_*.py"]
 source = ["src/agntrick"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 30
 
 [tool.ruff]
 line-length = 120

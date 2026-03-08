@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# agent.sh - Docker wrapper for Agntrick CLI
-# Usage: bin/agent.sh [-v|--verbose] <agent-command> [args...]
-# Example: bin/agent.sh developer -i "Explain this codebase"
-# Example: bin/agent.sh -v news -i "What's the latest tech news?"
+# agntrick.sh - Docker wrapper for Agntrick CLI
+# Usage: bin/agntrick.sh [-v|--verbose] <agent-command> [args...]
+# Example: bin/agntrick.sh developer -i "Explain this codebase"
+# Example: bin/agntrick.sh -v news -i "What's the latest tech news?"
 
 set -e
 
@@ -14,7 +14,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Get the project root (parent of bin/)
+# Get project root (parent of bin/)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Check if Docker is running
@@ -40,21 +40,21 @@ fi
 
 # Check if any arguments provided
 if [[ $# -eq 0 ]]; then
-    echo -e "${YELLOW}Usage: bin/agent.sh [-v|--verbose] <agent-command> [args...]${NC}"
+    echo -e "${YELLOW}Usage: bin/agntrick.sh [-v|--verbose] <agent-command> [args...]${NC}"
     echo ""
     echo "Examples:"
-    echo "  bin/agent.sh list"
-    echo "  bin/agent.sh chef -i \"I have eggs and cheese\""
-    echo "  bin/agent.sh -v travel-coordinator -i \"Plan a trip to Paris\""
-    echo "  bin/agent.sh developer --input \"Explain the project\" --timeout 120"
+    echo "  bin/agntrick.sh list"
+    echo "  bin/agntrick.sh chef -i \"I have eggs and cheese\""
+    echo "  bin/agntrick.sh -v travel-coordinator -i \"Plan a trip to Paris\""
+    echo "  bin/agntrick.sh developer --input \"Explain project\" --timeout 120"
     echo ""
     echo "Available agents:"
-    docker compose -f "$PROJECT_ROOT/docker-compose.yml" run --rm agentic-framework \
-        uv --directory agentic-framework run agntrick list 2>/dev/null || echo "  (run 'make docker-build' first)"
+    docker compose -f "$PROJECT_ROOT/docker-compose.yml" run --rm agntrick \
+        uv --directory agntrick run agntrick list 2>/dev/null || echo "  (run 'make docker-build' first)"
     exit 0
 fi
 
-# Build the command
+# Build command
 CMD_ARGS=("$@")
 
 # Add verbose flag if set
@@ -65,13 +65,13 @@ if [[ -n "$VERBOSE" ]]; then
     CMD_ARGS=("$AGENT_NAME" "$VERBOSE" "${REST_ARGS[@]}")
 fi
 
-# Run the command in Docker
+# Run command in Docker
 echo -e "${BLUE}Running:${NC} agntrick ${CMD_ARGS[*]}"
 echo ""
 
 cd "$PROJECT_ROOT"
-docker compose run --rm agentic-framework \
-    uv --directory agentic-framework run agntrick "${CMD_ARGS[@]}"
+docker compose run --rm agntrick \
+    uv --directory agntrick run agntrick "${CMD_ARGS[@]}"
 
 EXIT_CODE=$?
 
@@ -79,11 +79,11 @@ EXIT_CODE=$?
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo ""
     echo -e "${GREEN}✓ Command completed successfully${NC}"
-    echo -e "${BLUE}Logs:${NC} $PROJECT_ROOT/agentic-framework/logs/agent.log"
+    echo -e "${BLUE}Logs:${NC} $PROJECT_ROOT/agntrick/logs/agent.log"
 else
     echo ""
     echo -e "${RED}✗ Command failed with exit code $EXIT_CODE${NC}"
-    echo -e "${BLUE}Check logs:${NC} $PROJECT_ROOT/agentic-framework/logs/agent.log"
+    echo -e "${BLUE}Check logs:${NC} $PROJECT_ROOT/agntrick/logs/agent.log"
 fi
 
 exit $EXIT_CODE

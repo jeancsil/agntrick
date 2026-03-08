@@ -1,7 +1,7 @@
 """YouTube transcript extraction tool using youtube-transcript-api."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -87,7 +87,7 @@ class YouTubeTranscriptTool(Tool):
                 cached = self._cache.get(video_id)
                 if cached is not None:
                     logger.info(f"Retrieved transcript from cache: {video_id}")
-                    return cached["transcript_text"]
+                    return cast(str, cached["transcript_text"])
 
             # Fetch from API
             transcript = self._fetch_transcript(video_id)

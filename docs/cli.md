@@ -108,13 +108,13 @@ For Docker deployments, use the wrapper script:
 
 ```bash
 # List agents
-bin/agent.sh list
+bin/agntrick.sh list
 
 # Run an agent
-bin/agent.sh developer -i "Explain this code"
+bin/agntrick.sh developer -i "Explain this code"
 
 # With verbose output
-bin/agent.sh -v developer -i "Debug the authentication flow"
+bin/agntrick.sh -v developer -i "Debug the authentication flow"
 ```
 
 ## Exit Codes

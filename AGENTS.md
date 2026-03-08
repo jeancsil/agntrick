@@ -1,12 +1,12 @@
 # AGENTS.md
 
-**FOR LLM AGENTS DEVELOPING THIS FRAMEWORK.** This document defines strict rules for modifying the agentic-framework codebase.
+**FOR LLM AGENTS DEVELOPING THIS FRAMEWORK.** This document defines strict rules for modifying the Agntrick codebase.
 
 ---
 
 ## PURPOSE
 
-You are an LLM agent tasked with improving, fixing, or extending the **agentic-framework** codebase. This document defines how you MUST approach this work.
+You are an LLM agent tasked with improving, fixing, or extending the **Agntrick** codebase. This document defines how you MUST approach this work.
 
 ---
 
@@ -59,10 +59,10 @@ You are an LLM agent tasked with improving, fixing, or extending the **agentic-f
 
 ## WORKING DIRECTORY
 
-The framework code lives in `agentic-framework/` subdirectory. The project root (with Makefile) is one level up.
+The framework code lives in `agntrick/` subdirectory. The project root (with Makefile) is one level up.
 
 ```bash
-# If you're in agentic-framework/ directory, run make commands from parent:
+# If you're in agntrick/ directory, run make commands from parent:
 make -C .. check
 make -C .. test
 make -C .. format
@@ -320,8 +320,8 @@ New code should include tests. Aim to maintain or improve coverage.
 ## PROJECT STRUCTURE
 
 ```
-agentic-framework/
-├── src/agentic_framework/
+agntrick/
+├── src/agntrick/
 │   ├── core/               # Agent implementations
 │   │   ├── langgraph_agent.py   # Base class - modify carefully
 │   │   ├── simple_agent.py
@@ -365,7 +365,7 @@ If the hook fails:
 ## COMMANDS REFERENCE
 
 ```bash
-# From agentic-framework directory:
+# From agntrick directory:
 make -C .. check      # Run mypy + ruff (linting)
 make -C .. test       # Run pytest with coverage
 make -C .. format     # Auto-format with ruff
@@ -373,9 +373,9 @@ make -C .. install    # Install dependencies
 make -C .. clean      # Remove caches and artifacts
 
 # Run the CLI:
-uv run agentic-run list
-uv run agentic-run info developer
-uv run agentic-run developer -i "input"
+agntrick list
+agntrick info developer
+agntrick developer -i "input"
 ```
 
 ---
@@ -384,7 +384,7 @@ uv run agentic-run developer -i "input"
 
 ### Adding a New Agent
 
-1. Create file in `src/agentic_framework/core/my_agent.py`
+1. Create file in `src/agntrick/core/my_agent.py`
 2. Subclass `LangGraphMCPAgent`
 3. Add `@AgentRegistry.register()` decorator
 4. Define `system_prompt` property
@@ -394,7 +394,7 @@ uv run agentic-run developer -i "input"
 
 ### Adding a New Tool
 
-1. Create file in `src/agentic_framework/tools/my_tool.py`
+1. Create file in `src/agntrick/tools/my_tool.py`
 2. Subclass `Tool` from `interfaces.base`
 3. Implement `name`, `description`, `invoke()`
 4. Export from `tools/__init__.py`
@@ -412,9 +412,9 @@ uv run agentic-run developer -i "input"
 ### Fixing a Bug
 
 1. Write a failing test that reproduces the bug
-2. Run `make -C .. test` to confirm failure
+2. Run `make test` to confirm failure
 3. Fix the code
-4. Run `make -C .. check && make -C .. test`
+4. Run `make check && make test`
 5. Confirm test now passes
 
 ---
@@ -475,6 +475,6 @@ Update README.md when you:
 ## WHEN IN DOUBT
 
 1. Read existing code for patterns
-2. Run `make -C .. check` early and often
+2. Run `make check` early and often
 3. Ask the user for clarification
 4. Don't guess - verify

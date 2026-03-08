@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class YouTubeTranscriptCache:
             self._db_local.conn.row_factory = sqlite3.Row
             self._init_schema(self._db_local.conn)
             logger.debug(f"Created thread-local DB connection for thread {threading.get_ident()}")
-        return self._db_local.conn
+        return cast(sqlite3.Connection, self._db_local.conn)
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Initialize the database schema."""
@@ -269,7 +269,7 @@ class YouTubeTranscriptCache:
             cursor = conn.cursor()
 
             cursor.execute("SELECT COUNT(*) FROM transcript_cache")
-            count = cursor.fetchone()[0]
+            count = cast(int, cursor.fetchone()[0])
 
             cursor.execute("DELETE FROM transcript_cache")
             conn.commit()
@@ -334,7 +334,7 @@ class YouTubeTranscriptCache:
             )
             conn.commit()
 
-            deleted = cursor.rowcount
+            deleted = cast(int, cursor.rowcount)
             if deleted > 0:
                 logger.info(f"Cleaned up {deleted} expired cache entries")
             return deleted
