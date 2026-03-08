@@ -1,9 +1,6 @@
 """Tests for agntrick package - MCP provider module."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from agntrick.mcp.provider import MCPConnectionError, MCPProvider
 
@@ -47,12 +44,8 @@ class TestMCPProvider:
             "server3": MagicMock(),
         }
 
-        provider = MCPProvider(
-            servers_config=mock_servers_config,
-            server_names=["server1", "server3"]
-        )
+        provider = MCPProvider(servers_config=mock_servers_config, server_names=["server1", "server3"])
 
         assert "server1" in provider._config
         assert "server3" in provider._config
         assert "server2" not in provider._config
-

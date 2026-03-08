@@ -143,9 +143,11 @@ def test_cli_execute_agent_missing_agent():
 
 def test_cli_execute_agent_success():
     """Test execute_agent with successful execution."""
-    with patch("agntrick.cli.AgentRegistry.get") as mock_get, \
-         patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp, \
-         patch("asyncio.run") as mock_run:
+    with (
+        patch("agntrick.cli.AgentRegistry.get") as mock_get,
+        patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp,
+        patch("asyncio.run") as mock_run,
+    ):
         mock_get.return_value = MockAgent
         mock_mcp.return_value = None
         mock_run.return_value = "agent response"
@@ -156,9 +158,11 @@ def test_cli_execute_agent_success():
 
 def test_cli_execute_agent_timeout():
     """Test execute_agent with timeout."""
-    with patch("agntrick.cli.AgentRegistry.get") as mock_get, \
-         patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp, \
-         patch("asyncio.run") as mock_run:
+    with (
+        patch("agntrick.cli.AgentRegistry.get") as mock_get,
+        patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp,
+        patch("asyncio.run") as mock_run,
+    ):
         mock_get.return_value = MockAgent
         mock_mcp.return_value = None
         mock_run.side_effect = asyncio.TimeoutError()
@@ -170,9 +174,11 @@ def test_cli_execute_agent_timeout():
 
 def test_cli_list_agents():
     """Test list_agents command."""
-    with patch("agntrick.cli.AgentRegistry.discover_agents") as mock_discover, \
-         patch("agntrick.cli.AgentRegistry.list_agents") as mock_list, \
-         patch("agntrick.cli.console") as mock_console:
+    with (
+        patch("agntrick.cli.AgentRegistry.discover_agents") as mock_discover,
+        patch("agntrick.cli.AgentRegistry.list_agents") as mock_list,
+        patch("agntrick.cli.console") as mock_console,
+    ):
         mock_list.return_value = ["agent1", "agent2"]
 
         list_agents()
@@ -184,20 +190,23 @@ def test_cli_list_agents():
 
 def test_cli_agent_info_missing():
     """Test agent_info with missing agent."""
-    with patch("agntrick.cli.AgentRegistry.get") as mock_get, \
-         patch("agntrick.cli.console") as mock_console:
+    with patch("agntrick.cli.AgentRegistry.get") as mock_get, patch("agntrick.cli.console") as mock_console:
         mock_get.return_value = None
 
         with pytest.raises(typer.Exit) as exc_info:
             agent_info("nonexistent-agent")
+            # Use mock_console to verify the error was printed
+            assert mock_console.print.call_count >= 1
         assert exc_info.value.exit_code == 1
 
 
 def test_cli_agent_info_success():
     """Test agent_info with valid agent."""
-    with patch("agntrick.cli.AgentRegistry.get") as mock_get, \
-         patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp, \
-         patch("agntrick.cli.console") as mock_console:
+    with (
+        patch("agntrick.cli.AgentRegistry.get") as mock_get,
+        patch("agntrick.cli.AgentRegistry.get_mcp_servers") as mock_mcp,
+        patch("agntrick.cli.console") as mock_console,
+    ):
         mock_get.return_value = MockAgent
         mock_mcp.return_value = None
 
@@ -230,8 +239,7 @@ def test_cli_show_config():
     mock_config.agents.prompts_dir = "/tmp/prompts"
     mock_config._config_path = "/tmp/config.yaml"
 
-    with patch("agntrick.cli.get_config") as mock_get_config, \
-         patch("agntrick.cli.console") as mock_console:
+    with patch("agntrick.cli.get_config") as mock_get_config, patch("agntrick.cli.console") as mock_console:
         mock_get_config.return_value = mock_config
 
         show_config()
