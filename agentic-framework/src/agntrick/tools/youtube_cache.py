@@ -206,16 +206,32 @@ class YouTubeTranscriptCache:
 
             current_time = time.time()
 
+            # Check if entry exists
+            cursor.execute(
+                "SELECT access_count FROM transcript_cache WHERE video_id = ?",
+                (video_id,),
+            )
+            existing_row = cursor.fetchone()
+            new_access_count = (existing_row[0] + 1) if existing_row else 1
+
+            # Insert or replace with calculated access count
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO transcript_cache
                 (video_id, video_url, video_title, transcript_text, language,
                  cached_at, accessed_at, access_count)
-                VALUES (?, ?, ?, ?, ?, ?, COALESCE(
-                    (SELECT access_count FROM transcript_cache WHERE video_id = ?), 0
-                ) + 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (video_id, video_url, video_title, transcript_text, language, current_time, current_time, video_id),
+                (
+                    video_id,
+                    video_url,
+                    video_title,
+                    transcript_text,
+                    language,
+                    current_time,
+                    current_time,
+                    new_access_count,
+                ),
             )
             conn.commit()
 

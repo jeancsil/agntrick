@@ -44,10 +44,11 @@ class MCPProvider:
             self._config = dict(servers_config)
         else:
             resolved = get_mcp_servers_config()
-            if server_names is not None:
-                self._config = {k: cast(Connection, resolved[k]) for k in server_names if k in resolved}
-            else:
-                self._config = cast(Dict[str, Connection], resolved)
+            self._config = cast(Dict[str, Connection], resolved)
+
+        # Apply server_names filter if provided
+        if server_names is not None:
+            self._config = {k: self._config[k] for k in server_names if k in self._config}
 
         self._client = MultiServerMCPClient(self._config)
         self._tools_cache: Optional[List[Any]] = None

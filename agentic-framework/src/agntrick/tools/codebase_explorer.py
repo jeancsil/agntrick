@@ -1,3 +1,4 @@
+import fnmatch
 import re
 import subprocess
 from pathlib import Path
@@ -107,22 +108,30 @@ class CodebaseExplorer:
         self.root_dir = Path(root_dir).resolve()
         # Standard noise reduction for agentic context
         self.ignore_patterns = ignore_patterns or [
-            r"\.git",
-            r"__pycache__",
-            r"node_modules",
-            r"\.venv",
-            r"dist",
-            r"build",
-            r"\.mypy_cache",
-            r"\.pytest_cache",
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            "dist",
+            "build",
+            ".mypy_cache",
+            ".pytest_cache",
         ]
 
     def _is_ignored(self, path: Path) -> bool:
         try:
-            rel_path = str(path.relative_to(self.root_dir))
+            # Resolve symlinks to handle macOS /var -> /private/var symlink
+            resolved_path = path.resolve()
+            rel_path = str(resolved_path.relative_to(self.root_dir.resolve()))
         except ValueError:
             return True
-        return any(re.search(pattern, rel_path) for pattern in self.ignore_patterns)
+        # Check each path segment against ignore patterns
+        parts = Path(rel_path).parts
+        for part in parts:
+            for pattern in self.ignore_patterns:
+                if fnmatch.fnmatch(part, pattern):
+                    return True
+        return False
 
 
 class StructureExplorerTool(CodebaseExplorer, Tool):
@@ -276,11 +285,11 @@ class FileFinderTool(CodebaseExplorer, Tool):
             if fd_result.returncode != 0:
                 if fd_result.stderr:
                     return f"Error executing fd: {fd_result.stderr}"
-                return "No files found."
+                return "No matches found"
 
             all_files = fd_result.stdout
             if not all_files:
-                return "No files found."
+                return "No matches found"
 
             # Use fzf to rank the files based on the pattern
             # fzf -f performs a non-interactive fuzzy search
