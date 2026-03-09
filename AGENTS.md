@@ -59,16 +59,14 @@ You are an LLM agent tasked with improving, fixing, or extending the **Agntrick*
 
 ## WORKING DIRECTORY
 
-The framework code lives in `agntrick/` subdirectory. The project root (with Makefile) is one level up.
+The project root contains all source code, tests, and configuration files. Run all commands from the project root.
 
 ```bash
-# If you're in agntrick/ directory, run make commands from parent:
-make -C .. check
-make -C .. test
-make -C .. format
-
-# Or navigate to project root first:
-cd .. && make check
+# Run from project root:
+make check
+make test
+make format
+make install
 ```
 
 ---
@@ -92,8 +90,8 @@ Make your changes:
 ### Step 3: VERIFY
 After changes:
 ```bash
-make -C .. check    # Linting (mypy + ruff)
-make -C .. test     # Run all tests
+make check    # Linting (mypy + ruff)
+make test     # Run all tests
 ```
 
 ### Step 4: FIX
@@ -270,7 +268,7 @@ class MyAgent(LangGraphMCPAgent):
 
 ### Test Location
 
-Tests are in `agentic-framework/tests/`
+Tests are in `tests/`
 
 ### Test Naming
 
@@ -365,12 +363,12 @@ If the hook fails:
 ## COMMANDS REFERENCE
 
 ```bash
-# From agntrick directory:
-make -C .. check      # Run mypy + ruff (linting)
-make -C .. test       # Run pytest with coverage
-make -C .. format     # Auto-format with ruff
-make -C .. install    # Install dependencies
-make -C .. clean      # Remove caches and artifacts
+# From project root:
+make check      # Run mypy + ruff (linting)
+make test       # Run pytest with coverage
+make format     # Auto-format with ruff
+make install    # Install dependencies
+make clean      # Remove caches and artifacts
 
 # Run the CLI:
 agntrick list
@@ -384,13 +382,13 @@ agntrick developer -i "input"
 
 ### Adding a New Agent
 
-1. Create file in `src/agntrick/core/my_agent.py`
-2. Subclass `LangGraphMCPAgent`
+1. Create file in `src/agntrick/agents/my_agent.py`
+2. Subclass `AgentBase` (alias for `LangGraphMCPAgent`)
 3. Add `@AgentRegistry.register()` decorator
 4. Define `system_prompt` property
 5. Override `local_tools()` if needed
 6. Add tests in `tests/test_my_agent.py`
-7. Run `make -C .. check && make -C .. test`
+7. Run `make check && make test`
 
 ### Adding a New Tool
 
@@ -399,7 +397,7 @@ agntrick developer -i "input"
 3. Implement `name`, `description`, `invoke()`
 4. Export from `tools/__init__.py`
 5. Add tests in `tests/test_my_tool.py`
-6. Run `make -C .. check && make -C .. test`
+6. Run `make check && make test`
 
 ### Adding a New MCP Server
 

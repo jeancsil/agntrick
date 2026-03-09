@@ -1311,3 +1311,30 @@ The library transformation from `agentic_framework` to `agntrick` has been succe
 - `docs/library-transformation-plan.md` - Updated all task statuses to complete
 
 ---
+
+---
+## PyPI Publishing - Current Status (2026-03-08)
+
+### Blocker: PR #28 - "refactor: transform agentic-framework into agntrick library (v0.2.0)"
+
+**Issue:** PR #28 in `jeancsil/agntrick` repository is still OPEN (created 2026-03-07). This PR contains directory transformation changes (`agentic-framework` → `agntrick`).
+
+**Impact:** Until this PR merges, the `jeancsil/agntrick` repository's main branch has incorrect directory paths (`agentic-framework/dist/` instead of `agntrick/dist/`).
+
+**Current State:**
+| Repository | Remote URL | Status |
+|------------|-------------|--------|
+| `jeancsil/agntrick` | `git@github.com:jeancsil/agntrick.git` | Main branch has stale paths, workflow won't work correctly |
+| `jeancsil/agentic-framework` | `git@github.com:jeancsil/agentic-framework.git` | Has correct paths, workflow works here |
+
+**Waiting For:** PR #28 to merge before PyPI publishing can proceed.
+
+**Workaround Options (if urgent):**
+1. Create release in `jeancsil/agentic-framework` (where workflow works) to trigger PyPI publish
+2. Manual PyPI publish from `jeancsil/agentic-framework` using `uv publish`
+
+**Next Steps:**
+1. Monitor PR #28 for merge status
+2. Once merged, verify workflow triggers correctly
+3. Verify PyPI package appears at https://pypi.org/project/agntrick/
+
