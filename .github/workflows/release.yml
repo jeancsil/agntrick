@@ -24,10 +24,7 @@ jobs:
           enable-cache: true
 
       - name: Build main package
-        run: $(MAKE) build
-
-      - name: Build WhatsApp package
-        run: $(MAKE) build-whatsapp
+        run: make build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
