@@ -15,25 +15,25 @@ The YouTube agent specializes in extracting and analyzing content from YouTube v
 ### Basic Summarization
 
 ```bash
-bin/agent.sh youtube -i "Summarize https://www.youtube.com/watch?v=VIDEO_ID"
+bin/agntrick.sh youtube -i "Summarize https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Specific Questions
 
 ```bash
-bin/agent.sh youtube -i "What does this video say about machine learning? https://..."
+bin/agntrick.sh youtube -i "What does this video say about machine learning? https://..."
 ```
 
 ### Extract Key Points
 
 ```bash
-bin/agent.sh youtube -i "Extract the top 5 key points from this video with timestamps: https://..."
+bin/agntrick.sh youtube -i "Extract the top 5 key points from this video with timestamps: https://..."
 ```
 
 ### Video Analysis
 
 ```bash
-bin/agent.sh youtube -i "Analyze the arguments presented in this video: https://..."
+bin/agntrick.sh youtube -i "Analyze the arguments presented in this video: https://..."
 ```
 
 ## Limitations
@@ -64,17 +64,17 @@ The agent uses local SQLite caching to store transcripts and avoid repeated API 
 ### Example 1: Summarize a technical talk
 
 ```bash
-bin/agent.sh youtube -i "Summarize the key points of this video in bullet points: https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+bin/agntrick.sh youtube -i "Summarize the key points of this video in bullet points: https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
 ### Example 2: Ask about specific topic
 
 ```bash
-bin/agent.sh youtube -i "What does the speaker say about the future of AI? https://www.youtube.com/watch?v=..."
+bin/agntrick.sh youtube -i "What does the speaker say about the future of AI? https://www.youtube.com/watch?v=..."
 ```
 
 ### Example 3: Compare multiple videos
 
 ```bash
-bin/agent.sh youtube -i "Compare the approaches presented in these two videos: https://... and https://..."
+bin/agntrick.sh youtube -i "Compare the approaches presented in these two videos: https://... and https://..."
 ```

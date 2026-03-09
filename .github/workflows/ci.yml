@@ -11,20 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      
+
       - name: Install dependencies
-        run: uv --directory agentic-framework sync
-      
+        run: uv sync
+
       - name: Run checks
         run: make check
 
@@ -34,32 +34,52 @@ jobs:
       matrix:
         python-version: ['3.12']
     steps:
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-        env:
-          OPENAI_API_KEY: sk-test
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      
+
       - name: Install dependencies
-        run: uv --directory agentic-framework sync
-      
+        run: uv sync
+
       - name: Run tests
         run: make test
-      
+        env:
+          OPENAI_API_KEY: sk-test
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: ./agentic-framework/coverage.xml
+          file: ./coverage.xml
           fail_ci_if_error: false
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build package
+        run: make build
+
+      - name: Verify build artifacts
+        run: |
+          ls -la dist/
+          test -f dist/*.whl
+          test -f dist/*.tar.gz

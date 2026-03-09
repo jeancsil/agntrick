@@ -62,7 +62,7 @@ uv add pydub
 ### Basic Usage
 
 ```python
-from agentic_framework.services.audio_transcriber import AudioTranscriber
+from agntrick.services.audio_transcriber import AudioTranscriber
 
 # Create transcriber (reads GROQ_AUDIO_API_KEY or GROQ_API_KEY from environment)
 transcriber = AudioTranscriber()

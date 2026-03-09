@@ -97,7 +97,7 @@ To add a new MCP server to the framework:
 
 ### 1. Add Server Configuration
 
-Edit `src/agentic_framework/mcp/config.py`:
+Edit `src/agntrick/mcp/config.py`:
 
 ```python
 DEFAULT_MCP_SERVERS = {
@@ -115,8 +115,7 @@ DEFAULT_MCP_SERVERS = {
 ### 2. Register Server with Agent
 
 ```python
-from agentic_framework.core.langgraph_agent import LangGraphMCPAgent
-from agentic_framework.registry import AgentRegistry
+from agntrick import AgentBase, AgentRegistry
 
 @AgentRegistry.register("my-agent", mcp_servers=["my-server"])
 class MyAgent(LangGraphMCPAgent):

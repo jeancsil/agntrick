@@ -1,6 +1,6 @@
 # Available Agents
 
-This document provides detailed information about all available agents in the Agentic Framework.
+This document provides detailed information about all available agents in the Agntrick framework.
 
 ## Agent Overview
 
@@ -36,8 +36,8 @@ This document provides detailed information about all available agents in the Ag
 
 ### Usage Example
 ```bash
-bin/agent.sh developer -i "Explain the architecture of this project"
-bin/agent.sh developer -i "Find all functions that use the database connection"
+bin/agntrick.sh developer -i "Explain the architecture of this project"
+bin/agntrick.sh developer -i "Find all functions that use the database connection"
 ```
 
 ---
@@ -61,7 +61,7 @@ Uses 3 specialized sub-agents working together via LangGraph.
 
 ### Usage Example
 ```bash
-bin/agent.sh travel-coordinator -i "Plan a weekend trip from Madrid to Paris"
+bin/agntrick.sh travel-coordinator -i "Plan a weekend trip from Madrid to Paris"
 ```
 
 ---
@@ -81,7 +81,7 @@ bin/agent.sh travel-coordinator -i "Plan a weekend trip from Madrid to Paris"
 
 ### Usage Example
 ```bash
-bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
+bin/agntrick.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 ```
 
 ---
@@ -101,7 +101,7 @@ bin/agent.sh chef -i "I have chicken, rice, and soy sauce. What can I make?"
 
 ### Usage Example
 ```bash
-bin/agent.sh news -i "What are today's top tech stories?"
+bin/agntrick.sh news -i "What are today's top tech stories?"
 ```
 
 ---
@@ -121,7 +121,7 @@ bin/agent.sh news -i "What are today's top tech stories?"
 
 ### Usage Example
 ```bash
-bin/agent.sh travel -i "Find flights from Madrid to Barcelona next weekend"
+bin/agntrick.sh travel -i "Find flights from Madrid to Barcelona next weekend"
 ```
 
 ---
@@ -141,7 +141,7 @@ bin/agent.sh travel -i "Find flights from Madrid to Barcelona next weekend"
 
 ### Usage Example
 ```bash
-bin/agent.sh simple -i "Tell me a joke"
+bin/agntrick.sh simple -i "Tell me a joke"
 ```
 
 ---
@@ -167,7 +167,7 @@ bin/agent.sh simple -i "Tell me a joke"
 
 ### Usage Example
 ```bash
-bin/agent.sh github-pr-reviewer -i "Review PR #123 for bugs and style issues"
+bin/agntrick.sh github-pr-reviewer -i "Review PR #123 for bugs and style issues"
 ```
 
 ---
@@ -185,7 +185,7 @@ The WhatsApp agent enables bidirectional communication through your personal Wha
 
 ```bash
 # 1. Copy example config
-cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whatsapp.yaml
+cp agntrick/config/whatsapp.yaml.example agntrick/config/whatsapp.yaml
 
 # 2. Edit config/whatsapp.yaml with your settings:
 # - model: "claude-sonnet-4-6"  # Your LLM model
@@ -198,17 +198,17 @@ cp agentic-framework/config/whatsapp.yaml.example agentic-framework/config/whats
 
 ```bash
 # Start the WhatsApp agent
-bin/agent.sh whatsapp --config config/whatsapp.yaml
+bin/agntrick.sh whatsapp --config config/whatsapp.yaml
 
 # With custom settings (overrides config file)
-bin/agent.sh whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
+bin/agntrick.sh whatsapp --allowed-contact "+1234567890" --storage ~/custom/path
 
 # Customize MCP servers
-bin/agent.sh whatsapp --mcp-servers "web-fetch,duckduckgo-search"
-bin/agent.sh whatsapp --mcp-servers none  # Disable MCP
+bin/agntrick.sh whatsapp --mcp-servers "web-fetch,duckduckgo-search"
+bin/agntrick.sh whatsapp --mcp-servers none  # Disable MCP
 
 # Verbose mode for debugging
-bin/agent.sh whatsapp --verbose
+bin/agntrick.sh whatsapp --verbose
 ```
 
 ### First Run

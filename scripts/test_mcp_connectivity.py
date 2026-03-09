@@ -192,7 +192,7 @@ async def test_mcp_server(server_name: str, config: dict[str, str]) -> dict[str,
     # Test actual MCP connection
     try:
         logger.info(f"  Testing MCP protocol connection...")
-        from agentic_framework.mcp import MCPProvider
+        from agntrick.mcp import MCPProvider
 
         provider = MCPProvider(server_names=[server_name])
         tools = await provider.get_tools()
@@ -217,7 +217,7 @@ async def main() -> None:
 
     # Get MCP server configurations
     try:
-        from agentic_framework.mcp.config import get_mcp_servers_config
+        from agntrick.mcp.config import get_mcp_servers_config
 
         server_configs = get_mcp_servers_config()
         logger.info(f"\nFound {len(server_configs)} configured MCP servers:")
