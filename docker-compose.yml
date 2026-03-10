@@ -13,33 +13,26 @@ services:
     # Mount volumes for live code updates and persistent logs
     volumes:
       # Mount source code for live updates (no rebuild needed)
-      - ./agntrick/src:/app/agntrick/src
-      - ./agntrick/tests:/app/agntrick/tests
-      - ./agntrick/config:/app/agntrick/config
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config:/app/config
       - ./scripts:/app/scripts
 
       # Mount logs directory for easy access from host
-      - ./agntrick/logs:/app/agntrick/logs
-
-      # Mount storage directory for persistent WhatsApp session data
-      - ./agntrick/storage:/app/agntrick/storage
+      - ./logs:/app/logs
 
       # Mount pyproject.toml in case you need to update dependencies
-      - ./agntrick/pyproject.toml:/app/agntrick/pyproject.toml
-      - ./agntrick/uv.lock:/app/agntrick/uv.lock
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
 
       # Persist the cache here. This creates a persistent folder at this path INSIDE the container
       - uv-cache:/root/.cache/uv
-      - venv-data:/app/agntrick/.venv
+      - venv-data:/app/.venv
     environment:
       - UV_LINK_MODE=copy
 
-    # Pass environment variables from .env file
-    env_file:
-      - .env
-
     # Override default command - this will be overridden when running specific commands
-    command: [ "uv", "--directory", "agntrick", "run", "agntrick", "--help" ]
+    command: [ "uv", "run", "agntrick", "--help" ]
     # Keep container running for interactive use (optional)
     stdin_open: true
     tty: true

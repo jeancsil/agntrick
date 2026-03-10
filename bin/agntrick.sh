@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
 # agntrick.sh - Docker wrapper for Agntrick CLI
-# Usage: bin/agntrick.sh [-v|--verbose] <agent-command> [args...]
+# Usage: bin/agntrick.sh [-v|--verbose] [--env-file <path>] <agent-command> [args...]
 # Example: bin/agntrick.sh developer -i "Explain this codebase"
 # Example: bin/agntrick.sh -v news -i "What's the latest tech news?"
+# Example: bin/agntrick.sh --env-file /path/to/.env chef -i "I have eggs"
 
 set -e
 
@@ -31,26 +32,50 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-# Parse verbose flag
+# Parse flags
 VERBOSE=""
-if [[ "$1" == "-v" ]] || [[ "$1" == "--verbose" ]]; then
-    VERBOSE="--verbose"
-    shift
+ENV_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -v|--verbose)
+            VERBOSE="--verbose"
+            shift
+            ;;
+        --env-file)
+            if [[ -z "$2" ]]; then
+                echo -e "${RED}Error: --env-file requires a path argument${NC}"
+                exit 1
+            fi
+            ENV_FILE="$2"
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# Validate env file if provided
+if [[ -n "$ENV_FILE" ]] && [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${RED}Error: env file not found: $ENV_FILE${NC}"
+    exit 1
 fi
 
 # Check if any arguments provided
 if [[ $# -eq 0 ]]; then
-    echo -e "${YELLOW}Usage: bin/agntrick.sh [-v|--verbose] <agent-command> [args...]${NC}"
+    echo -e "${YELLOW}Usage: bin/agntrick.sh [-v|--verbose] [--env-file <path>] <agent-command> [args...]${NC}"
     echo ""
     echo "Examples:"
     echo "  bin/agntrick.sh list"
-    echo "  bin/agntrick.sh chef -i \"I have eggs and cheese\""
-    echo "  bin/agntrick.sh -v travel-coordinator -i \"Plan a trip to Paris\""
+    echo "  bin/agntrick.sh news -i \"What's the latest in AI?\""
+    echo "  bin/agntrick.sh -v developer -i \"Explain the project structure\""
+    echo "  bin/agntrick.sh --env-file /path/to/.env developer -i \"Explain project\""
     echo "  bin/agntrick.sh developer --input \"Explain project\" --timeout 120"
     echo ""
     echo "Available agents:"
     docker compose -f "$PROJECT_ROOT/docker-compose.yml" run --rm agntrick \
-        uv --directory agntrick run agntrick list 2>/dev/null || echo "  (run 'make docker-build' first)"
+        uv run agntrick list 2>/dev/null || echo "  (run 'make docker-build' first)"
     exit 0
 fi
 
@@ -70,8 +95,20 @@ echo -e "${BLUE}Running:${NC} agntrick ${CMD_ARGS[*]}"
 echo ""
 
 cd "$PROJECT_ROOT"
-docker compose run --rm agntrick \
-    uv --directory agntrick run agntrick "${CMD_ARGS[@]}"
+
+# Resolve env file: use provided path, or fall back to project root .env
+if [[ -z "$ENV_FILE" ]] && [[ -f "$PROJECT_ROOT/.env" ]]; then
+    ENV_FILE="$PROJECT_ROOT/.env"
+fi
+
+# Mount env file into container at /app/.env so load_dotenv() picks it up
+VOLUME_ARGS=()
+if [[ -n "$ENV_FILE" ]]; then
+    VOLUME_ARGS=(-v "$(realpath "$ENV_FILE"):/app/.env:ro")
+fi
+
+docker compose run --rm "${VOLUME_ARGS[@]}" agntrick \
+    uv run agntrick "${CMD_ARGS[@]}"
 
 EXIT_CODE=$?
 
@@ -79,11 +116,11 @@ EXIT_CODE=$?
 if [[ $EXIT_CODE -eq 0 ]]; then
     echo ""
     echo -e "${GREEN}✓ Command completed successfully${NC}"
-    echo -e "${BLUE}Logs:${NC} $PROJECT_ROOT/agntrick/logs/agent.log"
+    echo -e "${BLUE}Logs:${NC} $PROJECT_ROOT/logs/agent.log"
 else
     echo ""
     echo -e "${RED}✗ Command failed with exit code $EXIT_CODE${NC}"
-    echo -e "${BLUE}Check logs:${NC} $PROJECT_ROOT/agntrick/logs/agent.log"
+    echo -e "${BLUE}Check logs:${NC} $PROJECT_ROOT/logs/agent.log"
 fi
 
 exit $EXIT_CODE

@@ -38,21 +38,20 @@ ENV PYTHONUNBUFFERED=1 \
     UV_SYSTEM_PYTHON=1
 
 # Copy project files needed for dependency installation
-COPY agentic-framework/pyproject.toml agentic-framework/uv.lock ./agentic-framework/
-COPY agentic-framework/README.md ./agentic-framework/
-COPY agentic-framework/src ./agentic-framework/src
-COPY agentic-framework/config ./agentic-framework/config
+COPY pyproject.toml uv.lock ./
+COPY src ./src
+COPY config ./config
 
 # Install dependencies using uv
 # This installs the package in editable mode with all dependencies
-RUN uv sync --directory agentic-framework --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 # The source code will be mounted as a volume at runtime
 # This allows for live code changes without rebuilding the image
 # The volume mount will override the src/ directory copied above
 
 # Create logs directory
-RUN mkdir -p /app/agentic-framework/logs
+RUN mkdir -p /app/logs
 
 # Set the default command to show help
-CMD ["uv", "--directory", "agentic-framework", "run", "agentic-run", "--help"]
+CMD ["uv", "run", "agntrick", "--help"]

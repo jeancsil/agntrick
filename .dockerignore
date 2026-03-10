@@ -36,7 +36,7 @@ htmlcov/
 .github/
 
 # Logs (will be mounted as volume)
-agentic-framework/logs/*.log
+logs/*.log
 
 # Environment files (will be passed via env_file in docker-compose)
 .env

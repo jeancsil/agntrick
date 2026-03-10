@@ -22,7 +22,7 @@ install: ## Install all dependencies using uv
 	@git config --local core.hooksPath .githooks
 
 run: ## Run the agntrick CLI to exemplify usage
-	@$(UV) run agntrick chef -i "I have bread, tuna, lettuce and mayo."
+	@$(UV) run agntrick news -i "What's the latest in AI?"
 
 test: ## Run tests with coverage
 	@$(UV) run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
@@ -56,8 +56,8 @@ docker-build: ## Build the Docker image
 	@echo "✓ Build complete!"
 	@echo ""
 	@echo "Run agents using: bin/agntrick.sh <agent-name> [args]"
-	@echo "Example: bin/agntrick.sh chef -i 'I have eggs and cheese'"
-	@echo "Example: bin/agntrick.sh -v travel-coordinator -i 'Plan a trip'"
+	@echo "Example: bin/agntrick.sh news -i 'What is the latest in AI?'"
+	@echo "Example: bin/agntrick.sh -v developer -i 'Explain the project structure'"
 	@echo ""
 	@echo "See bin/agntrick.sh --help for more information"
 
