@@ -119,7 +119,10 @@ class WhatsAppAgentConfig(BaseModel):
     ensuring all required fields are present and properly typed.
 
     Example:
-        >>> config = WhatsAppAgentConfig.model_validate_yaml("config/whatsapp.yaml")
+        >>> import yaml
+        >>> with open("whatsapp.yaml") as f:
+        ...     config_dict = yaml.safe_load(f)
+        >>> config = WhatsAppAgentConfig.model_validate(config_dict)
         >>> config.privacy.allowed_contact
         '+34 666 666 666'
         >>> config.audio_transcriber.model
