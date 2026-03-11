@@ -101,6 +101,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+agntrick = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 addopts = "-ra -q --import-mode=importlib"
 testpaths = ["tests"]
