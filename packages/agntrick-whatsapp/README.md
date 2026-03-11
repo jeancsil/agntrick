@@ -72,12 +72,18 @@ audio_transcriber:
 
 ```python
 import asyncio
+from pathlib import Path
+import yaml
 from agntrick_whatsapp import WhatsAppChannel, WhatsAppRouterAgent
 from agntrick_whatsapp.config import WhatsAppAgentConfig
 
 async def main():
-    # Load configuration
-    config = WhatsAppAgentConfig.model_validate_yaml("whatsapp.yaml")
+    # Load configuration from YAML
+    config_path = Path(__file__).parent / "whatsapp.yaml"
+    with open(config_path) as f:
+        config_dict = yaml.safe_load(f)
+
+    config = WhatsAppAgentConfig.model_validate(config_dict)
 
     # Create channel
     channel = WhatsAppChannel(
