@@ -403,6 +403,8 @@ make build-clean # Remove build artifacts
 
 We love contributions! Check out our [AGENTS.md](AGENTS.md) for development guidelines.
 
+**For maintainers:** See [RELEASING.md](RELEASING.md) for how to publish new versions to PyPI.
+
 **The Golden Rules:**
 1. `make check` should pass without complaints.
 2. `make test` should stay green.
