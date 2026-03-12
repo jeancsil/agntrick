@@ -241,7 +241,7 @@ class WhatsAppRouterAgent:
                 self._mcp_servers = self._mcp_servers_override
             else:
                 # Default MCP servers for WhatsApp agent
-                self._mcp_servers = AgentRegistry.get_mcp_servers("whatsapp-messenger") or ["fetch", "hacker-news"]
+                self._mcp_servers = AgentRegistry.get_mcp_servers("whatsapp-messenger") or ["fetch", "hacker-news", "web-forager"]
 
             if self._mcp_servers:
                 self._mcp_tools = await self._load_mcp_tools_gracefully()
