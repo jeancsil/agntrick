@@ -155,6 +155,8 @@ class WhatsAppRouterAgent:
             temperature=self._temperature,
         )
 
+        # MCP provider (created once, reused for all tool sessions)
+        self._mcp_provider: MCPProvider | None = None
         # Agent graphs for different modes (lazy initialized)
         self._graphs: dict[str, Any] = {}
         self._mcp_tools: list[Any] = []
@@ -247,6 +249,9 @@ class WhatsAppRouterAgent:
                 )
 
             if self._mcp_servers:
+                # Create MCP provider that manages all servers (for session reuse)
+                self._mcp_provider = MCPProvider(server_names=self._mcp_servers)
+                # Load tools once for caching
                 self._mcp_tools = await self._load_mcp_tools_gracefully()
             else:
                 logger.info("No MCP servers configured, running with LLM only")
@@ -294,12 +299,20 @@ class WhatsAppRouterAgent:
             # Get or create graph for this mode
             graph = await self._get_or_create_graph(mode, full_prompt)
 
-            # Run the agent
+            # Run the agent within MCP tool session to reuse connections
+            # This avoids restarting stdio MCP servers for each tool call
             messages = [HumanMessage(content=query)]
-            result = await graph.ainvoke(
-                {"messages": messages},
-                config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
-            )
+            if self._mcp_provider is not None:
+                async with self._mcp_provider.tool_session(fail_fast=False) as _tools:
+                    result = await graph.ainvoke(
+                        {"messages": messages},
+                        config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
+                    )
+            else:
+                result = await graph.ainvoke(
+                    {"messages": messages},
+                    config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
+                )
             response_text = str(result["messages"][-1].content)
 
             # Send response
