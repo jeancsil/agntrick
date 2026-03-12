@@ -494,7 +494,7 @@ class WhatsAppChannel(Channel):
             logger.debug(f"Changed working directory to: {self.storage_path}")
 
             # Create neonize sync client (will store session in current directory)
-            self._client = NewClient("agentic-framework-whatsapp")
+            self._client = NewClient("agntrick-whatsapp")
 
             # Set up event handler for incoming messages
             if self._client:
@@ -685,8 +685,8 @@ class WhatsAppChannel(Channel):
 
                 # Check if session file exists and its size
                 # The session file name is based on device name, but device_props may be None
-                # until after connect(). Use the default name "agentic-framework-whatsapp"
-                session_file_name = "agentic-framework-whatsapp"
+                # until after connect(). Use the default name "agntrick-whatsapp"
+                session_file_name = "agntrick-whatsapp"
                 if self._client.device_props is not None:
                     session_file_name = self._client.device_props.name
 

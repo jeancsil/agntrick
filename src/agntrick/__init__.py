@@ -1,4 +1,4 @@
-"""Agntrick: An agentic framework for building AI-powered applications.
+"""Agntrick: An AI agent framework for building AI-powered applications.
 
 This library provides a flexible framework for creating agents with tool
 integration, MCP (Model Context Protocol) support, and LLM provider

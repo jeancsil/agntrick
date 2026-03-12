@@ -1,7 +1,7 @@
 [project]
 name = "agntrick"
 version = "0.2.7"
-description = "Agntrick: An agentic framework for building AI-powered applications"
+description = "Agntrick: An AI agent framework for building AI-powered applications"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.15"
