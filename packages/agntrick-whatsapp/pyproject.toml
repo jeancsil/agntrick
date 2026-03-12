@@ -1,6 +1,6 @@
 [project]
 name = "agntrick-whatsapp"
-version = "0.3.2"
+version = "0.3.3"
 description = "WhatsApp integration for Agntrick agents"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -18,7 +18,7 @@ classifiers = [
 keywords = ["ai", "agents", "whatsapp", "messaging", "llm"]
 
 dependencies = [
-    "agntrick>=0.2.7",
+    "agntrick>=0.2.8",
     "neonize",
     "ffmpeg-python>=0.2.0",
     "pydantic>=2.12.5",
