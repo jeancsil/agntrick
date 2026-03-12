@@ -9,14 +9,14 @@ import logging
 import traceback
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.memory import InMemorySaver
-
 from agntrick.llm import get_default_model
 from agntrick.mcp import MCPConnectionError, MCPProvider
 from agntrick.registry import AgentRegistry
 from agntrick.tools import YouTubeTranscriptTool
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
+
 from agntrick_whatsapp.base import Channel, IncomingMessage, OutgoingMessage
 from agntrick_whatsapp.config import AudioTranscriberConfig
 from agntrick_whatsapp.transcriber import AudioTranscriber
@@ -241,7 +241,10 @@ class WhatsAppRouterAgent:
                 self._mcp_servers = self._mcp_servers_override
             else:
                 # Default MCP servers for WhatsApp agent
-                self._mcp_servers = AgentRegistry.get_mcp_servers("whatsapp-messenger") or ["fetch", "hacker-news", "web-forager"]
+                self._mcp_servers = (
+                    AgentRegistry.get_mcp_servers("whatsapp-messenger")
+                    or ["fetch", "hacker-news", "web-forager"]
+                )
 
             if self._mcp_servers:
                 self._mcp_tools = await self._load_mcp_tools_gracefully()
@@ -310,8 +313,22 @@ class WhatsAppRouterAgent:
             logger.error(f"Traceback:\n{traceback.format_exc()}")
 
             try:
+                # Provide more specific error messages for common issues
+                error_msg = "Sorry, something went wrong. Please try again."
+                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    error_msg = (
+                        "Sorry, the request took too long. The service "
+                        "might be slow or the URL might not be accessible. "
+                        "Please try again."
+                    )
+                elif "connection" in str(e).lower() or "network" in str(e).lower():
+                    error_msg = (
+                        "Sorry, I couldn't connect to the service. "
+                        "Please check your connection and try again."
+                    )
+
                 error_message = OutgoingMessage(
-                    text="Sorry, something went wrong. Please try again.",
+                    text=error_msg,
                     recipient_id=incoming.sender_id,
                 )
                 await self.channel.send(error_message)
