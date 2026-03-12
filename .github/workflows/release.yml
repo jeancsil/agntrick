@@ -1,48 +1,41 @@
 name: Release
-
 on:
   release:
     types: [published]
-
-permissions:
-  contents: read
+    permissions:
+      contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
+      - name: Clean build artifacts
+        run: make build-clean
       - name: Build main package
         run: make build
-
       - name: Build WhatsApp package
         run: make build-whatsapp
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-main
           path: dist/
           retention-days: 7
-
       - name: Upload WhatsApp artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-whatsapp
           path: packages/agntrick-whatsapp/dist/
           retention-days: 7
-
   publish-pypi:
     needs: build
     runs-on: ubuntu-latest
@@ -57,10 +50,8 @@ jobs:
         with:
           name: dist-main
           path: dist/
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
   publish-whatsapp-pypi:
     needs: build
     runs-on: ubuntu-latest
@@ -75,10 +66,8 @@ jobs:
         with:
           name: dist-whatsapp
           path: dist/
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
   publish-testpypi:
     needs: build
     runs-on: ubuntu-latest
@@ -94,12 +83,10 @@ jobs:
         with:
           name: dist-main
           path: dist/
-
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-
   publish-whatsapp-testpypi:
     needs: build
     runs-on: ubuntu-latest
@@ -115,7 +102,6 @@ jobs:
         with:
           name: dist-whatsapp
           path: dist/
-
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
