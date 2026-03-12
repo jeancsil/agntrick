@@ -18,7 +18,7 @@ classifiers = [
 keywords = ["ai", "agents", "whatsapp", "messaging", "llm"]
 
 dependencies = [
-    "agntrick>=0.2.4",
+    "agntrick>=0.2.5",
     "neonize",
     "ffmpeg-python>=0.2.0",
     "pydantic>=2.12.5",
