@@ -10,7 +10,7 @@ import traceback
 from typing import Any
 
 from agntrick.llm import get_default_model
-from agntrick.mcp import MCPConnectionError, MCPProvider
+from agntrick.mcp import MCPProvider
 from agntrick.registry import AgentRegistry
 from agntrick.tools import YouTubeTranscriptTool
 from langchain.agents import create_agent
@@ -159,33 +159,20 @@ class WhatsAppRouterAgent:
         self._mcp_provider: MCPProvider | None = None
         # Agent graphs for different modes (lazy initialized)
         self._graphs: dict[str, Any] = {}
-        self._mcp_tools: list[Any] = []
         self._mcp_servers: list[str] = []
 
         logger.info(f"WhatsAppRouterAgent initialized with model={model_name or get_default_model()}")
 
-    async def _load_mcp_tools_gracefully(self) -> list[Any]:
-        """Load MCP tools with graceful error handling."""
-        loaded_tools: list[Any] = []
+    async def _get_or_create_graph(self, mode: str, system_prompt: str, mcp_tools: list[Any] | None = None) -> Any:
+        """Get or create an agent graph for the given mode.
 
-        for server_name in self._mcp_servers:
-            try:
-                logger.info(f"Connecting to MCP server: {server_name}...")
-                provider = MCPProvider(server_names=[server_name])
-                tools = await provider.get_tools()
-                loaded_tools.extend(tools)
-                logger.info(f"✓ Connected to {server_name}: {len(tools)} tools loaded")
-            except MCPConnectionError as e:
-                logger.warning(f"✗ Failed to connect to {server_name}: {e}")
-            except Exception as e:
-                logger.warning(f"✗ Unexpected error connecting to {server_name}: {e}")
-
-        return loaded_tools
-
-    async def _get_or_create_graph(self, mode: str, system_prompt: str) -> Any:
-        """Get or create an agent graph for the given mode."""
-        if mode not in self._graphs:
-            tools = list(self._mcp_tools)
+        Args:
+            mode: The agent mode (learn, youtube, default).
+            system_prompt: The system prompt to use.
+            mcp_tools: Optional MCP tools to include. If None, graph won't have MCP tools.
+        """
+        if mode not in self._graphs or mcp_tools is not None:
+            tools = list(mcp_tools) if mcp_tools is not None else []
 
             # Add YouTube transcript tool for youtube mode
             if mode == "youtube":
@@ -200,13 +187,25 @@ class WhatsAppRouterAgent:
                     )
                 )
 
-            self._graphs[mode] = create_agent(
-                model=self.model,
-                tools=tools,
-                # system_prompt=system_prompt,
-                checkpointer=InMemorySaver(),
-            )
-        return self._graphs[mode]
+            # Only cache graphs if we're not using MCP tools (MCP tools change per session)
+            if mcp_tools is not None:
+                cache_key = f"{mode}_with_mcp"
+            else:
+                cache_key = f"{mode}_no_mcp"
+
+            if cache_key not in self._graphs:
+                self._graphs[cache_key] = create_agent(
+                    model=self.model,
+                    tools=tools,
+                    # system_prompt=system_prompt,
+                    checkpointer=InMemorySaver(),
+                )
+
+        # Return the appropriate graph based on whether we have MCP tools
+        if mcp_tools is not None:
+            return self._graphs[f"{mode}_with_mcp"]
+        else:
+            return self._graphs[f"{mode}_no_mcp"]
 
     def _parse_command(self, text: str) -> tuple[str, str]:
         """Parse message text to extract command and query.
@@ -251,8 +250,6 @@ class WhatsAppRouterAgent:
             if self._mcp_servers:
                 # Create MCP provider that manages all servers (for session reuse)
                 self._mcp_provider = MCPProvider(server_names=self._mcp_servers)
-                # Load tools once for caching
-                self._mcp_tools = await self._load_mcp_tools_gracefully()
             else:
                 logger.info("No MCP servers configured, running with LLM only")
 
@@ -296,19 +293,24 @@ class WhatsAppRouterAgent:
             date_context = f"CURRENT DATE: {current_date.strftime('%Y-%m-%d')}\nCurrent year: {current_date.year}\n\n"
             full_prompt = date_context + system_prompt
 
-            # Get or create graph for this mode
-            graph = await self._get_or_create_graph(mode, full_prompt)
-
             # Run the agent within MCP tool session to reuse connections
             # This avoids restarting stdio MCP servers for each tool call
             messages = [HumanMessage(content=query)]
+
             if self._mcp_provider is not None:
-                async with self._mcp_provider.tool_session(fail_fast=False) as _tools:
+                async with self._mcp_provider.tool_session(fail_fast=False) as session_tools:
+                    # Get or create graph for this mode using session tools
+                    # This creates a new graph each time with fresh MCP connections
+                    graph = await self._get_or_create_graph(mode, full_prompt, session_tools)
+
                     result = await graph.ainvoke(
                         {"messages": messages},
                         config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
                     )
             else:
+                # Get or create graph for this mode (no MCP tools)
+                graph = await self._get_or_create_graph(mode, full_prompt, None)
+
                 result = await graph.ainvoke(
                     {"messages": messages},
                     config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
