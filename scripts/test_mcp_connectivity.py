@@ -10,7 +10,6 @@ Usage:
     python scripts/test_mcp_connectivity.py
 
     # From within Docker container
-    cd /app/agentic-framework
     python /app/scripts/test_mcp_connectivity.py
 """
 

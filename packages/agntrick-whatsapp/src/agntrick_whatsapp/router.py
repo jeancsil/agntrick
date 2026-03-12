@@ -157,9 +157,15 @@ class WhatsAppRouterAgent:
 
         # MCP provider (created once, reused for all tool sessions)
         self._mcp_provider: MCPProvider | None = None
+        # Context manager for MCP session (for proper cleanup)
+        self._mcp_session_cm: Any = None
+        # Long-lived MCP session for connection reuse across messages
+        self._mcp_session: Any = None
         # Agent graphs for different modes (lazy initialized)
         self._graphs: dict[str, Any] = {}
         self._mcp_servers: list[str] = []
+        # Cached MCP tools for reuse (loaded once during start)
+        self._mcp_tools: list[Any] = []
 
         logger.info(f"WhatsAppRouterAgent initialized with model={model_name or get_default_model()}")
 
@@ -244,12 +250,18 @@ class WhatsAppRouterAgent:
                 # Default MCP servers for WhatsApp agent
                 self._mcp_servers = (
                     AgentRegistry.get_mcp_servers("whatsapp-messenger")
-                    or ["fetch", "hacker-news", "web-forager"]
+                    or ["fetch"]
                 )
 
             if self._mcp_servers:
-                # Create MCP provider that manages all servers (for session reuse)
+                # Create MCP provider that manages all servers
                 self._mcp_provider = MCPProvider(server_names=self._mcp_servers)
+                # Create long-lived session for connection reuse across messages
+                # Enter the context manager and keep it open for the agent lifetime
+                self._mcp_session_cm = self._mcp_provider.tool_session(fail_fast=False)
+                self._mcp_session = await self._mcp_session_cm.__aenter__()
+                self._mcp_tools = self._mcp_session
+                logger.info(f"Loaded {len(self._mcp_tools)} MCP tools in long-lived session")
             else:
                 logger.info("No MCP servers configured, running with LLM only")
 
@@ -293,22 +305,19 @@ class WhatsAppRouterAgent:
             date_context = f"CURRENT DATE: {current_date.strftime('%Y-%m-%d')}\nCurrent year: {current_date.year}\n\n"
             full_prompt = date_context + system_prompt
 
-            # Run the agent within MCP tool session to reuse connections
-            # This avoids restarting stdio MCP servers for each tool call
+            # Run the agent using cached MCP tools (connections stay open)
             messages = [HumanMessage(content=query)]
 
-            if self._mcp_provider is not None:
-                async with self._mcp_provider.tool_session(fail_fast=False) as session_tools:
-                    # Get or create graph for this mode using session tools
-                    # This creates a new graph each time with fresh MCP connections
-                    graph = await self._get_or_create_graph(mode, full_prompt, session_tools)
+            if self._mcp_tools:
+                # Use cached MCP tools - connections stay open across messages
+                graph = await self._get_or_create_graph(mode, full_prompt, self._mcp_tools)
 
-                    result = await graph.ainvoke(
-                        {"messages": messages},
-                        config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
-                    )
+                result = await graph.ainvoke(
+                    {"messages": messages},
+                    config={"configurable": {"thread_id": f"whatsapp-{mode}"}},
+                )
             else:
-                # Get or create graph for this mode (no MCP tools)
+                # No MCP tools configured
                 graph = await self._get_or_create_graph(mode, full_prompt, None)
 
                 result = await graph.ainvoke(
@@ -402,6 +411,12 @@ class WhatsAppRouterAgent:
         self._shutdown_event.set()
 
         try:
+            # Close MCP connections if provider exists
+            if hasattr(self, "_mcp_session_cm") and self._mcp_session_cm is not None:
+                logger.info("Closing MCP session...")
+                await self._mcp_session_cm.__aexit__(None, None, None)
+                logger.info("MCP session closed")
+
             await self.channel.shutdown()
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")

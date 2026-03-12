@@ -43,15 +43,14 @@ coverage.xml
 htmlcov/
 
 # Logging
-agentic-framework/logs/
-!agentic-framework/logs/.gitkeep
+logs/
+!logs/.gitkeep
 
 # Configuration files
 **/whatsapp.yaml
-agentic-framework/config/*.yaml
 
 # Runtime data (sessions, databases, media)
-agentic-framework/storage/whatsapp/
-!agentic-framework/storage/whatsapp/.gitkeep
-agentic-framework/storage/youtube/
-!agentic-framework/storage/youtube/.gitkeep
+storage/whatsapp/
+!storage/whatsapp/.gitkeep
+storage/youtube/
+!storage/youtube/.gitkeep

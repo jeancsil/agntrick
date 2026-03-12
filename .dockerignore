@@ -42,7 +42,7 @@ logs/*.log
 .env
 .env.*
 
-# Documentation (exclude root docs, but keep agentic-framework/README.md)
+# Documentation (exclude root docs)
 /README.md
 /LICENSE
 /DOCKER.md

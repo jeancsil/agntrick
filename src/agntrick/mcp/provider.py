@@ -78,7 +78,7 @@ class MCPProvider:
         import logging
         from contextlib import AsyncExitStack
 
-        CONN_TIMEOUT = 15
+        CONN_TIMEOUT = 60
         all_tools = []
 
         # We use a stack to track entered contexts for reliable cleanup

@@ -171,7 +171,7 @@ bin/agent.sh list
 docker compose run --rm app make test
 
 # View logs (same location as local)
-tail -f agentic-framework/logs/agent.log
+tail -f agntrick/logs/agent.log
 ```
 
 ### Docker Benefits

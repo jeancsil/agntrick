@@ -157,6 +157,6 @@ await agent.start()
 
 ## See Also
 
-- [agntrick-whatsapp README](../../agentic-framework/packages/agntrick-whatsapp/README.md)
+- [agntrick-whatsapp README](../../packages/agntrick-whatsapp/README.md)
 - [Custom Agents](../agents/custom.md) - Create custom agents
 - [MCP Overview](../mcp/index.md) - MCP capabilities
