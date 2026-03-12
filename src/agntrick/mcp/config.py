@@ -19,7 +19,7 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
     },
     "web-forager": {
         "command": "uvx",
-        "args": ["web-forager-mcp"],
+        "args": ["web-forager", "serve"],
         "transport": "stdio",
     },
     "hacker-news": {
