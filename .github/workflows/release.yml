@@ -48,6 +48,8 @@ jobs:
         run: make build-whatsapp
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/agntrick-whatsapp/dist
   publish-testpypi:
     runs-on: ubuntu-latest
     if: github.event.release.prerelease == true
@@ -96,3 +98,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          packages-dir: packages/agntrick-whatsapp/dist
