@@ -16,7 +16,7 @@ from agntrick import (
 
 def test_agntrick_version():
     """Test package version."""
-    assert __version__ == "0.2.7"
+    assert __version__ == "0.2.8"
 
 
 def test_agntrick_imports():
