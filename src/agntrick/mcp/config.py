@@ -22,6 +22,22 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "args": ["web-forager-mcp"],
         "transport": "stdio",
     },
+    "hacker-news": {
+        "command": "npx",
+        "args": ["-y", "@devabdultech/hn-mcp-server"],
+        "transport": "stdio",
+    },
+    # GoodNews requires NEWS_API_KEY and COHERE_API_KEY environment variables
+    # Clone: git clone https://github.com/vectorinstitute/mcp-goodnews.git
+    # "goodnews": {
+    #     "command": "uv",
+    #     "args": ["--directory", "/path/to/mcp-goodnews/src/mcp_goodnews", "run", "server.py"],
+    #     "transport": "stdio",
+    #     "env": {
+    #         "NEWS_API_KEY": "...",
+    #         "COHERE_API_KEY": "...",
+    #     },
+    # },
 }
 
 
