@@ -59,9 +59,11 @@ except Exception as import_error:  # pragma: no cover - depends on system packag
 from agntrick_whatsapp.base import (
     Channel,
     ChannelError,
-    ConfigurationError as ConfigError,
     IncomingMessage,
     OutgoingMessage,
+)
+from agntrick_whatsapp.base import (
+    ConfigurationError as ConfigError,
 )
 
 # Alias for backward compatibility
@@ -186,9 +188,10 @@ class WhatsAppChannel(Channel):
             return
 
         try:
-            # Build JID object from string
-            jid_obj = build_jid(jid)
-            logger.info(f"Sending COMPOSING typing indicator to {jid}")
+            # Normalize JID: strip domain if present so build_jid() creates correct JID object
+            # build_jid() expects just phone number, not full JID
+            normalized_jid = jid.split("@")[0] if "@" in jid else jid
+            jid_obj = build_jid(normalized_jid)
             # Send composing presence to show typing indicator
             self._client.send_chat_presence(
                 jid_obj,
@@ -226,9 +229,9 @@ class WhatsAppChannel(Channel):
                 await asyncio.sleep(wait_time)
 
         try:
-            # Build JID object from string
-            jid_obj = build_jid(jid)
-            logger.info(f"Sending PAUSED typing indicator to {jid}")
+            # Normalize JID: strip domain if present so build_jid() creates correct JID object
+            normalized_jid = jid.split("@")[0] if "@" in jid else jid
+            jid_obj = build_jid(normalized_jid)
             # Send paused presence to stop typing indicator
             self._client.send_chat_presence(
                 jid_obj,
