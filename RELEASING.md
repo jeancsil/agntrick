@@ -1,6 +1,15 @@
-# Releasing Agntrick
+# Releasing Agntrick Packages
 
-This document describes how to release new versions of Agntrick to PyPI.
+This document describes how to release new versions of `agntrick` and `agntrick-whatsapp` packages to PyPI.
+
+## Overview
+
+Agntrick uses a monorepo structure with two independently versioned packages:
+
+- **agntrick** (v0.2.8): Core framework
+- **agntrick-whatsapp** (v0.3.3): WhatsApp integration
+
+Each package can be released independently, allowing different release cadences for core features and platform-specific integrations.
 
 ## Prerequisites
 
@@ -27,9 +36,74 @@ Agntrick uses PyPI's [Trusted Publishers](https://docs.pypi.org/trusted-publishe
 ### 2. Permissions
 
 - You must have `push` access to the repository
-- You must be a maintainer/owner of the PyPI projects
+- You must be a maintainer/owner of PyPI projects
 
-## Release Process
+### 3. GitHub CLI
+
+The automated release requires GitHub CLI (`gh`) installed and authenticated:
+
+```bash
+brew install gh        # macOS
+# OR
+apt install gh         # Linux
+
+gh auth login
+```
+
+## Automated Release (Recommended)
+
+Use the `make` commands for streamlined releases:
+
+### Release Core Package Only
+
+```bash
+make release VERSION=0.3.0
+```
+
+This releases `agntrick` to version 0.3.0 and:
+- Updates `pyproject.toml` version
+- Runs all tests
+- Commits, tags, and pushes to GitHub
+- Creates GitHub release (triggers PyPI publish)
+
+### Release WhatsApp Package Only
+
+```bash
+make release-whatsapp VERSION=0.4.0
+```
+
+This releases `agntrick-whatsapp` to version 0.4.0 independently.
+
+### Release Both Packages
+
+```bash
+make release-both CORE=0.3.0 WHATSAPP=0.4.0
+```
+
+This releases both packages with different versions:
+- agntrick → v0.3.0
+- agntrick-whatsapp → v0.4.0
+
+When releasing both, the WhatsApp package's dependency on `agntrick` is automatically updated to `agntrick>=0.3.0`.
+
+## Manual Release (Without make command)
+
+If you need more control, you can manually execute the release script:
+
+```bash
+# Release agntrick
+./scripts/release.sh agntrick 0.3.0
+
+# Release agntrick-whatsapp
+./scripts/release.sh agntrick-whatsapp 0.4.0
+
+# Release both
+./scripts/release.sh both 0.3.0 0.4.0
+```
+
+## Step-by-Step Manual Release
+
+If you prefer manual control over each step:
 
 ### Step 1: Ensure main is up to date
 
@@ -76,6 +150,36 @@ Or use the GitHub UI:
 4. Add release notes
 5. Click "Publish release"
 
+## Version Strategy
+
+### Independent Versioning
+
+Each package has its own version number:
+
+| Package | Current Version | Tag Format |
+|---------|----------------|-------------|
+| agntrick | 0.2.8 | `vX.Y.Z` |
+| agntrick-whatsapp | 0.3.3 | `agntrick-whatsapp-vX.Y.Z` |
+
+### Semantic Versioning
+
+We follow [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** (X.0.0): Breaking changes
+- **MINOR** (0.X.0): New features, backward compatible
+- **PATCH** (0.0.X): Bug fixes
+
+### When to Bump Which Version
+
+| Scenario | agntrick | agntrick-whatsapp | Command |
+|----------|----------|-------------------|----------|
+| Core bug fix | Patch | No change | `make release VERSION=x.y.z` |
+| Core new feature | Minor | No change | `make release VERSION=x.y.0` |
+| Core breaking change | Major | Update dependency, bump | `make release-both` |
+| WhatsApp-only fix | No change | Patch | `make release-whatsapp VERSION=x.y.z` |
+| WhatsApp new feature | No change | Minor | `make release-whatsapp VERSION=x.y.0` |
+| Both packages | Bump both | Bump both | `make release-both` |
+
 ## What Happens Next
 
 The [release workflow](.github/workflows/release.yml) automatically:
@@ -95,21 +199,81 @@ Create a pre-release by marking the GitHub release as "pre-release":
 - Packages go to https://test.pypi.org/project/agntrick/
 - Install with `pip install -i https://test.pypi.org/simple/ agntrick`
 
-## Versioning
+## Verification
 
-We follow [Semantic Versioning](https://semver.org/):
+### Verify Release on PyPI
 
-- **MAJOR** (X.0.0): Breaking changes
-- **MINOR** (0.X.0): New features, backward compatible
-- **PATCH** (0.0.X): Bug fixes
+After the GitHub Actions workflow completes:
+
+```bash
+# Check agntrick
+curl -s https://pypi.org/pypi/agntrick/json | jq -r '.info.version'
+
+# Check agntrick-whatsapp
+curl -s https://pypi.org/pypi/agntrick-whatsapp/json | jq -r '.info.version'
+```
+
+### Test Install Fresh Version
+
+```bash
+# Test install
+uv pip install --force-reinstall agntrick==0.3.0
+uv pip install --force-reinstall agntrick-whatsapp==0.4.0
+```
 
 ## Troubleshooting
+
+### "Uncommitted changes detected"
+
+Commit or stash your changes before releasing:
+
+```bash
+git status
+git commit -am "WIP"
+# OR
+git stash
+```
+
+### "Invalid version format"
+
+Versions must follow semantic versioning: `X.Y.Z`
+
+```bash
+# Correct
+make release VERSION=0.3.0
+
+# Incorrect
+make release VERSION=0.3       # Missing patch
+make release VERSION=0.3.0.1    # Too many parts
+make release VERSION=v0.3.0     # No 'v' prefix
+```
+
+### "Tests failed. Aborting release"
+
+Fix test failures before releasing:
+
+```bash
+make check && make test
+# Fix issues, then retry release
+```
+
+### "GitHub CLI (gh) is required"
+
+Install and authenticate gh:
+
+```bash
+brew install gh  # macOS
+# OR
+apt install gh  # Linux
+
+gh auth login
+```
 
 ### Release failed with "400 Bad Request"
 
 This usually means the Trusted Publisher isn't configured:
 
-1. Verify the publisher settings on PyPI match exactly:
+1. Verify publisher settings on PyPI match exactly:
    - Repository name (case-sensitive)
    - Workflow name (including `.yml` extension)
    - Environment name (if used)
@@ -134,6 +298,26 @@ Ensure your `.env` has the required API keys for testing:
 export OPENAI_API_KEY=sk-test  # For CI
 ```
 
+### Rollback
+
+PyPI does not allow overwriting existing versions. If something goes wrong:
+
+1. Delete the GitHub release
+2. Delete the git tag (locally and remotely)
+3. Increment version to a new number
+4. Create new release
+
+```bash
+# Delete remote tag
+git push origin --delete v0.3.0
+
+# Delete local tag
+git tag -d v0.3.0
+
+# Release with new version
+make release VERSION=0.3.1
+```
+
 ## Manual Publishing (Emergency Only)
 
 If GitHub Actions is unavailable, you can publish manually:
@@ -147,3 +331,27 @@ uv run twine upload dist/*
 ```
 
 Note: Manual publishing requires a PyPI API token, which is less secure than Trusted Publishers.
+
+## Quick Reference
+
+```bash
+# View current versions
+grep "^version" pyproject.toml
+grep "^version" packages/agntrick-whatsapp/pyproject.toml
+
+# View recent tags
+git tag -l --sort=-version:refname
+
+# Run full check before release
+make check && make test
+
+# Automated release commands
+make release VERSION=0.3.0
+make release-whatsapp VERSION=0.4.0
+make release-both CORE=0.3.0 WHATSAPP=0.4.0
+
+# Manual script commands
+./scripts/release.sh agntrick 0.3.0
+./scripts/release.sh agntrick-whatsapp 0.4.0
+./scripts/release.sh both 0.3.0 0.4.0
+```

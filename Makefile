@@ -1,4 +1,4 @@
-.PHONY: help install run test clean format check docker-build docker-clean build build-whatsapp build-clean
+.PHONY: help install run test clean format check docker-build docker-clean build build-whatsapp build-clean release release-whatsapp release-both
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -92,3 +92,19 @@ build-clean: ## Remove build artifacts
 	rm -rf packages/agntrick-whatsapp/dist/
 	rm -rf packages/agntrick-whatsapp/build/
 	@echo "✓ Build artifacts cleaned!"
+
+## -- Release Commands --
+
+release: ## Release agntrick core package (usage: make release VERSION=0.3.0)
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION is required (e.g., VERSION=0.3.0)"; exit 1; fi
+	@./scripts/release.sh agntrick $(VERSION)
+
+release-whatsapp: ## Release agntrick-whatsapp package (usage: make release-whatsapp VERSION=0.4.0)
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION is required (e.g., VERSION=0.4.0)"; exit 1; fi
+	@./scripts/release.sh agntrick-whatsapp $(VERSION)
+
+release-both: ## Release both packages with different versions (usage: make release-both CORE=0.3.0 WHATSAPP=0.4.0)
+	@if [ -z "$(CORE)" ] || [ -z "$(WHATSAPP)" ]; then \
+		echo "Error: CORE and WHATSAPP are required (e.g., CORE=0.3.0 WHATSAPP=0.4.0)"; exit 1; \
+	fi
+	@./scripts/release.sh both $(CORE) $(WHATSAPP)
