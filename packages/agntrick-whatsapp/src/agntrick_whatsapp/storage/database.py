@@ -89,7 +89,8 @@ class Database:
                 status TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 completed_at REAL,
-                error_message TEXT
+                error_message TEXT,
+                metadata TEXT
             )
         """)
         cursor.execute("""

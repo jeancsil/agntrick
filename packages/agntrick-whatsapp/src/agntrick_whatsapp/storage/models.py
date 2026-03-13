@@ -41,6 +41,7 @@ class ScheduledTask(BaseModel):
         created_at: Unix timestamp when task was created.
         completed_at: Unix timestamp when task completed (if applicable).
         error_message: Error message if task failed.
+        metadata: Optional metadata (e.g., sender_id for reminders).
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -53,6 +54,7 @@ class ScheduledTask(BaseModel):
     created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
     completed_at: float | None = None
     error_message: str | None = None
+    metadata: dict[str, Any] | None = None
 
     def to_db_row(self) -> dict[str, Any]:
         """Convert to database row format.
@@ -71,6 +73,7 @@ class ScheduledTask(BaseModel):
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "error_message": self.error_message,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -94,6 +97,7 @@ class ScheduledTask(BaseModel):
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             error_message=row["error_message"],
+            metadata=row.get("metadata"),
         )
 
 

@@ -6,18 +6,17 @@ to different specialist agents based on command prefixes (e.g., /learn).
 
 import asyncio
 import logging
-import time
+import os
 import traceback
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from agntrick.constants import STORAGE_DIR
 from agntrick.llm import get_default_model
 from agntrick.mcp import MCPProvider
 from agntrick.registry import AgentRegistry
 from agntrick.tools import YouTubeTranscriptTool
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
+from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agntrick_whatsapp.base import Channel, IncomingMessage, OutgoingMessage
@@ -31,15 +30,20 @@ from agntrick_whatsapp.commands import (
     ScheduleCommand,
 )
 from agntrick_whatsapp.config import AudioTranscriberConfig
+from agntrick_whatsapp.storage import Database, NoteRepository, TaskRepository
+from agntrick_whatsapp.storage.models import Note, ScheduledTask, TaskStatus, TaskType
+from agntrick_whatsapp.storage.scheduler import parse_natural_time
 from agntrick_whatsapp.transcriber import AudioTranscriber
+
+if TYPE_CHECKING:
+    from langgraph.pregel import Pregel
 
 logger = logging.getLogger(__name__)
 
-# Audio transcription setup
-audio_transcriber: AudioTranscriber | None = None
-
-# Persistent storage for tasks and notes
-_storage_db_path = STORAGE_DIR / "agntrick" / "tasks.db"
+# Constants
+SCHEDULER_INTERVAL_SECONDS = 10
+NOTE_PREVIEW_MAX_LENGTH = 100
+NOTES_DISPLAY_LIMIT = 10
 
 # System prompts for different agent modes
 DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant communicating through WhatsApp.
@@ -93,6 +97,22 @@ WHATSAPP FORMAT GUIDELINES:
 Use => youtube_transcript tool to fetch video transcripts, then provide
 thoughtful analysis based on the transcript content."""
 
+YOUTUBE_SYSTEM_PROMPT = """You are a YouTube content analyst communicating through WhatsApp.
+Your specialty is analyzing and summarizing YouTube video content.
+
+When given a YouTube URL or search query:
+1. Use the youtube_transcript tool to fetch the video transcript
+2. Provide a concise summary of the main points
+3. Highlight key insights or takeaways
+4. Be conversational and engaging
+
+WHATSAPP FORMAT GUIDELINES:
+- Keep messages concise (WhatsApp is for quick communication)
+- Use *bold* for emphasis
+- Use numbered lists for key points
+- Break long analyses into digestible sections
+"""
+
 
 class WhatsAppRouterAgent:
     """WhatsApp agent that routes commands to different specialist modes.
@@ -122,11 +142,8 @@ class WhatsAppRouterAgent:
         >>> await agent.start()
     """
 
-    # Storage repositories for tasks and notes
-    _task_repo: Any = None
-    _note_repo: Any = None
-
-    def __init__(self, # type: ignore[override]
+    def __init__( # type: ignore[override]
+        self,
         channel: Channel,
         model_name: str | None = None,
         temperature: float = 0.7,
@@ -143,6 +160,7 @@ class WhatsAppRouterAgent:
 
         # Model setup
         from langchain_openai import ChatOpenAI
+
         self.model = ChatOpenAI(
             model=self._model_name or get_default_model(),
             temperature=self._temperature,
@@ -155,34 +173,37 @@ class WhatsAppRouterAgent:
         # Long-lived MCP session for connection reuse across messages
         self._mcp_session: Any = None
         # Agent graphs for different modes (lazy initialized)
-        self._graphs: dict[str, Any] = {}
+        self._graphs: dict[str, "Pregel"] = {}
         self._mcp_servers: list[str] = []
         # Cached MCP tools for reuse (loaded once during start)
         self._mcp_tools: list[Any] = []
 
         # Storage for tasks and notes
         self._storage_db_path = channel.storage_path / "storage.db"
-        self._task_repo: Any = None
-        self._note_repo: Any = None
+        self._task_repo: TaskRepository | None = None
+        self._note_repo: NoteRepository | None = None
 
         # Command parser
         self._command_parser = CommandParser()
 
+        # Scheduler task
+        self._scheduler_task: asyncio.Task[None] | None = None
+
         logger.info(f"WhatsAppRouterAgent initialized with model={model_name or get_default_model()}")
 
-    def _get_storage_repos(self) -> tuple[Any, Any]:
-        """Get or create storage repository instances."""
-        # Use inlined storage module
-        from agntrick_whatsapp.storage import Database, NoteRepository, TaskRepository
-
+    def _get_task_repo(self) -> TaskRepository:
+        """Get or create task repository instance."""
         if self._task_repo is None:
             db = Database(self._storage_db_path)
             self._task_repo = TaskRepository(db)
+        return self._task_repo
+
+    def _get_note_repo(self) -> NoteRepository:
+        """Get or create note repository instance."""
         if self._note_repo is None:
             db = Database(self._storage_db_path)
             self._note_repo = NoteRepository(db)
-
-        return self._task_repo, self._note_repo
+        return self._note_repo
 
     def _get_system_prompt(self, command_type: CommandType) -> str:
         """Get the appropriate system prompt for a command type."""
@@ -194,7 +215,70 @@ class WhatsAppRouterAgent:
             case _:
                 return DEFAULT_SYSTEM_PROMPT
 
-    async def _get_or_create_graph(self, mode: str, system_prompt: str, mcp_tools: list[Any] | None = None) -> Any:
+    async def _run_scheduler(self) -> None:
+        """Background task that executes scheduled reminders/tasks."""
+        logger.info(f"Scheduler started, checking for due tasks every {SCHEDULER_INTERVAL_SECONDS} seconds...")
+        while self._running:
+            try:
+                await self._check_and_execute_due_tasks()
+            except Exception as e:
+                logger.error(f"Scheduler error: {e}")
+            await asyncio.sleep(SCHEDULER_INTERVAL_SECONDS)
+
+    async def _check_and_execute_due_tasks(self) -> None:
+        """Check for and execute any due tasks."""
+        task_repo = self._get_task_repo()
+        due_tasks = task_repo.get_due_tasks()
+        if not due_tasks:
+            return
+
+        logger.info(f"Found {len(due_tasks)} due task(s)")
+
+        for task in due_tasks:
+            try:
+                await self._execute_scheduled_task(task)
+            except Exception as e:
+                logger.error(f"Error executing task {task.id}: {e}")
+                task_repo.update_status(task.id, TaskStatus.FAILED, error_message=str(e))
+
+    async def _execute_scheduled_task(self, task: ScheduledTask) -> None:
+        """Execute a single scheduled task."""
+        logger.info(f"Executing scheduled task {task.id}: {task.action_prompt}")
+
+        task_repo = self._get_task_repo()
+        task_repo.update_status(task.id, TaskStatus.RUNNING)
+
+        # Execute the agent with the prompt
+        # For reminders (no agent specified), frame it as a reminder not a question
+        if not task.action_agent:
+            prompt = f"The user set a reminder. Simply remind them about: {task.action_prompt or 'something important'}. Be brief and friendly."
+        else:
+            prompt = task.action_prompt or "Time for your reminder!"
+        messages = [HumanMessage(content=prompt)]
+
+        graph = await self._get_or_create_graph(
+            "default", DEFAULT_SYSTEM_PROMPT, self._mcp_tools
+        )
+        config = {"configurable": {"thread_id": task.id}}
+        result = await graph.ainvoke({"messages": messages}, config)
+        response_text = str(result["messages"][-1].content)
+
+        # Send response to the user who scheduled the task
+        # Store sender_id in task metadata or use a default
+        recipient = task.metadata.get("sender_id") if task.metadata else None
+        if recipient:
+            outgoing = OutgoingMessage(text=f"⏰ *Reminder:*\n\n{response_text}", recipient_id=recipient)
+            await self.channel.send(outgoing)
+            logger.info(f"Sent reminder to {recipient}")
+        else:
+            logger.warning(f"Task {task.id} has no sender_id in metadata, cannot send reminder")
+
+        # Mark as completed
+        task_repo.update_status(task.id, TaskStatus.COMPLETED)
+
+    async def _get_or_create_graph(
+        self, mode: str, system_prompt: str, mcp_tools: list[Any] | None = None
+    ) -> "Pregel":
         """Get or create an agent graph for a given mode.
 
         Args:
@@ -205,12 +289,14 @@ class WhatsAppRouterAgent:
         Returns:
             Agent graph instance.
         """
-        if mode not in self._graphs or mcp_tools is not None:
+        # Only cache graphs if we're not using MCP tools (MCP tools change per session)
+        cache_key = f"{mode}_with_mcp" if mcp_tools is not None else f"{mode}_no_mcp"
+
+        if cache_key not in self._graphs:
             tools = list(mcp_tools) if mcp_tools is not None else []
             # Add YouTube transcript tool for youtube mode
             if mode == "youtube":
                 youtube_tool = YouTubeTranscriptTool()
-                from langchain_core.tools import StructuredTool
                 tools.append(
                     StructuredTool.from_function(
                         func=youtube_tool.invoke,
@@ -218,42 +304,20 @@ class WhatsAppRouterAgent:
                         description=youtube_tool.description,
                     )
                 )
-            # Only cache graphs if we're not using MCP tools (MCP tools change per session)
-            if mcp_tools is not None:
-                cache_key = f"{mode}_with_mcp"
-            else:
-                cache_key = f"{mode}_no_mcp"
-            if cache_key not in self._graphs:
-                self._graphs[cache_key] = create_agent(
-                    model=self.model,
-                    tools=tools,
-                    # system_prompt=system_prompt,
-                    checkpointer=InMemorySaver(),
-                )
-            # Return appropriate graph based on whether we have MCP tools
-            if mcp_tools is not None:
-                return self._graphs[f"{mode}_with_mcp"]
-            else:
-                return self._graphs[f"{mode}_no_mcp"]
-
-    async def _handle_schedule(self, mode: str, time_str: str, agent: str | None, prompt: str | None, recipient_id: str) -> None:
-        """Handle schedule command - create a scheduled task."""
-        task_repo, note_repo = self._get_storage_repos()
-        if task_repo is None:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=recipient_id,
+            self._graphs[cache_key] = create_agent(
+                model=self.model,
+                tools=tools,
+                # system_prompt=system_prompt,
+                checkpointer=InMemorySaver(),
             )
-            await self.channel.send(outgoing)
-            return
 
-        # Use inlined storage module
-        from agntrick_whatsapp.storage import Database, TaskRepository
-        from agntrick_whatsapp.storage.models import ScheduledTask, TaskType
-        from agntrick_whatsapp.storage.scheduler import parse_natural_time
+        return self._graphs[cache_key]
 
-        db = Database(self._storage_db_path)
-        task_repo = TaskRepository(db)
+    async def _handle_schedule(
+        self, mode: str, time_str: str, agent: str | None, prompt: str | None, recipient_id: str
+    ) -> None:
+        """Handle schedule command - create a scheduled task."""
+        task_repo = self._get_task_repo()
 
         parsed_time, cron_expr = parse_natural_time(time_str)
         execute_at = parsed_time.timestamp()
@@ -264,6 +328,7 @@ class WhatsAppRouterAgent:
             action_prompt=prompt,
             execute_at=execute_at,
             cron_expression=cron_expr,
+            metadata={"sender_id": recipient_id},
         )
 
         task_repo.save(task)
@@ -274,11 +339,11 @@ class WhatsAppRouterAgent:
         if agent:
             msg = f"✓ Scheduled! Agent '{agent}' will run at {time_str_formatted}"
             if prompt:
-                msg += f"\n📝 Task: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+                msg += f"\n📝 Task: {prompt[:NOTE_PREVIEW_MAX_LENGTH]}{'...' if len(prompt) > NOTE_PREVIEW_MAX_LENGTH else ''}"
         else:
             msg = f"✓ Reminder set for {time_str_formatted}"
             if prompt:
-                msg += f"\n📝 {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+                msg += f"\n📝 {prompt[:NOTE_PREVIEW_MAX_LENGTH]}{'...' if len(prompt) > NOTE_PREVIEW_MAX_LENGTH else ''}"
 
         outgoing = OutgoingMessage(
             text=msg,
@@ -292,21 +357,7 @@ class WhatsAppRouterAgent:
 
     async def _handle_note(self, content: str, recipient_id: str) -> None:
         """Handle note command - save a note."""
-        task_repo, note_repo = self._get_storage_repos()
-        if note_repo is None:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=recipient_id,
-            )
-            await self.channel.send(outgoing)
-            return
-
-        # Use inlined storage module
-        from agntrick_whatsapp.storage import Database, NoteRepository
-        from agntrick_whatsapp.storage.models import Note
-
-        db = Database(self._storage_db_path)
-        note_repo = NoteRepository(db)
+        note_repo = self._get_note_repo()
 
         note = Note(content=content)
         note_repo.save(note)
@@ -320,21 +371,7 @@ class WhatsAppRouterAgent:
 
     async def _handle_notes(self, recipient_id: str) -> None:
         """Handle notes command - list all notes."""
-        task_repo, note_repo = self._get_storage_repos()
-        if note_repo is None:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=recipient_id,
-            )
-            await self.channel.send(outgoing)
-            return
-
-        # Use inlined storage module
-        from agntrick_whatsapp.storage import Database, NoteRepository
-
-        db = Database(self._storage_db_path)
-        note_repo = NoteRepository(db)
-
+        note_repo = self._get_note_repo()
         notes = note_repo.list_all()
 
         if not notes:
@@ -347,7 +384,7 @@ class WhatsAppRouterAgent:
 
         note_list = "\n\n".join(
             f"{i}. {note.content}"
-            for i, note in enumerate(notes[:10], 1)
+            for i, note in enumerate(notes[:NOTES_DISPLAY_LIMIT], 1)
         )
 
         outgoing = OutgoingMessage(
@@ -389,6 +426,11 @@ class WhatsAppRouterAgent:
                 logger.info("No MCP servers configured, running with LLM only")
 
             self._running = True
+
+            # Start the scheduler in the background
+            self._scheduler_task = asyncio.create_task(self._run_scheduler())
+            logger.info("Scheduler task started")
+
             await self.channel.listen(self._handle_message)
 
         except Exception as e:
@@ -501,7 +543,6 @@ class WhatsAppRouterAgent:
 
         # Clean up temp file
         try:
-            import os
             os.unlink(audio_path)
         except Exception as e:
             logger.warning(f"Failed to clean up audio file: {e}")
