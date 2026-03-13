@@ -157,12 +157,8 @@ class WhatsAppRouterAgent:
 
     def _get_storage_repos(self) -> tuple[Any, Any]:
         """Get or create storage repository instances."""
-        # Lazy import to avoid import errors if package not installed
-        try:
-            from agntrick_storage import Database, NoteRepository, TaskRepository
-        except ImportError:
-            logger.warning("agntrick-storage package not available, storage commands disabled")
-            return None, None
+        # Use inlined storage module
+        from agntrick_whatsapp.storage import Database, NoteRepository, TaskRepository
 
         if self._task_repo is None:
             db = Database(self._storage_db_path)
@@ -287,17 +283,10 @@ class WhatsAppRouterAgent:
             await self.channel.send(outgoing)
             return
 
-        try:
-            from agntrick_storage import Database, TaskRepository
-            from agntrick_storage.models import ScheduledTask, TaskType
-            from agntrick_storage.scheduler import parse_natural_time
-        except ImportError:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
-            )
-            await self.channel.send(outgoing)
-            return
+        # Use inlined storage module
+        from agntrick_whatsapp.storage import Database, TaskRepository
+        from agntrick_whatsapp.storage.models import ScheduledTask, TaskType
+        from agntrick_whatsapp.storage.scheduler import parse_natural_time
 
         db = Database(self._storage_db_path)
         task_repo = TaskRepository(db)
@@ -337,16 +326,9 @@ class WhatsAppRouterAgent:
             await self.channel.send(outgoing)
             return
 
-        try:
-            from agntrick_storage import Database, NoteRepository
-            from agntrick_storage.models import Note
-        except ImportError:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
-            )
-            await self.channel.send(outgoing)
-            return
+        # Use inlined storage module
+        from agntrick_whatsapp.storage import Database, NoteRepository
+        from agntrick_whatsapp.storage.models import Note
 
         db = Database(self._storage_db_path)
         note_repo = NoteRepository(db)
@@ -372,15 +354,8 @@ class WhatsAppRouterAgent:
             await self.channel.send(outgoing)
             return
 
-        try:
-            from agntrick_storage import Database, NoteRepository
-        except ImportError:
-            outgoing = OutgoingMessage(
-                text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
-            )
-            await self.channel.send(outgoing)
-            return
+        # Use inlined storage module
+        from agntrick_whatsapp.storage import Database, NoteRepository
 
         db = Database(self._storage_db_path)
         note_repo = NoteRepository(db)

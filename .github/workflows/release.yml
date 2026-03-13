@@ -2,12 +2,15 @@ name: Release
 on:
   release:
     types: [published]
-    permissions:
-      contents: read
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   publish-pypi:
     runs-on: ubuntu-latest
+    if: startsWith(github.event.release.tag_name, 'v') && !startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
     environment:
       name: pypi
       url: https://pypi.org/p/agntrick
@@ -27,8 +30,10 @@ jobs:
         run: make build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
   publish-whatsapp-pypi:
     runs-on: ubuntu-latest
+    if: startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
     environment:
       name: pypi
       url: https://pypi.org/p/agntrick-whatsapp
@@ -50,9 +55,13 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/agntrick-whatsapp/dist
+
   publish-testpypi:
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease == true
+    if: |
+      github.event.release.prerelease == true &&
+      startsWith(github.event.release.tag_name, 'v') &&
+      !startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
     environment:
       name: testpypi
       url: https://test.pypi.org/p/agntrick
@@ -74,9 +83,12 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+
   publish-whatsapp-testpypi:
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease == true
+    if: |
+      github.event.release.prerelease == true &&
+      startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
     environment:
       name: testpypi
       url: https://test.pypi.org/p/agntrick-whatsapp

@@ -10,6 +10,9 @@
 #   - gh CLI installed and authenticated
 #   - No uncommitted changes
 #   - All tests passing
+#
+# Environment Variables:
+#   - FORCE_RELEASE=1: Bypass branch check (use with caution)
 
 set -e
 
@@ -25,6 +28,28 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 validate_version() {
     if [[ ! $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         log_error "Invalid version format: $1 (expected X.Y.Z)"
+    fi
+}
+
+check_branch() {
+    local current_branch
+    current_branch=$(git branch --show-current)
+
+    if [[ "$current_branch" != "main" ]]; then
+        if [[ "${FORCE_RELEASE}" != "1" ]]; then
+            echo ""
+            log_error "You are on branch '$current_branch', but releases should be done from 'main'."
+            echo ""
+            echo "To proceed anyway, set FORCE_RELEASE=1:"
+            echo "  FORCE_RELEASE=1 make release VERSION=$2"
+            echo ""
+            echo "Or switch to main branch first:"
+            echo "  git checkout main"
+            echo "  git pull origin main"
+            exit 1
+        else
+            log_warn "Bypassing branch check on '$current_branch' (FORCE_RELEASE=1)"
+        fi
     fi
 }
 
@@ -74,6 +99,7 @@ WHATSAPP_VERSION=${3:-}
 
 check_gh
 check_clean
+check_branch "$PACKAGE" "$VERSION"
 
 case "$PACKAGE" in
     agntrick)
