@@ -12,10 +12,12 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from agntrick.constants import STORAGE_DIR
+
 logger = logging.getLogger(__name__)
 
 # Default cache settings
-DEFAULT_CACHE_DIR = Path.home() / ".agntrick" / "storage" / "youtube"
+DEFAULT_CACHE_DIR = STORAGE_DIR / "youtube"
 DEFAULT_MAX_SIZE_MB = 100
 DEFAULT_TTL_DAYS = 30  # 0 = no TTL
 

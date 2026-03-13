@@ -54,3 +54,5 @@ storage/whatsapp/
 !storage/whatsapp/.gitkeep
 storage/youtube/
 !storage/youtube/.gitkeep
+storage/agntrick/
+!storage/.gitkeep

@@ -1,7 +1,7 @@
 [project]
-name = "agntrick-whatsapp"
-version = "0.3.3"
-description = "WhatsApp integration for Agntrick agents"
+name = "agntrick-storage"
+version = "0.1.0"
+description = "Persistent storage for scheduled tasks and notes"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 authors = [
@@ -15,16 +15,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-keywords = ["ai", "agents", "whatsapp", "messaging", "llm"]
+keywords = ["ai", "agents", "storage", "scheduling", "cron"]
 
 dependencies = [
-    "agntrick>=0.2.8",
-    "agntrick-storage>=0.1.0",
-    "neonize",
-    "ffmpeg-python>=0.2.0",
     "pydantic>=2.12.5",
-    "httpx>=0.28.0",
-    "pyyaml>=6.0",
+    "dateparser>=1.2.0",
+    "croniter>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -44,12 +40,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agntrick_whatsapp"]
+packages = ["src/agntrick_storage"]
 
 [tool.pytest.ini_options]
 addopts = "-ra -q --import-mode=importlib"
 testpaths = ["tests"]
-asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 120

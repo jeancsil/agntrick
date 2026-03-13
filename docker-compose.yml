@@ -21,6 +21,9 @@ services:
       # Mount logs directory for easy access from host
       - ./logs:/app/logs
 
+      # Mount storage directory for persistent data
+      - ./storage:/app/storage
+
       # Mount pyproject.toml in case you need to update dependencies
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
