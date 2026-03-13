@@ -151,9 +151,11 @@ class CommandParser:
         return QueryCommand(command_type=CommandType.YOUTUBE, query=query)
 
     def _parse_schedule(self, args: str) -> ScheduleCommand:
-        """Parse /schedule command.
+        """Parse /schedule command with smart time extraction.
 
         Format: /schedule <time> <agent> [prompt]
+
+        Uses dateparser and recurring pattern detection to find the time expression.
         """
         if not args:
             return ScheduleCommand(
@@ -163,14 +165,74 @@ class CommandParser:
                 prompt="Usage: /schedule <time> <agent> [prompt]"
             )
 
-        parts = args.split(maxsplit=2)
-        time_str = parts[0]
-        agent = parts[1] if len(parts) > 1 else None
-        prompt = parts[2] if len(parts) > 2 else None
+        import re
+
+        import dateparser
+
+        words = args.split()
+        best_time_str = words[0]
+        best_time_end = 1
+
+        # Pattern for "every day at HH:MM [am/pm]" - captures time with optional am/pm
+        # The am/pm might be attached to the time or a separate word
+        every_day_pattern = re.compile(
+            r"^every\s+days?\s+at\s+\d{1,2}(?::\d{2})?\s*(am|pm)?$",
+            re.IGNORECASE
+        )
+        # Pattern that matches up to the time (before am/pm)
+        every_day_time_pattern = re.compile(
+            r"^every\s+days?\s+at\s+\d{1,2}(?::\d{2})?$",
+            re.IGNORECASE
+        )
+
+        # Check for "every day at HH:MM [am/pm]" pattern first (highest priority)
+        for i in range(1, len(words) + 1):
+            candidate = " ".join(words[:i])
+            if every_day_pattern.match(candidate):
+                # Check if next word is am/pm - if so, include it
+                if i < len(words) and words[i].lower() in ("am", "pm"):
+                    best_time_str = candidate + " " + words[i]
+                    best_time_end = i + 1
+                else:
+                    best_time_str = candidate
+                    best_time_end = i
+                break
+            # Also check if current candidate is time (without am/pm) and next word is am/pm
+            if every_day_time_pattern.match(candidate):
+                if i < len(words) and words[i].lower() in ("am", "pm"):
+                    best_time_str = candidate + " " + words[i]
+                    best_time_end = i + 1
+                    break
+
+        # If no recurring pattern found, try dateparser for one-time expressions
+        # Find the LONGEST valid time expression
+        if best_time_end == 1:
+            for i in range(len(words), 0, -1):  # Start from longest
+                candidate = " ".join(words[:i])
+                parsed = dateparser.parse(candidate)
+                if parsed is not None:
+                    # Verify this is a reasonable time expression
+                    # (not something like "in 5 minutes bot" which dateparser incorrectly parses)
+                    remaining = len(words) - i
+                    # Accept if we have room for agent (at least 1 remaining word)
+                    if remaining >= 1:
+                        best_time_str = candidate
+                        best_time_end = i
+                        break
+                    # Or if this uses all words (no agent/prompt)
+                    if remaining == 0:
+                        best_time_str = candidate
+                        best_time_end = i
+                        break
+
+        # After time: next word is agent, rest is prompt
+        remaining_words = words[best_time_end:]
+        agent = remaining_words[0] if remaining_words else None
+        prompt = " ".join(remaining_words[1:]) if len(remaining_words) > 1 else None
 
         return ScheduleCommand(
             command_type=CommandType.SCHEDULE,
-            time_str=time_str,
+            time_str=best_time_str,
             agent=agent,
             prompt=prompt
         )
