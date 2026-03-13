@@ -33,6 +33,7 @@ sys.modules["langgraph.checkpoint.memory"] = MagicMock()
 from agntrick_whatsapp.commands import (
     CommandParser,
     CommandType,
+    HelpCommand,
     NoteCommand,
     NotesCommand,
     QueryCommand,
@@ -238,6 +239,25 @@ class TestCommandParser:
         assert isinstance(result, NotesCommand)
         assert result.command_type == CommandType.NOTES
 
+    # === HELP command tests ===
+    def test_parse_help(self, parser):
+        """Test parsing /help command."""
+        result = parser.parse("/help")
+        assert isinstance(result, HelpCommand)
+        assert result.command_type == CommandType.HELP
+
+    def test_parse_help_uppercase(self, parser):
+        """Test parsing /HELP (case insensitive)."""
+        result = parser.parse("/HELP")
+        assert isinstance(result, HelpCommand)
+        assert result.command_type == CommandType.HELP
+
+    def test_parse_help_with_extra_args(self, parser):
+        """Test /help ignores extra arguments."""
+        result = parser.parse("/help something else")
+        assert isinstance(result, HelpCommand)
+        assert result.command_type == CommandType.HELP
+
     # === DEFAULT mode tests ===
     def test_parse_default_plain_text(self, parser):
         """Test parsing plain text without command prefix."""
@@ -309,10 +329,11 @@ class TestCommandTypes:
         assert CommandType.REMIND.value == "remind"
         assert CommandType.NOTE.value == "note"
         assert CommandType.NOTES.value == "notes"
+        assert CommandType.HELP.value == "help"
 
     def test_command_type_count(self):
         """Test that we have the expected number of command types."""
-        assert len(CommandType) == 7
+        assert len(CommandType) == 8
 
 
 class TestCommandDataclasses:
@@ -358,6 +379,11 @@ class TestCommandDataclasses:
         """Test creating a NotesCommand."""
         cmd = NotesCommand(command_type=CommandType.NOTES)
         assert cmd.command_type == CommandType.NOTES
+
+    def test_help_command_creation(self):
+        """Test creating a HelpCommand."""
+        cmd = HelpCommand(command_type=CommandType.HELP)
+        assert cmd.command_type == CommandType.HELP
 
     def test_schedule_command_defaults(self):
         """Test ScheduleCommand with optional fields as None."""
