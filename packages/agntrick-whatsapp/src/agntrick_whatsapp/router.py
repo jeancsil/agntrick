@@ -346,7 +346,7 @@ class WhatsAppRouterAgent:
             return
 
         note_list = "\n\n".join(
-            f"{i + 1}. {note.content[:50]}..." if len(note.content) > 50 else note.content
+            f"{i}. {note.content}"
             for i, note in enumerate(notes[:10], 1)
         )
 
