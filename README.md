@@ -397,6 +397,25 @@ make build-clean # Remove build artifacts
 ```
 </details>
 
+<details>
+<summary><strong>📦 Release Commands</strong></summary>
+
+Automated release commands for publishing to PyPI:
+
+```bash
+# Release core agntrick package
+make release VERSION=0.3.0
+
+# Release agntrick-whatsapp package
+make release-whatsapp VERSION=0.4.0
+
+# Release both packages with different versions
+make release-both CORE=0.3.0 WHATSAPP=0.4.0
+```
+
+📖 **See [RELEASING.md](RELEASING.md)** for complete release documentation, troubleshooting, and manual release procedures.
+</details>
+
 ---
 
 ## 🤝 Contributing

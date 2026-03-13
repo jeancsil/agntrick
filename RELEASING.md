@@ -37,6 +37,7 @@ Agntrick uses PyPI's [Trusted Publishers](https://docs.pypi.org/trusted-publishe
 
 - You must have `push` access to the repository
 - You must be a maintainer/owner of PyPI projects
+- **You must be on the `main` branch** (or use `FORCE_RELEASE=1` to bypass)
 
 ### 3. GitHub CLI
 
@@ -255,6 +256,28 @@ Fix test failures before releasing:
 ```bash
 make check && make test
 # Fix issues, then retry release
+```
+
+### "You are on branch 'X', but releases should be done from 'main'"
+
+The release script checks that you're on the `main` branch before releasing. This prevents accidental releases from feature branches.
+
+**To fix:**
+
+```bash
+# Switch to main branch
+git checkout main
+git pull origin main
+
+# Then try release again
+make release VERSION=0.3.0
+```
+
+**To bypass this check (not recommended):**
+
+```bash
+# Only use this if you know what you're doing
+FORCE_RELEASE=1 make release VERSION=0.3.0
 ```
 
 ### "GitHub CLI (gh) is required"
