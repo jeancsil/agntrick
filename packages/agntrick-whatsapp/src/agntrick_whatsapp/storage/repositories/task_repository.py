@@ -33,14 +33,16 @@ class TaskRepository:
         Returns:
             The saved task.
         """
+        import json
+
         conn = self._db.connection
         cursor = conn.cursor()
         cursor.execute(
             """
             INSERT OR REPLACE INTO scheduled_tasks
             (id, action_type, action_agent, action_prompt, execute_at,
-             cron_expression, status, created_at, completed_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             cron_expression, status, created_at, completed_at, error_message, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task.id,
@@ -53,6 +55,7 @@ class TaskRepository:
                 task.created_at,
                 task.completed_at,
                 task.error_message,
+                json.dumps(task.metadata) if task.metadata else None,
             ),
         )
         conn.commit()
@@ -145,6 +148,12 @@ class TaskRepository:
         Returns:
             ScheduledTask instance.
         """
+        import json
+
         from agntrick_whatsapp.storage.models import ScheduledTask
+
+        # Parse metadata from JSON if present
+        if row.get("metadata") and isinstance(row["metadata"], str):
+            row["metadata"] = json.loads(row["metadata"])
 
         return ScheduledTask.from_db_row(row)
