@@ -39,7 +39,6 @@ Avoid overly long explanations.
 Use emojis occasionally to be more conversational.
 If you need to show code or data, use formatted text blocks.
 Focus on being helpful and direct.
-"""
 
 CAPABILITIES:
 - You have access to web search (DuckDuckGo) and web content fetching tools
@@ -60,6 +59,7 @@ RESPONSE GUIDELINES:
 - If information is uncertain, say so rather than guessing
 - For complex topics, offer to elaborate if needed
 - Prioritize accuracy over completeness
+"""
 
 LEARNING_SYSTEM_PROMPT = """You are an expert educator and tutorial creator communicating through WhatsApp.
 Your specialty is breaking down complex topics into clear, step-by-step tutorials.
@@ -68,7 +68,6 @@ Break down the topic into logical steps.
 Provide clear explanations for each step.
 Include practical examples when relevant.
 Anticipate common questions and address them.
-"""
 
 CAPABILITIES:
 - You have access to web search (DuckDuckGo) and web content fetching tools
@@ -119,7 +118,6 @@ class WhatsAppRouterAgent:
     _note_repo: Any = None
 
     def __init__(self, # type: ignore[override]
-        self,
         channel: Channel,
         model_name: str | None = None,
         temperature: float = 0.7,
@@ -152,6 +150,11 @@ class WhatsAppRouterAgent:
         self._mcp_servers: list[str] = []
         # Cached MCP tools for reuse (loaded once during start)
         self._mcp_tools: list[Any] = []
+
+        # Storage for tasks and notes
+        self._storage_db_path = channel.storage_path / "storage.db"
+        self._task_repo: Any = None
+        self._note_repo: Any = None
 
         logger.info(f"WhatsAppRouterAgent initialized with model={model_name or get_default_model()}")
 
@@ -235,7 +238,7 @@ class WhatsAppRouterAgent:
         elif text.lower() == "/schedule":
             return ("schedule", "Usage: /schedule <time> <agent> [prompt]")
         elif text.lower().startswith("/remind "):
-            return self._parse_remind_command(text[8:])
+            return self._parse_remind_command(text[7:])
         elif text.lower() == "/remind":
             return ("remind", "Usage: /remind <time> <prompt>")
         elif text.lower().startswith("/note "):
@@ -264,21 +267,37 @@ class WhatsAppRouterAgent:
         """Parse remind command.
 
         Format: /remind <time> <prompt>
-        """
-        parts = text.split(maxsplit=2)
-        if len(parts) < 2:
-            return None
-        time_str = parts[0]
-        prompt = parts[1] if len(parts) > 1 else None
-        return "remind", time_str, prompt
 
-    async def _handle_schedule(self, mode: str, time_str: str, agent: str, prompt: str) -> None:
+        Attempts to extract the time expression by trying progressively longer
+        prefixes until dateparser can parse them.
+        """
+        import dateparser
+
+        words = text.split()
+        if not words:
+            return None
+
+        # Try to find the longest parseable time prefix
+        best_time_str = words[0]
+        best_prompt_start = 1
+
+        for i in range(1, len(words) + 1):
+            candidate = " ".join(words[:i])
+            parsed = dateparser.parse(candidate)
+            if parsed is not None:
+                best_time_str = candidate
+                best_prompt_start = i
+
+        prompt = " ".join(words[best_prompt_start:]) if best_prompt_start < len(words) else None
+        return "remind", best_time_str, prompt
+
+    async def _handle_schedule(self, mode: str, time_str: str, agent: str | None, prompt: str | None, recipient_id: str) -> None:
         """Handle schedule command - create a scheduled task."""
         task_repo, note_repo = self._get_storage_repos()
         if task_repo is None:
             outgoing = OutgoingMessage(
                 text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
+                recipient_id=recipient_id,
             )
             await self.channel.send(outgoing)
             return
@@ -305,23 +324,34 @@ class WhatsAppRouterAgent:
         task_repo.save(task)
         logger.info(f"Created task: {task.id} at {execute_at}")
 
+        # Create user-friendly confirmation message
+        time_str_formatted = parsed_time.strftime("%Y-%m-%d %H:%M")
+        if agent:
+            msg = f"✓ Scheduled! Agent '{agent}' will run at {time_str_formatted}"
+            if prompt:
+                msg += f"\n📝 Task: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+        else:
+            msg = f"✓ Reminder set for {time_str_formatted}"
+            if prompt:
+                msg += f"\n📝 {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+
         outgoing = OutgoingMessage(
-            text=f"✓ Scheduled! {task.action_type}: {agent} at {parsed_time}",
-            recipient_id=self.channel.user_id,
+            text=msg,
+            recipient_id=recipient_id,
         )
         await self.channel.send(outgoing)
 
-    async def _handle_remind(self, mode: str, time_str: str, prompt: str) -> None:
+    async def _handle_remind(self, mode: str, time_str: str, prompt: str | None, recipient_id: str) -> None:
         """Handle remind command - same as schedule but creates task immediately."""
-        await self._handle_schedule(mode, time_str, prompt)
+        await self._handle_schedule(mode, time_str, None, prompt, recipient_id)
 
-    async def _handle_note(self, content: str) -> None:
+    async def _handle_note(self, content: str, recipient_id: str) -> None:
         """Handle note command - save a note."""
         task_repo, note_repo = self._get_storage_repos()
         if note_repo is None:
             outgoing = OutgoingMessage(
                 text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
+                recipient_id=recipient_id,
             )
             await self.channel.send(outgoing)
             return
@@ -339,17 +369,17 @@ class WhatsAppRouterAgent:
 
         outgoing = OutgoingMessage(
             text=f"✓ Note saved!",
-            recipient_id=self.channel.user_id,
+            recipient_id=recipient_id,
         )
         await self.channel.send(outgoing)
 
-    async def _handle_notes(self) -> None:
+    async def _handle_notes(self, recipient_id: str) -> None:
         """Handle notes command - list all notes."""
         task_repo, note_repo = self._get_storage_repos()
         if note_repo is None:
             outgoing = OutgoingMessage(
                 text="Storage package not available. Please install agntrick-storage.",
-                recipient_id=self.channel.user_id,
+                recipient_id=recipient_id,
             )
             await self.channel.send(outgoing)
             return
@@ -365,7 +395,7 @@ class WhatsAppRouterAgent:
         if not notes:
             outgoing = OutgoingMessage(
                 text="No notes saved yet. Use /note <content> to save one.",
-                recipient_id=self.channel.user_id,
+                recipient_id=recipient_id,
             )
             await self.channel.send(outgoing)
             return
@@ -377,7 +407,7 @@ class WhatsAppRouterAgent:
 
         outgoing = OutgoingMessage(
             text=f"*Notes ({len(notes)}):*\n\n{note_list}",
-            recipient_id=self.channel.user_id,
+            recipient_id=recipient_id,
         )
         await self.channel.send(outgoing)
 
@@ -446,9 +476,17 @@ class WhatsAppRouterAgent:
             elif len(parsed) == 2:
                 mode, query = parsed
                 args = None
-            elif parsed[0] in ("schedule", "remind"):
-                mode, time_str, agent_or_prompt = parsed[1]
-                args = parsed[2:] if len(parsed) > 3 else None
+            elif parsed[0] == "schedule":
+                mode = "schedule"
+                time_str = parsed[1]
+                agent = parsed[2] if len(parsed) > 2 else None
+                prompt = parsed[3] if len(parsed) > 3 else None
+                args = None
+            elif parsed[0] == "remind":
+                mode = "remind"
+                time_str = parsed[1]
+                prompt = parsed[2] if len(parsed) > 2 else None
+                args = None
             elif parsed[0] == "note":
                 mode, content = parsed
                 args = None
@@ -468,17 +506,21 @@ class WhatsAppRouterAgent:
                 system_prompt = DEFAULT_SYSTEM_PROMPT
 
             # Handle different command types
-            if mode in ("schedule", "remind"):
-                await self._handle_schedule(mode, time_str, agent_or_prompt, args)
+            if mode == "schedule":
+                await self._handle_schedule(mode, time_str, agent, prompt, incoming.sender_id)
+            elif mode == "remind":
+                await self._handle_remind(mode, time_str, prompt, incoming.sender_id)
             elif mode == "note":
-                await self._handle_note(content)
+                await self._handle_note(content, incoming.sender_id)
             elif mode == "notes":
-                await self._handle_notes()
+                await self._handle_notes(incoming.sender_id)
             elif mode in ("learn", "youtube", "default"):
                 messages = [HumanMessage(content=query)]
-                result = await self._get_or_create_graph(
+                graph = await self._get_or_create_graph(
                     mode, system_prompt, self._mcp_tools
                 )
+                config = {"configurable": {"thread_id": incoming.sender_id}}
+                result = await graph.ainvoke({"messages": messages}, config)
                 response_text = str(result["messages"][-1].content)
                 # Send response
                 outgoing = OutgoingMessage(
