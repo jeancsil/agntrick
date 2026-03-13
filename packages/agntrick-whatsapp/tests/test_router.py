@@ -1,7 +1,7 @@
-"""Unit tests for WhatsAppRouterAgent command parsing."""
+"""Unit tests for WhatsAppRouterAgent."""
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -49,113 +49,6 @@ class MockChannel:
         self.storage_path = Path("/tmp/test_storage")
 
 
-class TestCommandParsing:
-    """Tests for _parse_command method."""
-
-    @pytest.fixture
-    def router(self):
-        """Create a router instance with mock channel."""
-        return WhatsAppRouterAgent(channel=MockChannel())
-
-    def test_parse_remind_basic(self, router):
-        """Test basic remind command parsing."""
-        result = router._parse_command("/remind tomorrow buy milk")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "tomorrow"
-        assert result[2] == "buy milk"
-
-    def test_parse_remind_with_time(self, router):
-        """Test remind command with specific time."""
-        result = router._parse_command("/remind tomorrow at 4am wake up")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "tomorrow at 4am"
-        assert result[2] == "wake up"
-
-    def test_parse_remind_long_prompt(self, router):
-        """Test remind command with long prompt."""
-        result = router._parse_command("/remind tomorrow at 4am formula1 chinese grand prix sprint race is going to start")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "tomorrow at 4am"
-        assert result[2] == "formula1 chinese grand prix sprint race is going to start"
-
-    def test_parse_remind_minimal(self, router):
-        """Test remind command with just time."""
-        result = router._parse_command("/remind in 5 minutes")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "in 5 minutes"
-        assert result[2] is None
-
-    def test_parse_remind_in_one_hour(self, router):
-        """Test remind command with 'in X time' format."""
-        result = router._parse_command("/remind in 2 hours check the oven")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "in 2 hours"
-        assert result[2] == "check the oven"
-
-    def test_parse_schedule_basic(self, router):
-        """Test basic schedule command parsing."""
-        result = router._parse_command("/schedule tomorrow agent1 do something")
-        assert result is not None
-        assert result[0] == "schedule"
-        assert result[1] == "tomorrow"
-        assert result[2] == "agent1"
-        assert result[3] == "do something"
-
-    def test_parse_schedule_no_prompt(self, router):
-        """Test schedule command without prompt."""
-        result = router._parse_command("/schedule tomorrow agent1")
-        assert result is not None
-        assert result[0] == "schedule"
-        assert result[1] == "tomorrow"
-        assert result[2] == "agent1"
-        assert result[3] is None
-
-    def test_parse_note(self, router):
-        """Test note command parsing."""
-        result = router._parse_command("/note remember this")
-        assert result is not None
-        assert result[0] == "note"
-        assert result[1] == "remember this"
-
-    def test_parse_learn(self, router):
-        """Test learn command parsing."""
-        result = router._parse_command("/learn python programming")
-        assert result is not None
-        assert result[0] == "learn"
-        assert result[1] == "python programming"
-
-    def test_parse_youtube(self, router):
-        """Test youtube command parsing."""
-        result = router._parse_command("/youtube https://youtube.com/watch?v=123")
-        assert result is not None
-        assert result[0] == "youtube"
-        assert result[1] == "https://youtube.com/watch?v=123"
-
-    def test_parse_default(self, router):
-        """Test default mode (no command prefix)."""
-        result = router._parse_command("hello world")
-        assert result == ("default", "hello world")
-
-    def test_parse_remind_case_insensitive(self, router):
-        """Test remind command is case insensitive."""
-        result = router._parse_command("/REMIND tomorrow test")
-        assert result is not None
-        assert result[0] == "remind"
-
-    def test_parse_remind_extra_spaces(self, router):
-        """Test remind command with extra spaces."""
-        result = router._parse_command("/remind   tomorrow   test")
-        assert result is not None
-        assert result[0] == "remind"
-        assert result[1] == "tomorrow"
-        assert result[2] == "test"
-
-
 class TestStorageInitialization:
     """Tests for storage initialization."""
 
@@ -175,26 +68,15 @@ class TestStorageInitialization:
         assert router._storage_db_path.name == "storage.db"
 
 
-class TestRemindScheduleRouting:
-    """Tests for remind and schedule routing after parsing."""
+class TestCommandParserIntegration:
+    """Tests for command parser integration with router."""
 
-    @pytest.fixture
-    def router(self):
-        """Create a router instance with mock channel."""
-        return WhatsAppRouterAgent(channel=MockChannel())
+    def test_router_has_command_parser(self):
+        """Test that router has a command parser instance."""
+        router = WhatsAppRouterAgent(channel=MockChannel())
+        assert hasattr(router, "_command_parser")
 
-    def test_remind_parsing_sets_correct_mode(self, router):
-        """Test that remind command sets mode to 'remind' not the time."""
-        result = router._parse_command("/remind tomorrow do something")
-        assert result[0] == "remind", "Mode should be 'remind', not 'tomorrow'"
-
-    def test_schedule_parsing_sets_correct_mode(self, router):
-        """Test that schedule command sets mode to 'schedule' not the time."""
-        result = router._parse_command("/schedule tomorrow agent1 do something")
-        assert result[0] == "schedule", "Mode should be 'schedule', not 'tomorrow'"
-
-    def test_remind_time_is_fully_extracted(self, router):
-        """Test that full time expression is extracted for remind."""
-        result = router._parse_command("/remind in 5 minutes test")
-        assert result[1] == "in 5 minutes", "Time string should include full time expression"
-        assert result[2] == "test"
+    def test_command_parser_is_used(self):
+        """Test that the command parser is properly initialized."""
+        router = WhatsAppRouterAgent(channel=MockChannel())
+        assert router._command_parser is not None
