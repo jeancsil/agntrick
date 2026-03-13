@@ -114,9 +114,9 @@ class TestCommandParser:
         result = parser.parse("/schedule tomorrow at 9am developer review the code")
         assert isinstance(result, ScheduleCommand)
         assert result.command_type == CommandType.SCHEDULE
-        assert result.time_str == "tomorrow"
-        assert result.agent == "at"
-        assert "9am" in result.prompt
+        assert result.time_str == "tomorrow at 9am"
+        assert result.agent == "developer"
+        assert result.prompt == "review the code"
 
     def test_parse_schedule_minimal(self, parser):
         """Test parsing /schedule with time and agent only."""
@@ -147,6 +147,15 @@ class TestCommandParser:
         result = parser.parse("/schedule")
         assert isinstance(result, ScheduleCommand)
         assert "Usage" in result.prompt
+
+    def test_parse_schedule_every_day(self, parser):
+        """Test parsing /schedule with 'every day' pattern."""
+        result = parser.parse("/schedule every day at 8am news summarize headlines")
+        assert isinstance(result, ScheduleCommand)
+        assert result.command_type == CommandType.SCHEDULE
+        assert "day" in result.time_str.lower() or "8am" in result.time_str
+        assert result.agent == "news"
+        assert "summarize" in result.prompt
 
     # === REMIND command tests ===
     def test_parse_remind_full(self, parser):

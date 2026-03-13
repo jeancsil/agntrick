@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for recurring time expressions (efficiency: compile once at module load)
 RECURRING_PATTERNS = [
+    # "every day at 8am" or "every day at 8:00 am"
+    (re.compile(r"every\s+(?:day|days)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.IGNORECASE), "every_day_at"),
     (re.compile(r"every\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)", re.IGNORECASE), "simple"),
     (re.compile(r"daily|daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?", re.IGNORECASE), "daily"),
     (re.compile(r"weekly|weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.IGNORECASE), "weekly"),
@@ -64,7 +66,18 @@ def _pattern_to_cron(match: re.Match, pattern_type: str) -> str | None:
     Returns:
         Cron expression string or None if conversion failed.
     """
-    if pattern_type == "simple":
+    if pattern_type == "every_day_at":
+        hour = match.group(1)
+        minute = match.group(2) or "0"
+        ampm = match.group(3) or "am"
+        h = int(hour)
+        m = int(minute)
+        if ampm.lower() == "pm" and h != 12:
+            h += 12
+        elif ampm.lower() == "am" and h == 12:
+            h = 0
+        return f"{m} {h} * * *"
+    elif pattern_type == "simple":
         unit = match.group(1).lower()
         # "every minute" -> "* * * * *"
         if unit in ("minute", "minutes"):
