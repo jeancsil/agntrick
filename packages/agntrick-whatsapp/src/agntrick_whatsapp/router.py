@@ -23,6 +23,7 @@ from agntrick_whatsapp.base import Channel, IncomingMessage, OutgoingMessage
 from agntrick_whatsapp.commands import (
     CommandParser,
     CommandType,
+    HelpCommand,
     NoteCommand,
     NotesCommand,
     QueryCommand,
@@ -393,6 +394,33 @@ class WhatsAppRouterAgent:
         )
         await self.channel.send(outgoing)
 
+    async def _handle_help(self, recipient_id: str) -> None:
+        """Handle help command - show available commands."""
+        help_text = """*🤖 Available Commands*
+
+*Learning & Content*
+• /learn <topic> - Get a tutorial on a topic
+• /youtube <url> - Analyze a YouTube video
+
+*Reminders & Scheduling*
+• /remind <time> <message> - Set a reminder
+  Example: /remind in 30 min check the oven
+• /schedule <time> <agent> [task] - Schedule an agent task
+  Example: /schedule tomorrow 9am assistant summarize news
+
+*Notes*
+• /note <content> - Save a note
+• /notes - List all saved notes
+
+*Other*
+• /help - Show this help message
+• <any message> - Chat with the AI assistant
+
+*Time formats*: "in 5 min", "tomorrow at 9am", "in 2 hours", "next monday"
+"""
+        outgoing = OutgoingMessage(text=help_text, recipient_id=recipient_id)
+        await self.channel.send(outgoing)
+
     async def start(self) -> None:
         """Start= WhatsApp router agent."""
         if self._running:
@@ -469,6 +497,8 @@ class WhatsAppRouterAgent:
                     await self._handle_note(content, incoming.sender_id)
                 case NotesCommand():
                     await self._handle_notes(incoming.sender_id)
+                case HelpCommand():
+                    await self._handle_help(incoming.sender_id)
                 case QueryCommand(command_type=cmd_type, query=query):
                     # Get appropriate system prompt
                     system_prompt = self._get_system_prompt(cmd_type)

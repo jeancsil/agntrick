@@ -20,6 +20,7 @@ class CommandType(Enum):
     REMIND = "remind"
     NOTE = "note"
     NOTES = "notes"
+    HELP = "help"
 
 
 @dataclass
@@ -61,8 +62,14 @@ class NotesCommand(BaseCommand):
     pass
 
 
+@dataclass
+class HelpCommand(BaseCommand):
+    """Help command to show available commands."""
+    pass
+
+
 # Type alias for all command types
-Command = QueryCommand | ScheduleCommand | RemindCommand | NoteCommand | NotesCommand
+Command = QueryCommand | ScheduleCommand | RemindCommand | NoteCommand | NotesCommand | HelpCommand
 
 
 class CommandParser:
@@ -81,6 +88,7 @@ class CommandParser:
         "/remind": CommandType.REMIND,
         "/note": CommandType.NOTE,
         "/notes": CommandType.NOTES,
+        "/help": CommandType.HELP,
     }
 
     def parse(self, text: str) -> Command:
@@ -127,6 +135,8 @@ class CommandParser:
                 return self._parse_note(args)
             case CommandType.NOTES:
                 return NotesCommand(command_type=CommandType.NOTES)
+            case CommandType.HELP:
+                return HelpCommand(command_type=CommandType.HELP)
             case _:
                 return QueryCommand(command_type=CommandType.DEFAULT, query=original_text)
 
