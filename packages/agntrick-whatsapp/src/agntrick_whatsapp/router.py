@@ -21,6 +21,15 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agntrick_whatsapp.base import Channel, IncomingMessage, OutgoingMessage
+from agntrick_whatsapp.commands import (
+    CommandParser,
+    CommandType,
+    NoteCommand,
+    NotesCommand,
+    QueryCommand,
+    RemindCommand,
+    ScheduleCommand,
+)
 from agntrick_whatsapp.config import AudioTranscriberConfig
 from agntrick_whatsapp.transcriber import AudioTranscriber
 
@@ -156,6 +165,9 @@ class WhatsAppRouterAgent:
         self._task_repo: Any = None
         self._note_repo: Any = None
 
+        # Command parser
+        self._command_parser = CommandParser()
+
         logger.info(f"WhatsAppRouterAgent initialized with model={model_name or get_default_model()}")
 
     def _get_storage_repos(self) -> tuple[Any, Any]:
@@ -171,6 +183,16 @@ class WhatsAppRouterAgent:
             self._note_repo = NoteRepository(db)
 
         return self._task_repo, self._note_repo
+
+    def _get_system_prompt(self, command_type: CommandType) -> str:
+        """Get the appropriate system prompt for a command type."""
+        match command_type:
+            case CommandType.LEARN:
+                return LEARNING_SYSTEM_PROMPT
+            case CommandType.YOUTUBE:
+                return YOUTUBE_SYSTEM_PROMPT
+            case _:
+                return DEFAULT_SYSTEM_PROMPT
 
     async def _get_or_create_graph(self, mode: str, system_prompt: str, mcp_tools: list[Any] | None = None) -> Any:
         """Get or create an agent graph for a given mode.
@@ -213,83 +235,6 @@ class WhatsAppRouterAgent:
                 return self._graphs[f"{mode}_with_mcp"]
             else:
                 return self._graphs[f"{mode}_no_mcp"]
-
-    def _parse_command(self, text: str) -> tuple[str, str] | tuple[str, str, str] | None:
-        """Parse message text to extract command and query.
-
-        Returns:
-            Tuple of (mode, query) for learn/youtube/default modes,
-            Tuple of (mode, query, args) for schedule/remind commands,
-            Tuple of (mode, args) for note commands,
-            or None for default mode.
-        """
-        text = text.strip()
-
-        if text.lower().startswith("/learn "):
-            return ("learn", text[7:].strip())
-        elif text.lower() == "/learn":
-            return ("learn", "What would you like to learn about? Please provide a topic.")
-        elif text.lower().startswith("/youtube "):
-            return ("youtube", text[9:].strip())
-        elif text.lower() == "/youtube":
-            return ("youtube", "Please provide a YouTube URL or tell me what you'd like to know about a video.")
-        elif text.lower().startswith("/schedule "):
-            return self._parse_schedule_command(text[10:])
-        elif text.lower() == "/schedule":
-            return ("schedule", "Usage: /schedule <time> <agent> [prompt]")
-        elif text.lower().startswith("/remind "):
-            return self._parse_remind_command(text[7:])
-        elif text.lower() == "/remind":
-            return ("remind", "Usage: /remind <time> <prompt>")
-        elif text.lower().startswith("/note "):
-            return ("note", text[6:].strip())
-        elif text.lower() == "/note":
-            return ("note", "Please provide the note content.")
-        elif text.lower() == "/notes":
-            return ("notes", None)
-        else:
-            return ("default", text)
-
-    def _parse_schedule_command(self, text: str) -> tuple[str, str, str] | None:
-        """Parse schedule command.
-
-        Format: /schedule <time> <agent> [prompt]
-        """
-        parts = text.split(maxsplit=3)
-        if len(parts) < 2:
-            return None
-        time_str = parts[0]
-        agent = parts[1] if len(parts) > 1 else None
-        prompt = " ".join(parts[2:]) if len(parts) > 2 else None
-        return "schedule", time_str, agent, prompt
-
-    def _parse_remind_command(self, text: str) -> tuple[str, str, str] | None:
-        """Parse remind command.
-
-        Format: /remind <time> <prompt>
-
-        Attempts to extract the time expression by trying progressively longer
-        prefixes until dateparser can parse them.
-        """
-        import dateparser
-
-        words = text.split()
-        if not words:
-            return None
-
-        # Try to find the longest parseable time prefix
-        best_time_str = words[0]
-        best_prompt_start = 1
-
-        for i in range(1, len(words) + 1):
-            candidate = " ".join(words[:i])
-            parsed = dateparser.parse(candidate)
-            if parsed is not None:
-                best_time_str = candidate
-                best_prompt_start = i
-
-        prompt = " ".join(words[best_prompt_start:]) if best_prompt_start < len(words) else None
-        return "remind", best_time_str, prompt
 
     async def _handle_schedule(self, mode: str, time_str: str, agent: str | None, prompt: str | None, recipient_id: str) -> None:
         """Handle schedule command - create a scheduled task."""
@@ -464,70 +409,43 @@ class WhatsAppRouterAgent:
                 await self._handle_audio(incoming)
                 return
 
-            # Parse command
-            parsed = self._parse_command(message_text)
-            logger.info(f"Routing to: {parsed}")
+            # Parse command using the new command parser
+            command = self._command_parser.parse(message_text)
+            logger.info(f"Routing to: {command}")
 
-            # Handle different command types
-            if parsed is None:
-                mode = "default"
-                query = message_text
-                args = None
-            elif len(parsed) == 2:
-                mode, query = parsed
-                args = None
-            elif parsed[0] == "schedule":
-                mode = "schedule"
-                time_str = parsed[1]
-                agent = parsed[2] if len(parsed) > 2 else None
-                prompt = parsed[3] if len(parsed) > 3 else None
-                args = None
-            elif parsed[0] == "remind":
-                mode = "remind"
-                time_str = parsed[1]
-                prompt = parsed[2] if len(parsed) > 2 else None
-                args = None
-            elif parsed[0] == "note":
-                mode, content = parsed
-                args = None
-            elif parsed[0] == "notes":
-                mode = parsed[0]
-                args = None
-            else:
-                mode, query = parsed
-                args = None
+            # Dispatch to appropriate handler using pattern matching
+            match command:
+                case ScheduleCommand(time_str=time_str, agent=agent, prompt=prompt):
+                    await self._handle_schedule(
+                        command.command_type.value, time_str, agent, prompt, incoming.sender_id
+                    )
+                case RemindCommand(time_str=time_str, prompt=prompt):
+                    await self._handle_remind(
+                        command.command_type.value, time_str, prompt, incoming.sender_id
+                    )
+                case NoteCommand(content=content):
+                    await self._handle_note(content, incoming.sender_id)
+                case NotesCommand():
+                    await self._handle_notes(incoming.sender_id)
+                case QueryCommand(command_type=cmd_type, query=query):
+                    # Get appropriate system prompt
+                    system_prompt = self._get_system_prompt(cmd_type)
 
-            # Get appropriate system prompt
-            if mode == "learn":
-                system_prompt = LEARNING_SYSTEM_PROMPT
-            elif mode == "youtube":
-                system_prompt = YOUTUBE_SYSTEM_PROMPT
-            else:
-                system_prompt = DEFAULT_SYSTEM_PROMPT
+                    # Execute agent
+                    messages = [HumanMessage(content=query)]
+                    graph = await self._get_or_create_graph(
+                        cmd_type.value, system_prompt, self._mcp_tools
+                    )
+                    config = {"configurable": {"thread_id": incoming.sender_id}}
+                    result = await graph.ainvoke({"messages": messages}, config)
+                    response_text = str(result["messages"][-1].content)
 
-            # Handle different command types
-            if mode == "schedule":
-                await self._handle_schedule(mode, time_str, agent, prompt, incoming.sender_id)
-            elif mode == "remind":
-                await self._handle_remind(mode, time_str, prompt, incoming.sender_id)
-            elif mode == "note":
-                await self._handle_note(content, incoming.sender_id)
-            elif mode == "notes":
-                await self._handle_notes(incoming.sender_id)
-            elif mode in ("learn", "youtube", "default"):
-                messages = [HumanMessage(content=query)]
-                graph = await self._get_or_create_graph(
-                    mode, system_prompt, self._mcp_tools
-                )
-                config = {"configurable": {"thread_id": incoming.sender_id}}
-                result = await graph.ainvoke({"messages": messages}, config)
-                response_text = str(result["messages"][-1].content)
-                # Send response
-                outgoing = OutgoingMessage(
-                    text=response_text, recipient_id=incoming.sender_id
-                )
-                await self.channel.send(outgoing)
-                logger.info(f"Response sent to {incoming.sender_id}")
+                    # Send response
+                    outgoing = OutgoingMessage(
+                        text=response_text, recipient_id=incoming.sender_id
+                    )
+                    await self.channel.send(outgoing)
+                    logger.info(f"Response sent to {incoming.sender_id}")
 
         except Exception as e:
             logger.error(f"Error handling message: {e}")
