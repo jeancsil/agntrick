@@ -3,8 +3,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 # Mock agntrick module and all its submodules before importing router
 mock_agntrick = MagicMock()
 
