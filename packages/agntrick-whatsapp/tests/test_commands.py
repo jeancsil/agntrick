@@ -39,6 +39,7 @@ from agntrick_whatsapp.commands import (
     QueryCommand,
     RemindCommand,
     ScheduleCommand,
+    SchedulesCommand,
 )
 
 
@@ -157,6 +158,24 @@ class TestCommandParser:
         assert result.agent == "news"
         assert "summarize" in result.prompt
 
+    def test_parse_schedule_every_day_without_at(self, parser):
+        """Test parsing /schedule 'every day 8:00 am' without 'at' keyword."""
+        result = parser.parse("/schedule every day 8:00 am news summarize headlines")
+        assert isinstance(result, ScheduleCommand)
+        assert result.command_type == CommandType.SCHEDULE
+        assert result.time_str == "every day 8:00 am"
+        assert result.agent == "news"
+        assert "summarize" in result.prompt
+
+    def test_parse_schedule_every_day_no_minutes(self, parser):
+        """Test parsing /schedule 'every day 8am' without minutes."""
+        result = parser.parse("/schedule every day 8am news daily briefing")
+        assert isinstance(result, ScheduleCommand)
+        assert result.command_type == CommandType.SCHEDULE
+        assert result.time_str == "every day 8am"
+        assert result.agent == "news"
+        assert "daily briefing" in result.prompt
+
     # === REMIND command tests ===
     def test_parse_remind_full(self, parser):
         """Test parsing /remind with time and prompt."""
@@ -247,6 +266,25 @@ class TestCommandParser:
         result = parser.parse("/NOTES")
         assert isinstance(result, NotesCommand)
         assert result.command_type == CommandType.NOTES
+
+    # === SCHEDULES command tests ===
+    def test_parse_schedules(self, parser):
+        """Test parsing /schedules command."""
+        result = parser.parse("/schedules")
+        assert isinstance(result, SchedulesCommand)
+        assert result.command_type == CommandType.SCHEDULES
+
+    def test_parse_schedules_uppercase(self, parser):
+        """Test parsing /SCHEDULES (case insensitive)."""
+        result = parser.parse("/SCHEDULES")
+        assert isinstance(result, SchedulesCommand)
+        assert result.command_type == CommandType.SCHEDULES
+
+    def test_parse_schedules_with_args(self, parser):
+        """Test /schedules ignores extra arguments."""
+        result = parser.parse("/schedules something else")
+        assert isinstance(result, SchedulesCommand)
+        assert result.command_type == CommandType.SCHEDULES
 
     # === HELP command tests ===
     def test_parse_help(self, parser):
@@ -342,7 +380,7 @@ class TestCommandTypes:
 
     def test_command_type_count(self):
         """Test that we have the expected number of command types."""
-        assert len(CommandType) == 8
+        assert len(CommandType) == 9
 
 
 class TestCommandDataclasses:

@@ -29,6 +29,7 @@ from agntrick_whatsapp.commands import (
     QueryCommand,
     RemindCommand,
     ScheduleCommand,
+    SchedulesCommand,
 )
 from agntrick_whatsapp.config import AudioTranscriberConfig
 from agntrick_whatsapp.storage import Database, NoteRepository, TaskRepository
@@ -38,6 +39,8 @@ from agntrick_whatsapp.transcriber import AudioTranscriber
 
 if TYPE_CHECKING:
     from langgraph.pregel import Pregel
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -274,8 +277,15 @@ class WhatsAppRouterAgent:
         else:
             logger.warning(f"Task {task.id} has no sender_id in metadata, cannot send reminder")
 
-        # Mark as completed
-        task_repo.update_status(task.id, TaskStatus.COMPLETED)
+        # For recurring tasks, calculate next execution; otherwise mark as completed
+        if task.cron_expression:
+            from agntrick_whatsapp.storage.scheduler import calculate_next_run
+            next_run = calculate_next_run(task.cron_expression)
+            task_repo.update_execute_at(task.id, next_run.timestamp())
+            task_repo.update_status(task.id, TaskStatus.PENDING)
+            logger.info(f"Rescheduled recurring task {task.id} to {next_run}")
+        else:
+            task_repo.update_status(task.id, TaskStatus.COMPLETED)
 
     async def _get_or_create_graph(
         self, mode: str, system_prompt: str, mcp_tools: list[Any] | None = None
@@ -365,7 +375,7 @@ class WhatsAppRouterAgent:
         logger.info(f"Saved note: {note.id}")
 
         outgoing = OutgoingMessage(
-            text=f"✓ Note saved!",
+            text="✓ Note saved!",
             recipient_id=recipient_id,
         )
         await self.channel.send(outgoing)
@@ -394,6 +404,36 @@ class WhatsAppRouterAgent:
         )
         await self.channel.send(outgoing)
 
+    async def _handle_schedules(self, recipient_id: str) -> None:
+        """Handle schedules command - list all scheduled tasks."""
+        task_repo = self._get_task_repo()
+        tasks = task_repo.get_all_pending()
+
+        if not tasks:
+            outgoing = OutgoingMessage(
+                text="No scheduled tasks yet. Use /schedule <time> <agent> to create one.",
+                recipient_id=recipient_id,
+            )
+            await self.channel.send(outgoing)
+            return
+
+        task_list = []
+        for i, task in enumerate(tasks[:10], 1):  # Show max 10 tasks
+            from datetime import UTC
+
+            exec_time = datetime.fromtimestamp(task.execute_at, UTC)
+            time_str = exec_time.strftime("%Y-%m-%d %H:%M")
+            task_type = "🔄 Recurring" if task.cron_expression else "⏰ One-time"
+            agent_info = f"Agent: {task.action_agent}" if task.action_agent else "Reminder"
+            prompt_preview = task.action_prompt[:50] + "..." if task.action_prompt and len(task.action_prompt) > 50 else task.action_prompt or ""
+            task_list.append(f"{i}. {task_type} - {time_str}\n   {agent_info}\n   📝 {prompt_preview}")
+
+        outgoing = OutgoingMessage(
+            text=f"*Scheduled Tasks ({len(tasks)}):*\n\n" + "\n\n".join(task_list),
+            recipient_id=recipient_id,
+        )
+        await self.channel.send(outgoing)
+
     async def _handle_help(self, recipient_id: str) -> None:
         """Handle help command - show available commands."""
         help_text = """*🤖 Available Commands*
@@ -407,6 +447,7 @@ class WhatsAppRouterAgent:
   Example: /remind in 30 min check the oven
 • /schedule <time> <agent> [task] - Schedule an agent task
   Example: /schedule tomorrow 9am assistant summarize news
+• /schedules - List all scheduled tasks
 
 *Notes*
 • /note <content> - Save a note
@@ -489,6 +530,8 @@ class WhatsAppRouterAgent:
                     await self._handle_schedule(
                         command.command_type.value, time_str, agent, prompt, incoming.sender_id
                     )
+                case SchedulesCommand():
+                    await self._handle_schedules(incoming.sender_id)
                 case RemindCommand(time_str=time_str, prompt=prompt):
                     await self._handle_remind(
                         command.command_type.value, time_str, prompt, incoming.sender_id
@@ -590,23 +633,26 @@ class WhatsAppRouterAgent:
         await self.channel.send(outgoing)
 
     async def stop(self) -> None:
-        """Stop= WhatsApp router agent."""
+        """Stop WhatsApp router agent."""
         if not self._running:
             return
 
         logger.info("Stopping WhatsApp router agent...")
         self._running = False
+
+        # Signal shutdown to all components
         self._shutdown_event.set()
 
+        # Cancel any running async tasks
+        if hasattr(self, "_scheduler_task") and self._scheduler_task:
+            self._scheduler_task.cancel("Shutdown requested")
+
+        # Shut down the channel
         try:
-            # Close MCP connections if provider exists
-            if hasattr(self, "_mcp_session_cm") and self._mcp_session_cm is not None:
-                logger.info("Closing MCP session...")
-                await self._mcp_session_cm.__aexit__(None, None, None)
-                logger.info("MCP session closed")
-
             await self.channel.shutdown()
-
+        except asyncio.CancelledError:
+            # Silent exit - we already logged "Stopping WhatsApp router agent"
+            pass
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
 

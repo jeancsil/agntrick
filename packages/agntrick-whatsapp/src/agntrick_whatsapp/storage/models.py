@@ -1,7 +1,7 @@
 """Pydantic models for scheduled tasks and notes."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -51,7 +51,7 @@ class ScheduledTask(BaseModel):
     execute_at: float
     cron_expression: str | None = None
     status: TaskStatus = TaskStatus.PENDING
-    created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
+    created_at: float = Field(default_factory=lambda: datetime.now(UTC).timestamp())
     completed_at: float | None = None
     error_message: str | None = None
     metadata: dict[str, Any] | None = None
@@ -112,7 +112,7 @@ class Note(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     content: str
-    created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
+    created_at: float = Field(default_factory=lambda: datetime.now(UTC).timestamp())
 
     def to_db_row(self) -> dict[str, Any]:
         """Convert to database row format.
