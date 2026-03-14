@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Release script for agntrick and agntrick-whatsapp packages
+# Release script for agntrick package
 #
 # Usage:
-#   ./scripts/release.sh agntrick 0.3.0
-#   ./scripts/release.sh agntrick-whatsapp 0.4.0
-#   ./scripts/release.sh both 0.3.0 0.4.0
+#   ./scripts/release.sh 0.3.0
 #
 # Prerequisites:
 #   - gh CLI installed and authenticated
@@ -13,6 +11,8 @@
 #
 # Environment Variables:
 #   - FORCE_RELEASE=1: Bypass branch check (use with caution)
+#
+# Note: agntrick-whatsapp is released from its own repository
 
 set -e
 
@@ -41,7 +41,7 @@ check_branch() {
             log_error "You are on branch '$current_branch', but releases should be done from 'main'."
             echo ""
             echo "To proceed anyway, set FORCE_RELEASE=1:"
-            echo "  FORCE_RELEASE=1 make release VERSION=$2"
+            echo "  FORCE_RELEASE=1 ./scripts/release.sh $VERSION"
             echo ""
             echo "Or switch to main branch first:"
             echo "  git checkout main"
@@ -72,13 +72,6 @@ update_version() {
     log_info "Updated $file to version $version"
 }
 
-update_whatsapp_dependency() {
-    local version=$1
-    local file="packages/agntrick-whatsapp/pyproject.toml"
-    sed -i.bak "s/agntrick>=[0-9]\+\.[0-9]\+\.[0-9]\+/agntrick>=$version/" "$file" && rm -f "${file}.bak"
-    log_info "Updated agntrick dependency to >=$version in WhatsApp package"
-}
-
 run_tests() {
     log_info "Running tests..."
     make check && make test || log_error "Tests failed. Aborting release."
@@ -93,54 +86,23 @@ create_release() {
 }
 
 # Main logic
-PACKAGE=${1:-}
-VERSION=${2:-}
-WHATSAPP_VERSION=${3:-}
+VERSION=${1:-}
+
+if [[ -z "$VERSION" ]]; then
+    log_error "Usage: $0 VERSION"
+fi
+
+validate_version "$VERSION"
 
 check_gh
 check_clean
-check_branch "$PACKAGE" "$VERSION"
+check_branch
 
-case "$PACKAGE" in
-    agntrick)
-        validate_version "$VERSION"
-        update_version "pyproject.toml" "$VERSION"
-        run_tests
-        git add pyproject.toml
-        git commit -m "release: bump agntrick to $VERSION"
-        git tag -a "v$VERSION" -m "Release v$VERSION"
-        git push origin main --tags
-        create_release "v$VERSION" "## agntrick v$VERSION\n\nReleased via make release"
-        log_info "Released agntrick v$VERSION"
-        ;;
-    agntrick-whatsapp)
-        validate_version "$VERSION"
-        update_version "packages/agntrick-whatsapp/pyproject.toml" "$VERSION"
-        run_tests
-        git add packages/agntrick-whatsapp/pyproject.toml
-        git commit -m "release: bump agntrick-whatsapp to $VERSION"
-        git tag -a "agntrick-whatsapp-v$VERSION" -m "Release agntrick-whatsapp v$VERSION"
-        git push origin main --tags
-        create_release "agntrick-whatsapp-v$VERSION" "## agntrick-whatsapp v$VERSION\n\nReleased via make release-whatsapp"
-        log_info "Released agntrick-whatsapp v$VERSION"
-        ;;
-    both)
-        validate_version "$VERSION"
-        validate_version "$WHATSAPP_VERSION"
-        update_version "pyproject.toml" "$VERSION"
-        update_version "packages/agntrick-whatsapp/pyproject.toml" "$WHATSAPP_VERSION"
-        update_whatsapp_dependency "$VERSION"
-        run_tests
-        git add pyproject.toml packages/agntrick-whatsapp/pyproject.toml
-        git commit -m "release: bump agntrick to $VERSION, agntrick-whatsapp to $WHATSAPP_VERSION"
-        git tag -a "v$VERSION" -m "Release v$VERSION"
-        git tag -a "agntrick-whatsapp-v$WHATSAPP_VERSION" -m "Release agntrick-whatsapp v$WHATSAPP_VERSION"
-        git push origin main --tags
-        create_release "v$VERSION" "## agntrick v$VERSION\n## agntrick-whatsapp v$WHATSAPP_VERSION"
-        create_release "agntrick-whatsapp-v$WHATSAPP_VERSION" "## agntrick-whatsapp v$WHATSAPP_VERSION\n\nDepends on agntrick>=$VERSION"
-        log_info "Released both packages"
-        ;;
-    *)
-        log_error "Usage: $0 {agntrick|agntrick-whatsapp|both} VERSION [WHATSAPP_VERSION]"
-        ;;
-esac
+update_version "pyproject.toml" "$VERSION"
+run_tests
+git add pyproject.toml
+git commit -m "release: bump agntrick to $VERSION"
+git tag -a "v$VERSION" -m "Release v$VERSION"
+git push origin main --tags
+create_release "v$VERSION" "## agntrick v$VERSION\n\nReleased via ./scripts/release.sh"
+log_info "Released agntrick v$VERSION"
