@@ -1,8 +1,6 @@
 from pathlib import Path
 from typing import Any, Sequence
 
-from langchain_core.tools import StructuredTool
-
 from agntrick.agent import AgentBase
 from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
@@ -36,35 +34,12 @@ class DeveloperAgent(AgentBase):
         reader = FileFragmentReaderTool(str(Path.cwd()))
         editor = FileEditorTool(str(Path.cwd()))
 
-        return [
-            StructuredTool.from_function(
-                func=searcher.invoke,
-                name=searcher.name,
-                description=searcher.description,
-            ),
-            StructuredTool.from_function(
-                func=finder.invoke,
-                name=finder.name,
-                description=finder.description,
-            ),
-            StructuredTool.from_function(
-                func=explorer.invoke,
-                name=explorer.name,
-                description=explorer.description,
-            ),
-            StructuredTool.from_function(
-                func=outliner.invoke,
-                name=outliner.name,
-                description=outliner.description,
-            ),
-            StructuredTool.from_function(
-                func=reader.invoke,
-                name=reader.name,
-                description=reader.description,
-            ),
-            StructuredTool.from_function(
-                func=editor.invoke,
-                name=editor.name,
-                description=editor.description,
-            ),
+        tools = [
+            searcher,
+            finder,
+            explorer,
+            outliner,
+            reader,
+            editor,
         ]
+        return [t.to_langchain_tool() for t in tools]

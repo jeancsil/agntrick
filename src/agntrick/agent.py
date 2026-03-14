@@ -4,6 +4,7 @@ This module provides AgentBase, the main class for creating agents
 with MCP tool integration and LLM provider abstraction.
 """
 
+import asyncio
 from abc import abstractmethod
 from typing import Any, Dict, List, Sequence, Union
 
@@ -79,6 +80,7 @@ class AgentBase(Agent):
         self._thread_id = thread_id
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
+        self._init_lock = asyncio.Lock()
 
     @property
     @abstractmethod
@@ -117,13 +119,18 @@ class AgentBase(Agent):
         if self._graph is not None:
             return
 
-        self._tools.extend(await self._load_mcp_tools())
-        self._graph = create_agent(
-            model=self.model,
-            tools=self._tools,
-            system_prompt=self.system_prompt,
-            checkpointer=InMemorySaver(),
-        )
+        async with self._init_lock:
+            # Double-checked locking
+            if self._graph is not None:
+                return
+
+            self._tools.extend(await self._load_mcp_tools())
+            self._graph = create_agent(
+                model=self.model,
+                tools=self._tools,
+                system_prompt=self.system_prompt,
+                checkpointer=InMemorySaver(),
+            )
 
     def _normalize_messages(self, input_data: Union[str, List[BaseMessage]]) -> List[BaseMessage]:
         """Normalize input data to a list of BaseMessage.

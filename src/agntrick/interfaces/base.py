@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
 from langchain_core.messages import BaseMessage
+from langchain_core.tools import StructuredTool
 
 
 class Agent(ABC):
@@ -39,3 +40,11 @@ class Tool(ABC):
     def invoke(self, input_str: str) -> Any:
         """Execute tool logic."""
         pass
+
+    def to_langchain_tool(self) -> StructuredTool:
+        """Convert to a LangChain StructuredTool."""
+        return StructuredTool.from_function(
+            func=self.invoke,
+            name=self.name,
+            description=self.description,
+        )
