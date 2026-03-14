@@ -1,7 +1,7 @@
 """LLM provider detection and model creation utilities."""
 
 import os
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from dotenv import load_dotenv
 from pydantic import SecretStr
@@ -114,6 +114,113 @@ def get_default_model() -> str:
     return DEFAULT_MODELS.get(provider, "gpt-4o-mini")
 
 
+# Registry of LLM provider factories
+_FACTORIES: dict[Provider, Callable[[str, float], Any]] = {}
+
+
+def register_provider(provider: Provider) -> Callable:
+    """Decorator to register an LLM factory."""
+
+    def decorator(factory: Callable[[str, float], Any]) -> Callable:
+        _FACTORIES[provider] = factory
+        return factory
+
+    return decorator
+
+
+@register_provider("anthropic")
+def _create_anthropic(model_name: str, temperature: float) -> Any:
+    from langchain_anthropic import ChatAnthropic
+
+    return ChatAnthropic(model=model_name, temperature=temperature)  # type: ignore[call-arg]
+
+
+@register_provider("ollama")
+def _create_ollama(model_name: str, temperature: float) -> Any:
+    from langchain_ollama import ChatOllama
+
+    return ChatOllama(
+        model=model_name,
+        temperature=temperature,
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+    )
+
+
+@register_provider("azure_openai")
+def _create_azure_openai(model_name: str, temperature: float) -> Any:
+    from langchain_openai import AzureChatOpenAI
+
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    return AzureChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        api_key=SecretStr(api_key) if api_key else None,
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+        azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+    )
+
+
+@register_provider("google_vertexai")
+def _create_google_vertexai(model_name: str, temperature: float) -> Any:
+    from langchain_google_vertexai import ChatVertexAI
+
+    return ChatVertexAI(model=model_name, temperature=temperature)
+
+
+@register_provider("google_genai")
+def _create_google_genai(model_name: str, temperature: float) -> Any:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    return ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+
+
+@register_provider("mistralai")
+def _create_mistralai(model_name: str, temperature: float) -> Any:
+    from langchain_mistralai import ChatMistralAI
+
+    return ChatMistralAI(model_name=model_name, temperature=temperature)
+
+
+@register_provider("cohere")
+def _create_cohere(model_name: str, temperature: float) -> Any:
+    from langchain_cohere import ChatCohere
+
+    return ChatCohere(model=model_name, temperature=temperature)
+
+
+@register_provider("bedrock")
+def _create_bedrock(model_name: str, temperature: float) -> Any:
+    from langchain_aws import ChatBedrock
+
+    if bedrock_region := os.getenv("BEDROCK_REGION"):
+        os.environ["AWS_DEFAULT_REGION"] = bedrock_region
+    return ChatBedrock(model=model_name, temperature=temperature)
+
+
+@register_provider("huggingface")
+def _create_huggingface(model_name: str, temperature: float) -> Any:
+    from langchain_huggingface import ChatHuggingFace
+
+    try:
+        return ChatHuggingFace(model_id=model_name, temperature=temperature)
+    except Exception:
+        return ChatHuggingFace(model_id=model_name)
+
+
+@register_provider("openai")
+def _create_openai(model_name: str, temperature: float) -> Any:
+    from langchain_openai.chat_models.base import ChatOpenAI
+
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    return ChatOpenAI(
+        model=model_name,
+        temperature=temperature,
+        base_url=os.getenv("OPENAI_BASE_URL"),
+        api_key=SecretStr(openai_api_key) if openai_api_key else None,
+    )
+
+
 def _create_model(model_name: str, temperature: float) -> Any:
     """Create the appropriate LLM model instance based on the detected provider.
 
@@ -126,80 +233,9 @@ def _create_model(model_name: str, temperature: float) -> Any:
     """
     provider = detect_provider()
 
-    if provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
+    factory = _FACTORIES.get(provider)
+    if factory:
+        return factory(model_name, temperature)
 
-        return ChatAnthropic(model=model_name, temperature=temperature)  # type: ignore[call-arg]
-
-    if provider == "ollama":
-        from langchain_ollama import ChatOllama
-
-        return ChatOllama(
-            model=model_name,
-            temperature=temperature,
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-        )
-
-    if provider == "azure_openai":
-        from langchain_openai import AzureChatOpenAI
-
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        return AzureChatOpenAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=SecretStr(api_key) if api_key else None,
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-            azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-        )
-
-    if provider == "google_vertexai":
-        from langchain_google_vertexai import ChatVertexAI
-
-        return ChatVertexAI(model=model_name, temperature=temperature)
-
-    if provider == "google_genai":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        return ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
-
-    if provider == "mistralai":
-        from langchain_mistralai import ChatMistralAI
-
-        return ChatMistralAI(model_name=model_name, temperature=temperature)
-
-    if provider == "cohere":
-        from langchain_cohere import ChatCohere
-
-        return ChatCohere(model=model_name, temperature=temperature)
-
-    if provider == "bedrock":
-        from langchain_aws import ChatBedrock
-
-        # Set AWS region via environment variable if specified
-        if bedrock_region := os.getenv("BEDROCK_REGION"):
-            os.environ["AWS_DEFAULT_REGION"] = bedrock_region
-
-        return ChatBedrock(model=model_name, temperature=temperature)
-
-    if provider == "huggingface":
-        from langchain_huggingface import ChatHuggingFace
-
-        # HuggingFace ChatModel may not support temperature in all cases
-        try:
-            return ChatHuggingFace(model_id=model_name, temperature=temperature)
-        except Exception:
-            return ChatHuggingFace(model_id=model_name)
-
-    # Default fallback to OpenAI
-    # Note: In langchain-openai 0.2.0+, ChatOpenAI requires an api_key.
-    # Only create a client when a model is explicitly provided.
-    from langchain_openai.chat_models.base import ChatOpenAI
-
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    return ChatOpenAI(
-        model=model_name,
-        temperature=temperature,
-        base_url=os.getenv("OPENAI_BASE_URL"),
-        api_key=SecretStr(openai_api_key) if openai_api_key else None,
-    )
+    # Fallback to OpenAI
+    return _create_openai(model_name, temperature)

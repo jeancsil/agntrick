@@ -28,25 +28,13 @@ class TaskStatus(str, Enum):
 
 
 class ScheduledTask(BaseModel):
-    """A scheduled task for execution.
-
-    Attributes:
-        id: Unique task identifier.
-        action_type: Type of action (run_agent or send_message).
-        action_agent: Agent name for run_agent actions.
-        action_prompt: Prompt for run_agent actions.
-        execute_at: Unix timestamp for next execution.
-        cron_expression: Optional cron expression for recurring tasks.
-        status: Current task status.
-        created_at: Unix timestamp when task was created.
-        completed_at: Unix timestamp when task completed (if applicable).
-        error_message: Error message if task failed.
-    """
+    """A scheduled task for execution."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     action_type: TaskType
     action_agent: str | None = None
     action_prompt: str | None = None
+    context_id: str | None = None  # Optional context ID (e.g. thread_id, user_id)
     execute_at: float
     cron_expression: str | None = None
     status: TaskStatus = TaskStatus.PENDING
@@ -55,16 +43,13 @@ class ScheduledTask(BaseModel):
     error_message: str | None = None
 
     def to_db_row(self) -> dict[str, Any]:
-        """Convert to database row format.
-
-        Returns:
-            Dictionary suitable for database insertion.
-        """
+        """Convert to database row format."""
         return {
             "id": self.id,
             "action_type": self.action_type.value,
             "action_agent": self.action_agent,
             "action_prompt": self.action_prompt,
+            "context_id": self.context_id,
             "execute_at": self.execute_at,
             "cron_expression": self.cron_expression,
             "status": self.status.value,
@@ -75,19 +60,13 @@ class ScheduledTask(BaseModel):
 
     @classmethod
     def from_db_row(cls, row: dict[str, Any]) -> "ScheduledTask":
-        """Create from database row.
-
-        Args:
-            row: Dictionary representing a database row.
-
-        Returns:
-            ScheduledTask instance.
-        """
+        """Create from database row."""
         return cls(
             id=row["id"],
             action_type=TaskType(row["action_type"]),
             action_agent=row["action_agent"],
             action_prompt=row["action_prompt"],
+            context_id=row.get("context_id"),
             execute_at=row["execute_at"],
             cron_expression=row["cron_expression"],
             status=TaskStatus(row["status"]),
@@ -98,42 +77,31 @@ class ScheduledTask(BaseModel):
 
 
 class Note(BaseModel):
-    """A simple note stored in the database.
-
-    Attributes:
-        id: Unique note identifier.
-        content: Note content.
-        created_at: Unix timestamp when note was created.
-    """
+    """A simple note stored in the database."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    context_id: str | None = None  # Optional context ID (e.g. thread_id, user_id)
     content: str
     created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
+    updated_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
 
     def to_db_row(self) -> dict[str, Any]:
-        """Convert to database row format.
-
-        Returns:
-            Dictionary suitable for database insertion.
-        """
+        """Convert to database row format."""
         return {
             "id": self.id,
+            "context_id": self.context_id,
             "content": self.content,
             "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }
 
     @classmethod
     def from_db_row(cls, row: dict[str, Any]) -> "Note":
-        """Create from database row.
-
-        Args:
-            row: Dictionary representing a database row.
-
-        Returns:
-            Note instance.
-        """
+        """Create from database row."""
         return cls(
             id=row["id"],
+            context_id=row.get("context_id"),
             content=row["content"],
             created_at=row["created_at"],
+            updated_at=row.get("updated_at", row["created_at"]),
         )
