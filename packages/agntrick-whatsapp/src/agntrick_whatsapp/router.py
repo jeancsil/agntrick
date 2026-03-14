@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import traceback
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from agntrick.llm import get_default_model
@@ -419,8 +420,6 @@ class WhatsAppRouterAgent:
 
         task_list = []
         for i, task in enumerate(tasks[:10], 1):  # Show max 10 tasks
-            from datetime import UTC
-
             exec_time = datetime.fromtimestamp(task.execute_at, UTC)
             time_str = exec_time.strftime("%Y-%m-%d %H:%M")
             task_type = "🔄 Recurring" if task.cron_expression else "⏰ One-time"
