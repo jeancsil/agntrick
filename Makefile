@@ -22,9 +22,9 @@ install: ## Install all dependencies using uv
 
 install-local: ## Install local packages in editable mode (for testing before publishing)
 	@$(UV) pip install -e .
-	@$(UV) pip install -e packages/agntrick-whatsapp
+	#@$(UV) pip install -e packages/agntrick-whatsapp
 	@echo "✓ Local packages installed in editable mode"
-	@git config --local core.hooksPath .githooks
+	#@git config --local core.hooksPath .githooks
 
 run: ## Run the agntrick CLI to exemplify usage
 	@$(UV) run agntrick news -i "What's the latest in AI?"
