@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, UTC
 
 import croniter
 import dateparser
@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for recurring time expressions (efficiency: compile once at module load)
 RECURRING_PATTERNS = [
-    # "every day at 8am" or "every day at 8:00 am"
-    (re.compile(r"every\s+(?:day|days)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.IGNORECASE), "every_day_at"),
+    # "every day 8am", "every day at 8am", "every day 8:00 am", "every day at 8:00 am"
+    (re.compile(r"every\s+(?:day|days)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.IGNORECASE), "every_day_at"),
     (re.compile(r"every\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)", re.IGNORECASE), "simple"),
     (re.compile(r"daily|daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?", re.IGNORECASE), "daily"),
     (re.compile(r"weekly|weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.IGNORECASE), "weekly"),
@@ -134,7 +134,7 @@ def calculate_next_run(cron_expression: str) -> datetime:
         ValueError: If cron expression is invalid.
     """
     try:
-        cron = croniter.croniter(cron_expression, datetime.utcnow())
+        cron = croniter.croniter(cron_expression, datetime.now(UTC))
         next_run = cron.get_next(datetime)
         logger.debug(f"Calculated next run for {cron_expression}: {next_run}")
         return next_run

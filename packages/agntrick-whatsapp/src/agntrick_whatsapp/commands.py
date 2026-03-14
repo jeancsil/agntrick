@@ -6,9 +6,8 @@ This module provides a clean command parsing architecture using:
 - Match-based dispatch for routing
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 
 class CommandType(Enum):
@@ -17,6 +16,7 @@ class CommandType(Enum):
     LEARN = "learn"
     YOUTUBE = "youtube"
     SCHEDULE = "schedule"
+    SCHEDULES = "schedules"
     REMIND = "remind"
     NOTE = "note"
     NOTES = "notes"
@@ -41,6 +41,12 @@ class ScheduleCommand(BaseCommand):
     time_str: str
     agent: str | None = None
     prompt: str | None = None
+
+
+@dataclass
+class SchedulesCommand(BaseCommand):
+    """Schedules command to list all scheduled tasks."""
+    pass
 
 
 @dataclass
@@ -69,7 +75,7 @@ class HelpCommand(BaseCommand):
 
 
 # Type alias for all command types
-Command = QueryCommand | ScheduleCommand | RemindCommand | NoteCommand | NotesCommand | HelpCommand
+Command = QueryCommand | ScheduleCommand | SchedulesCommand | RemindCommand | NoteCommand | NotesCommand | HelpCommand
 
 
 class CommandParser:
@@ -85,6 +91,7 @@ class CommandParser:
         "/learn": CommandType.LEARN,
         "/youtube": CommandType.YOUTUBE,
         "/schedule": CommandType.SCHEDULE,
+        "/schedules": CommandType.SCHEDULES,
         "/remind": CommandType.REMIND,
         "/note": CommandType.NOTE,
         "/notes": CommandType.NOTES,
@@ -129,6 +136,8 @@ class CommandParser:
                 return self._parse_youtube(args)
             case CommandType.SCHEDULE:
                 return self._parse_schedule(args)
+            case CommandType.SCHEDULES:
+                return SchedulesCommand(command_type=CommandType.SCHEDULES)
             case CommandType.REMIND:
                 return self._parse_remind(args)
             case CommandType.NOTE:
@@ -156,6 +165,7 @@ class CommandParser:
         Format: /schedule <time> <agent> [prompt]
 
         Uses dateparser and recurring pattern detection to find the time expression.
+        Supports: "every day 8:00 am", "every day at 8:00 am", "tomorrow 4pm", etc.
         """
         if not args:
             return ScheduleCommand(
@@ -173,22 +183,22 @@ class CommandParser:
         best_time_str = words[0]
         best_time_end = 1
 
-        # Pattern for "every day at HH:MM [am/pm]" - captures time with optional am/pm
-        # The am/pm might be attached to the time or a separate word
-        every_day_pattern = re.compile(
-            r"^every\s+days?\s+at\s+\d{1,2}(?::\d{2})?\s*(am|pm)?$",
+        # Pattern 1: "every day [at] HH:MM [am/pm]" - matches with or without "at"
+        # Captures time with optional am/pm
+        every_day_at_pattern = re.compile(
+            r"^every\s+days?\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(am|pm)?$",
             re.IGNORECASE
         )
-        # Pattern that matches up to the time (before am/pm)
+        # Pattern 2: "every day [at] HH:MM" - without am/pm
         every_day_time_pattern = re.compile(
-            r"^every\s+days?\s+at\s+\d{1,2}(?::\d{2})?$",
+            r"^every\s+days?\s+(?:at\s+)?\d{1,2}(?::\d{2})?$",
             re.IGNORECASE
         )
 
-        # Check for "every day at HH:MM [am/pm]" pattern first (highest priority)
+        # Check for recurring patterns first (highest priority)
         for i in range(1, len(words) + 1):
             candidate = " ".join(words[:i])
-            if every_day_pattern.match(candidate):
+            if every_day_at_pattern.match(candidate):
                 # Check if next word is am/pm - if so, include it
                 if i < len(words) and words[i].lower() in ("am", "pm"):
                     best_time_str = candidate + " " + words[i]
@@ -197,7 +207,8 @@ class CommandParser:
                     best_time_str = candidate
                     best_time_end = i
                 break
-            # Also check if current candidate is time (without am/pm) and next word is am/pm
+            # Also check if current candidate matches time pattern (without am/pm)
+            # and next word is am/pm
             if every_day_time_pattern.match(candidate):
                 if i < len(words) and words[i].lower() in ("am", "pm"):
                     best_time_str = candidate + " " + words[i]
