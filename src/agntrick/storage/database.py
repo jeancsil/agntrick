@@ -118,6 +118,8 @@ class Database:
         columns = [row[1] for row in cursor.fetchall()]
         if "context_id" not in columns:
             cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN context_id TEXT")
+        if "metadata" not in columns:
+            cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
             
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_scheduled_execute_at

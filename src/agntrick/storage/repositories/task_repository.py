@@ -33,14 +33,16 @@ class TaskRepository:
         Returns:
             The saved task.
         """
+        import json
+
         conn = self._db.connection
         cursor = conn.cursor()
         cursor.execute(
             """
             INSERT OR REPLACE INTO scheduled_tasks
             (id, action_type, action_agent, action_prompt, context_id, execute_at,
-             cron_expression, status, created_at, completed_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             cron_expression, status, created_at, completed_at, error_message, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task.id,
@@ -54,6 +56,7 @@ class TaskRepository:
                 task.created_at,
                 task.completed_at,
                 task.error_message,
+                json.dumps(task.metadata) if task.metadata else None,
             ),
         )
         conn.commit()
@@ -137,6 +140,50 @@ class TaskRepository:
             logger.debug(f"Updated task {task_id} status to {status}")
         return updated
 
+    def update_execute_at(self, task_id: str, execute_at: float) -> bool:
+        """Update task next execution time.
+
+        Args:
+            task_id: Task ID.
+            execute_at: Next execution timestamp.
+
+        Returns:
+            True if updated, False if not found.
+        """
+        conn = self._db.connection
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE scheduled_tasks
+            SET execute_at = ?
+            WHERE id = ?
+            """,
+            (execute_at, task_id),
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        if updated:
+            logger.debug(f"Updated task {task_id} execute_at to {execute_at}")
+        return updated
+
+    def get_all_pending(self) -> list["ScheduledTask"]:
+        """Get all pending tasks (both due and future).
+
+        Returns:
+            List of all pending tasks, sorted by execution time.
+        """
+        conn = self._db.connection
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM scheduled_tasks
+            WHERE status = ?
+            ORDER BY execute_at ASC
+            """,
+            (TaskStatus.PENDING.value,),
+        )
+        return [self._row_to_task(dict(row)) for row in cursor.fetchall()]
+
     def _row_to_task(self, row: dict[str, object]) -> "ScheduledTask":
         """Convert database row to ScheduledTask.
 
@@ -146,6 +193,11 @@ class TaskRepository:
         Returns:
             ScheduledTask instance.
         """
+        import json
         from agntrick.storage.models import ScheduledTask
+        
+        # Parse metadata from JSON if present
+        if row.get("metadata") and isinstance(row["metadata"], str):
+            row["metadata"] = json.loads(row["metadata"])
 
         return ScheduledTask.from_db_row(row)

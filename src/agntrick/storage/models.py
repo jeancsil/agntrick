@@ -1,7 +1,7 @@
 """Pydantic models for scheduled tasks and notes."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -38,9 +38,10 @@ class ScheduledTask(BaseModel):
     execute_at: float
     cron_expression: str | None = None
     status: TaskStatus = TaskStatus.PENDING
-    created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
+    created_at: float = Field(default_factory=lambda: datetime.now(UTC).timestamp())
     completed_at: float | None = None
     error_message: str | None = None
+    metadata: dict[str, Any] | None = None
 
     def to_db_row(self) -> dict[str, Any]:
         """Convert to database row format."""
@@ -56,6 +57,7 @@ class ScheduledTask(BaseModel):
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "error_message": self.error_message,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -73,6 +75,7 @@ class ScheduledTask(BaseModel):
             created_at=row["created_at"],
             completed_at=row["completed_at"],
             error_message=row["error_message"],
+            metadata=row.get("metadata"),
         )
 
 
@@ -82,8 +85,8 @@ class Note(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     context_id: str | None = None  # Optional context ID (e.g. thread_id, user_id)
     content: str
-    created_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
-    updated_at: float = Field(default_factory=lambda: datetime.utcnow().timestamp())
+    created_at: float = Field(default_factory=lambda: datetime.now(UTC).timestamp())
+    updated_at: float = Field(default_factory=lambda: datetime.now(UTC).timestamp())
 
     def to_db_row(self) -> dict[str, Any]:
         """Convert to database row format."""

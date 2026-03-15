@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for recurring time expressions (efficiency: compile once at module load)
 RECURRING_PATTERNS = [
     (re.compile(r"every\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)", re.IGNORECASE), "simple"),
-    (re.compile(r"daily|daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?", re.IGNORECASE), "daily"),
-    (re.compile(r"weekly|weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.IGNORECASE), "weekly"),
-    (re.compile(r"monthly|monthly\s+on\s+day\s+(\d{1,2})", re.IGNORECASE), "monthly"),
+    (re.compile(r"daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?|daily|everyday", re.IGNORECASE), "daily"),
+    (re.compile(r"weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|weekly", re.IGNORECASE), "weekly"),
+    (re.compile(r"monthly\s+on\s+day\s+(\d{1,2})|monthly", re.IGNORECASE), "monthly"),
 ]
 
 
@@ -80,7 +80,7 @@ def _pattern_to_cron(match: re.Match, pattern_type: str) -> str | None:
         elif unit in ("year", "years"):
             return "0 0 1 1 *"
     elif pattern_type == "daily":
-        hour = match.group(1)
+        hour = match.group(1) or "0"
         minute = match.group(2) or "0"
         ampm = match.group(3) or "am"
         h = int(hour)
@@ -100,10 +100,10 @@ def _pattern_to_cron(match: re.Match, pattern_type: str) -> str | None:
             "saturday": 6,
             "sunday": 0,
         }
-        day = match.group(1).lower()
+        day = (match.group(1) or "monday").lower()
         return f"0 0 * * {day_map[day]}"
     elif pattern_type == "monthly":
-        day = int(match.group(1))
+        day = int(match.group(1) or "1")
         return f"0 0 {day} * *"
     return None
 
@@ -121,7 +121,8 @@ def calculate_next_run(cron_expression: str) -> datetime:
         ValueError: If cron expression is invalid.
     """
     try:
-        cron = croniter.croniter(cron_expression, datetime.utcnow())
+        from datetime import UTC
+        cron = croniter.croniter(cron_expression, datetime.now(UTC))
         next_run = cron.get_next(datetime)
         logger.debug(f"Calculated next run for {cron_expression}: {next_run}")
         return next_run
