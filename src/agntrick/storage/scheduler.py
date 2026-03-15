@@ -11,10 +11,31 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for recurring time expressions (efficiency: compile once at module load)
 RECURRING_PATTERNS = [
-    (re.compile(r"every\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)", re.IGNORECASE), "simple"),
-    (re.compile(r"daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?|daily|everyday", re.IGNORECASE), "daily"),
-    (re.compile(r"weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|weekly", re.IGNORECASE), "weekly"),
-    (re.compile(r"monthly\s+on\s+day\s+(\d{1,2})|monthly", re.IGNORECASE), "monthly"),
+    (
+        re.compile(
+            r"every\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)",
+            re.IGNORECASE,
+        ),
+        "simple",
+    ),
+    (
+        re.compile(
+            r"daily\s+at\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?|daily|everyday",
+            re.IGNORECASE,
+        ),
+        "daily",
+    ),
+    (
+        re.compile(
+            r"weekly\s+on\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|weekly",
+            re.IGNORECASE,
+        ),
+        "weekly",
+    ),
+    (
+        re.compile(r"monthly\s+on\s+day\s+(\d{1,2})|monthly", re.IGNORECASE),
+        "monthly",
+    ),
 ]
 
 
@@ -122,6 +143,7 @@ def calculate_next_run(cron_expression: str) -> datetime:
     """
     try:
         from datetime import UTC
+
         cron = croniter.croniter(cron_expression, datetime.now(UTC))
         next_run = cron.get_next(datetime)
         logger.debug(f"Calculated next run for {cron_expression}: {next_run}")

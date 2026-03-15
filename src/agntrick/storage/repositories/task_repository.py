@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agntrick.storage.database import Database
-    from agntrick.storage.models import ScheduledTask
+    from agntrick.storage.models import ScheduledTask, TaskStatus
 else:
     from agntrick.storage.models import TaskStatus
 
@@ -194,8 +194,9 @@ class TaskRepository:
             ScheduledTask instance.
         """
         import json
+
         from agntrick.storage.models import ScheduledTask
-        
+
         # Parse metadata from JSON if present
         if row.get("metadata") and isinstance(row["metadata"], str):
             row["metadata"] = json.loads(row["metadata"])

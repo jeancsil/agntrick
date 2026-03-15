@@ -44,6 +44,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.13",
     "langgraph>=1.0.3",
     "langgraph-cli>=0.4.9",
+    "langgraph-checkpoint-sqlite>=2.0.1",
     "langgraph-api>=0.5.37",
     "langchain-google-vertexai>=3.0.3",
     "langchain-google-genai>=3.1.0",
@@ -81,6 +82,8 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
     "types-requests>=2.32.4.20260107",
+    "types-croniter>=2.0.0.2",
+    "types-dateparser>=1.2.0.20240315",
 ]
 
 [project.scripts]
@@ -97,6 +100,8 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
     "types-requests>=2.32.4.20260107",
+    "types-croniter>=2.0.0.2",
+    "types-dateparser>=1.2.0.20240315",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,8 +1,5 @@
 """Tests for Pydantic models."""
 
-import pytest
-from uuid import uuid4
-
 from agntrick.storage.models import Note, ScheduledTask, TaskStatus, TaskType
 
 

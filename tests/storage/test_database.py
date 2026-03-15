@@ -1,6 +1,5 @@
 """Tests for Database class."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -74,6 +73,7 @@ def test_indexes_created(db: Database) -> None:
 
 def test_close(db: Database) -> None:
     """Test closing the connection."""
-    conn_id = id(db.connection)
+    _ = db.connection
+    assert db._local.conn is not None
     db.close()
-    assert id(db.connection) != conn_id
+    assert db._local.conn is None

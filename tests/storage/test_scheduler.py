@@ -1,7 +1,8 @@
 """Tests for scheduler functions."""
 
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime
 
 from agntrick.storage.scheduler import calculate_next_run, parse_natural_time
 
@@ -44,7 +45,7 @@ def test_parse_natural_time_invalid() -> None:
 
 def test_calculate_next_run() -> None:
     """Test calculating next run from cron expression."""
-    now = datetime(2026, 1, 1, 12, 0, 0)
+    now = datetime.now(UTC)
     result = calculate_next_run("0 * * * *")
     assert isinstance(result, datetime)
     assert result > now

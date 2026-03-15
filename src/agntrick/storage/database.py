@@ -70,9 +70,7 @@ class Database:
             if not hasattr(self._local, "schema_inited"):
                 self._init_schema(self._local.conn)
                 self._local.schema_inited = True
-            logger.debug(
-                f"Created thread-local DB connection for thread {threading.get_ident()}"
-            )
+            logger.debug(f"Created thread-local DB connection for thread {threading.get_ident()}")
         return cast(sqlite3.Connection, self._local.conn)
 
     def get_checkpointer(self, is_async: bool = False) -> Any:
@@ -112,7 +110,7 @@ class Database:
                 error_message TEXT
             )
         """)
-        
+
         # Schema migrations for scheduled_tasks
         cursor.execute("PRAGMA table_info(scheduled_tasks)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -120,7 +118,7 @@ class Database:
             cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN context_id TEXT")
         if "metadata" not in columns:
             cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
-            
+
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_scheduled_execute_at
             ON scheduled_tasks(execute_at)
@@ -129,7 +127,7 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_scheduled_status
             ON scheduled_tasks(status)
         """)
-        
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS notes (
                 id TEXT PRIMARY KEY,
@@ -139,7 +137,7 @@ class Database:
                 updated_at REAL NOT NULL
             )
         """)
-        
+
         # Schema migrations for notes
         cursor.execute("PRAGMA table_info(notes)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -148,7 +146,7 @@ class Database:
         if "updated_at" not in columns:
             cursor.execute("ALTER TABLE notes ADD COLUMN updated_at REAL DEFAULT 0")
             cursor.execute("UPDATE notes SET updated_at = created_at WHERE updated_at = 0")
-            
+
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_notes_created_at
             ON notes(created_at)
