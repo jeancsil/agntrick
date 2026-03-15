@@ -184,6 +184,7 @@ class WhatsAppRouterAgent:
         self._mcp_tools: list[Any] = []
 
         # Shared checkpointer for persistent memory
+        self._checkpointer_cm: Any | None = None
         self._checkpointer: Any | None = None
 
         # Storage for tasks and notes
@@ -499,9 +500,9 @@ class WhatsAppRouterAgent:
 
             # Initialize persistent memory
             db = Database(self._storage_db_path)
-            self._checkpointer = db.get_checkpointer(is_async=True)
-            if hasattr(self._checkpointer, "__aenter__"):
-                await self._checkpointer.__aenter__()
+            self._checkpointer_cm = db.get_checkpointer(is_async=True)
+            if self._checkpointer_cm and hasattr(self._checkpointer_cm, "__aenter__"):
+                self._checkpointer = await self._checkpointer_cm.__aenter__()
             logger.info("Persistent memory (AsyncSqliteSaver) initialized")
 
             self._running = True
@@ -658,8 +659,8 @@ class WhatsAppRouterAgent:
             self._scheduler_task.cancel("Shutdown requested")
 
         # Clean up checkpointer
-        if self._checkpointer and hasattr(self._checkpointer, "__aexit__"):
-            await self._checkpointer.__aexit__(None, None, None)
+        if self._checkpointer_cm and hasattr(self._checkpointer_cm, "__aexit__"):
+            await self._checkpointer_cm.__aexit__(None, None, None)
             logger.info("Persistent memory (AsyncSqliteSaver) closed")
 
         # Shut down the channel
