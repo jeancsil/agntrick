@@ -54,6 +54,7 @@ class AgentBase(Agent):
         mcp_provider: MCPProvider | None = None,
         initial_mcp_tools: List[Any] | None = None,
         thread_id: str = "1",
+        checkpointer: Any | None = None,
         **kwargs: Any,
     ):
         """Initialize the agent.
@@ -64,6 +65,7 @@ class AgentBase(Agent):
             mcp_provider: Optional MCP provider for external tool access.
             initial_mcp_tools: Optional pre-loaded MCP tools.
             thread_id: Thread ID for conversation memory.
+            checkpointer: Optional checkpointer for persistent memory.
             **kwargs: Additional arguments (for future compatibility).
         """
         config = get_config()
@@ -78,6 +80,7 @@ class AgentBase(Agent):
         self._mcp_provider = mcp_provider
         self._initial_mcp_tools = initial_mcp_tools
         self._thread_id = thread_id
+        self._checkpointer = checkpointer
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
         self._init_lock = asyncio.Lock()
@@ -129,7 +132,7 @@ class AgentBase(Agent):
                 model=self.model,
                 tools=self._tools,
                 system_prompt=self.system_prompt,
-                checkpointer=InMemorySaver(),
+                checkpointer=self._checkpointer or InMemorySaver(),
             )
 
     def _normalize_messages(self, input_data: Union[str, List[BaseMessage]]) -> List[BaseMessage]:
