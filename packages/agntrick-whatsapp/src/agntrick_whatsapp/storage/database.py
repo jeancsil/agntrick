@@ -4,7 +4,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,25 @@ class Database:
             )
         return cast(sqlite3.Connection, self._local.conn)
 
+    def get_checkpointer(self, is_async: bool = False) -> Any:
+        """Get a LangGraph checkpointer using this database.
+
+        Args:
+            is_async: If True, returns an AsyncSqliteSaver. Otherwise SqliteSaver.
+
+        Returns:
+            A LangGraph checkpointer instance.
+        """
+        if is_async:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            # AsyncSqliteSaver handles its own connection management
+            return AsyncSqliteSaver.from_conn_string(str(self._db_path))
+        else:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+
+            return SqliteSaver(self.connection)
+
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Initialize the database schema."""
         cursor = conn.cursor()
@@ -84,6 +103,7 @@ class Database:
                 action_type TEXT NOT NULL,
                 action_agent TEXT,
                 action_prompt TEXT,
+                context_id TEXT,
                 execute_at REAL NOT NULL,
                 cron_expression TEXT,
                 status TEXT NOT NULL,
@@ -93,6 +113,13 @@ class Database:
                 metadata TEXT
             )
         """)
+        
+        # Schema migrations for scheduled_tasks
+        cursor.execute("PRAGMA table_info(scheduled_tasks)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "context_id" not in columns:
+            cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN context_id TEXT")
+            
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_scheduled_execute_at
             ON scheduled_tasks(execute_at)
@@ -104,13 +131,29 @@ class Database:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS notes (
                 id TEXT PRIMARY KEY,
+                context_id TEXT,
                 content TEXT NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
             )
         """)
+        
+        # Schema migrations for notes
+        cursor.execute("PRAGMA table_info(notes)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "context_id" not in columns:
+            cursor.execute("ALTER TABLE notes ADD COLUMN context_id TEXT")
+        if "updated_at" not in columns:
+            cursor.execute("ALTER TABLE notes ADD COLUMN updated_at REAL DEFAULT 0")
+            cursor.execute("UPDATE notes SET updated_at = created_at WHERE updated_at = 0")
+            
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_notes_created_at
             ON notes(created_at)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_notes_context_at
+            ON notes(context_id)
         """)
         conn.commit()
 

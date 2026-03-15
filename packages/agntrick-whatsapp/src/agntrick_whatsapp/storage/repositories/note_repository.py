@@ -34,10 +34,10 @@ class NoteRepository:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT OR REPLACE INTO notes (id, content, created_at)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO notes (id, context_id, content, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (note.id, note.content, note.created_at),
+            (note.id, note.context_id, note.content, note.created_at, note.updated_at),
         )
         conn.commit()
         logger.debug(f"Saved note: {note.id}")
@@ -100,8 +100,4 @@ class NoteRepository:
         """
         from agntrick_whatsapp.storage.models import Note
 
-        return Note(
-            id=row["id"],
-            content=row["content"],
-            created_at=row["created_at"],
-        )
+        return Note.from_db_row(row)
