@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "dateparser>=1.2.0",
     "croniter>=3.0.0",
+    "langgraph-checkpoint-sqlite>=2.0.1",
 ]
 
 [project.optional-dependencies]

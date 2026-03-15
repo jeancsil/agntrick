@@ -75,6 +75,25 @@ class Database:
             )
         return cast(sqlite3.Connection, self._local.conn)
 
+    def get_checkpointer(self, is_async: bool = False) -> Any:
+        """Get a LangGraph checkpointer using this database.
+
+        Args:
+            is_async: If True, returns an AsyncSqliteSaver. Otherwise SqliteSaver.
+
+        Returns:
+            A LangGraph checkpointer instance.
+        """
+        if is_async:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            # AsyncSqliteSaver handles its own connection management
+            return AsyncSqliteSaver.from_conn_string(str(self._db_path))
+        else:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+
+            return SqliteSaver(self.connection)
+
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Initialize the database schema."""
         cursor = conn.cursor()
