@@ -4,8 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agntrick_storage.database import Database
-    from agntrick_storage.models import Note
+    from agntrick.storage.database import Database
+    from agntrick.storage.models import Note
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,6 @@ class NoteRepository:
         Returns:
             Note instance.
         """
-        from agntrick_storage.models import Note
+        from agntrick.storage.models import Note
 
         return Note.from_db_row(row)

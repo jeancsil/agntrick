@@ -5,10 +5,10 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agntrick_storage.database import Database
-    from agntrick_storage.models import ScheduledTask
+    from agntrick.storage.database import Database
+    from agntrick.storage.models import ScheduledTask
 else:
-    from agntrick_storage.models import TaskStatus
+    from agntrick.storage.models import TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,6 @@ class TaskRepository:
         Returns:
             ScheduledTask instance.
         """
-        from agntrick_storage.models import ScheduledTask
+        from agntrick.storage.models import ScheduledTask
 
         return ScheduledTask.from_db_row(row)
