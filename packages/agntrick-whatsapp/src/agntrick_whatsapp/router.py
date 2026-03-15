@@ -34,9 +34,9 @@ from agntrick_whatsapp.commands import (
 )
 from agntrick_whatsapp.config import AudioTranscriberConfig
 from agntrick_whatsapp.transcriber import AudioTranscriber
-from agntrick_storage import Database, NoteRepository, TaskRepository
-from agntrick_storage.models import Note, ScheduledTask, TaskStatus, TaskType
-from agntrick_storage.scheduler import parse_natural_time
+from agntrick.storage import Database, NoteRepository, TaskRepository
+from agntrick.storage.models import Note, ScheduledTask, TaskStatus, TaskType
+from agntrick.storage.scheduler import parse_natural_time
 
 if TYPE_CHECKING:
     from langgraph.pregel import Pregel
@@ -283,7 +283,7 @@ class WhatsAppRouterAgent:
 
         # For recurring tasks, calculate next execution; otherwise mark as completed
         if task.cron_expression:
-            from agntrick_whatsapp.storage.scheduler import calculate_next_run
+            from agntrick.storage.scheduler import calculate_next_run
             next_run = calculate_next_run(task.cron_expression)
             task_repo.update_execute_at(task.id, next_run.timestamp())
             task_repo.update_status(task.id, TaskStatus.PENDING)
