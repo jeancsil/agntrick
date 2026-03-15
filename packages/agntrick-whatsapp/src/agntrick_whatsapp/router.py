@@ -183,6 +183,9 @@ class WhatsAppRouterAgent:
         # Cached MCP tools for reuse (loaded once during start)
         self._mcp_tools: list[Any] = []
 
+        # Shared checkpointer for persistent memory
+        self._checkpointer: Any | None = None
+
         # Storage for tasks and notes
         self._storage_db_path = channel.storage_path / "storage.db"
         self._task_repo: TaskRepository | None = None
@@ -320,7 +323,7 @@ class WhatsAppRouterAgent:
                 model=self.model,
                 tools=tools,
                 # system_prompt=system_prompt,
-                checkpointer=InMemorySaver(),
+                checkpointer=self._checkpointer or InMemorySaver(),
             )
 
         return self._graphs[cache_key]
@@ -338,6 +341,7 @@ class WhatsAppRouterAgent:
             action_type=TaskType.RUN_AGENT,
             action_agent=agent,
             action_prompt=prompt,
+            context_id=recipient_id,
             execute_at=execute_at,
             cron_expression=cron_expr,
             metadata={"sender_id": recipient_id},
@@ -371,7 +375,7 @@ class WhatsAppRouterAgent:
         """Handle note command - save a note."""
         note_repo = self._get_note_repo()
 
-        note = Note(content=content)
+        note = Note(content=content, context_id=recipient_id)
         note_repo.save(note)
         logger.info(f"Saved note: {note.id}")
 
@@ -485,13 +489,20 @@ class WhatsAppRouterAgent:
                 # Create MCP provider that manages all servers
                 self._mcp_provider = MCPProvider(server_names=self._mcp_servers)
                 # Create long-lived session for connection reuse across messages
-                # Enter= context manager and keep it open for= agent lifetime
+                # Enter context manager and keep it open for agent lifetime
                 self._mcp_session_cm = self._mcp_provider.tool_session(fail_fast=False)
                 self._mcp_session = await self._mcp_session_cm.__aenter__()
                 self._mcp_tools = self._mcp_session
                 logger.info(f"Loaded {len(self._mcp_tools)} MCP tools in long-lived session")
             else:
                 logger.info("No MCP servers configured, running with LLM only")
+
+            # Initialize persistent memory
+            db = Database(self._storage_db_path)
+            self._checkpointer = db.get_checkpointer(is_async=True)
+            if hasattr(self._checkpointer, "__aenter__"):
+                await self._checkpointer.__aenter__()
+            logger.info("Persistent memory (AsyncSqliteSaver) initialized")
 
             self._running = True
 
@@ -645,6 +656,11 @@ class WhatsAppRouterAgent:
         # Cancel any running async tasks
         if hasattr(self, "_scheduler_task") and self._scheduler_task:
             self._scheduler_task.cancel("Shutdown requested")
+
+        # Clean up checkpointer
+        if self._checkpointer and hasattr(self._checkpointer, "__aexit__"):
+            await self._checkpointer.__aexit__(None, None, None)
+            logger.info("Persistent memory (AsyncSqliteSaver) closed")
 
         # Shut down the channel
         try:
