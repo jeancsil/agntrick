@@ -33,10 +33,10 @@ from agntrick_whatsapp.commands import (
     SchedulesCommand,
 )
 from agntrick_whatsapp.config import AudioTranscriberConfig
-from agntrick_whatsapp.storage import Database, NoteRepository, TaskRepository
-from agntrick_whatsapp.storage.models import Note, ScheduledTask, TaskStatus, TaskType
-from agntrick_whatsapp.storage.scheduler import parse_natural_time
 from agntrick_whatsapp.transcriber import AudioTranscriber
+from agntrick_storage import Database, NoteRepository, TaskRepository
+from agntrick_storage.models import Note, ScheduledTask, TaskStatus, TaskType
+from agntrick_storage.scheduler import parse_natural_time
 
 if TYPE_CHECKING:
     from langgraph.pregel import Pregel
