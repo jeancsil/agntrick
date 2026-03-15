@@ -38,15 +38,16 @@ class TaskRepository:
         cursor.execute(
             """
             INSERT OR REPLACE INTO scheduled_tasks
-            (id, action_type, action_agent, action_prompt, execute_at,
+            (id, action_type, action_agent, action_prompt, context_id, execute_at,
              cron_expression, status, created_at, completed_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task.id,
                 task.action_type.value,
                 task.action_agent,
                 task.action_prompt,
+                task.context_id,
                 task.execute_at,
                 task.cron_expression,
                 task.status.value,
