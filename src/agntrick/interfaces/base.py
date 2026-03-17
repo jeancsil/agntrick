@@ -48,3 +48,25 @@ class Tool(ABC):
             name=self.name,
             description=self.description,
         )
+
+    @classmethod
+    def from_function(
+        cls,
+        func: Any,
+        name: str,
+        description: str,
+    ) -> StructuredTool:
+        """Create a LangChain StructuredTool from a plain function.
+
+        This factory method provides a single point of access to LangChain
+        tool creation, decoupling agent code from direct StructuredTool imports.
+
+        Args:
+            func: The callable to wrap as a tool.
+            name: Tool name (used by LLM to identify the tool).
+            description: Tool description (used by LLM to understand the tool).
+
+        Returns:
+            A LangChain StructuredTool wrapping the function.
+        """
+        return StructuredTool.from_function(func=func, name=name, description=description)
