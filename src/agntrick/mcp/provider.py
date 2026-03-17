@@ -48,7 +48,11 @@ class MCPProvider:
 
         # Apply server_names filter if provided
         if server_names is not None:
-            self._config = {k: self._config[k] for k in server_names if k in self._config}
+            unknown = [n for n in server_names if n not in self._config]
+            if unknown:
+                available = list(self._config.keys())
+                raise ValueError(f"Unknown MCP server(s): {unknown}. Available servers: {available}")
+            self._config = {k: self._config[k] for k in server_names}
 
         self._client = MultiServerMCPClient(self._config)
         self._tools_cache: Optional[List[Any]] = None
