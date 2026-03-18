@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from agntrick.mcp.provider import MCPConnectionError, MCPProvider
 
 
@@ -48,4 +50,18 @@ class TestMCPProvider:
 
         assert "server1" in provider._config
         assert "server3" in provider._config
+        assert "server2" not in provider._config
+
+    def test_mcp_provider_unknown_server_raises_value_error(self):
+        """Test MCPProvider raises ValueError for unknown server names."""
+        servers_config = {"server1": MagicMock(), "server2": MagicMock()}
+
+        with pytest.raises(ValueError, match="Unknown MCP server"):
+            MCPProvider(servers_config=servers_config, server_names=["server1", "unknown_server"])
+
+    def test_mcp_provider_all_known_servers_no_error(self):
+        """Test MCPProvider accepts valid server names without error."""
+        servers_config = {"server1": MagicMock(), "server2": MagicMock()}
+        provider = MCPProvider(servers_config=servers_config, server_names=["server1"])
+        assert "server1" in provider._config
         assert "server2" not in provider._config
