@@ -154,3 +154,15 @@ def test_agntrick_agents_config():
     )
 
     assert config.prompts_dir == "./prompts"
+
+
+def test_mcp_config_has_default_timeout():
+    """MCPConfig should have timeout field with default 60."""
+    config = MCPConfig()
+    assert config.timeout == 60
+
+
+def test_mcp_config_custom_timeout():
+    """MCPConfig should accept custom timeout."""
+    config = MCPConfig(timeout=120)
+    assert config.timeout == 120

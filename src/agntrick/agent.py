@@ -4,6 +4,7 @@ This module provides AgentBase, the main class for creating agents
 with MCP tool integration and LLM provider abstraction.
 """
 
+import asyncio
 from abc import abstractmethod
 from typing import Any, Dict, List, Sequence, Union
 
@@ -53,6 +54,7 @@ class AgentBase(Agent):
         mcp_provider: MCPProvider | None = None,
         initial_mcp_tools: List[Any] | None = None,
         thread_id: str = "1",
+        checkpointer: Any | None = None,
         **kwargs: Any,
     ):
         """Initialize the agent.
@@ -63,6 +65,7 @@ class AgentBase(Agent):
             mcp_provider: Optional MCP provider for external tool access.
             initial_mcp_tools: Optional pre-loaded MCP tools.
             thread_id: Thread ID for conversation memory.
+            checkpointer: Optional checkpointer for persistent memory.
             **kwargs: Additional arguments (for future compatibility).
         """
         config = get_config()
@@ -77,8 +80,10 @@ class AgentBase(Agent):
         self._mcp_provider = mcp_provider
         self._initial_mcp_tools = initial_mcp_tools
         self._thread_id = thread_id
+        self._checkpointer = checkpointer
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
+        self._init_lock = asyncio.Lock()
 
     @property
     @abstractmethod
@@ -117,13 +122,18 @@ class AgentBase(Agent):
         if self._graph is not None:
             return
 
-        self._tools.extend(await self._load_mcp_tools())
-        self._graph = create_agent(
-            model=self.model,
-            tools=self._tools,
-            system_prompt=self.system_prompt,
-            checkpointer=InMemorySaver(),
-        )
+        async with self._init_lock:
+            # Double-checked locking
+            if self._graph is not None:
+                return
+
+            self._tools.extend(await self._load_mcp_tools())
+            self._graph = create_agent(
+                model=self.model,
+                tools=self._tools,
+                system_prompt=self.system_prompt,
+                checkpointer=self._checkpointer or InMemorySaver(),
+            )
 
     def _normalize_messages(self, input_data: Union[str, List[BaseMessage]]) -> List[BaseMessage]:
         """Normalize input data to a list of BaseMessage.

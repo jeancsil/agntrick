@@ -5,9 +5,9 @@ import time
 from typing import Any, Sequence
 
 import requests
-from langchain_core.tools import StructuredTool
 
 from agntrick.agent import AgentBase
+from agntrick.interfaces.base import Tool
 from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
 
@@ -312,7 +312,7 @@ class GithubPrReviewerAgent(AgentBase):
     def local_tools(self) -> Sequence[Any]:
         """Return six GitHub API tools available to this agent."""
         return [
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=get_pr_metadata,
                 name="get_pr_metadata",
                 description=(
@@ -321,7 +321,7 @@ class GithubPrReviewerAgent(AgentBase):
                     "before posting inline comments."
                 ),
             ),
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=get_pr_diff,
                 name="get_pr_diff",
                 description=(
@@ -329,7 +329,7 @@ class GithubPrReviewerAgent(AgentBase):
                     "additions/deletions, and patch content for each changed file."
                 ),
             ),
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=get_pr_comments,
                 name="get_pr_comments",
                 description=(
@@ -337,7 +337,7 @@ class GithubPrReviewerAgent(AgentBase):
                     "request. Returns comment id, author, body, file, and line number."
                 ),
             ),
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=post_review_comment,
                 name="post_review_comment",
                 description=(
@@ -345,7 +345,7 @@ class GithubPrReviewerAgent(AgentBase):
                     "Requires commit_sha — use get_pr_metadata to retrieve head SHA first."
                 ),
             ),
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=post_general_comment,
                 name="post_general_comment",
                 description=(
@@ -353,7 +353,7 @@ class GithubPrReviewerAgent(AgentBase):
                     "summaries or replies to general comment threads."
                 ),
             ),
-            StructuredTool.from_function(
+            Tool.from_function(
                 func=reply_to_review_comment,
                 name="reply_to_review_comment",
                 description=("Reply to an existing inline review comment thread. Use comment id from get_pr_comments."),

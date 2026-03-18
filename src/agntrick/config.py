@@ -39,6 +39,7 @@ class MCPConfig:
     """MCP server configuration."""
 
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    timeout: int = 60  # Connection timeout in seconds
 
 
 @dataclass

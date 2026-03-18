@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
-# Project root directory
+import platformdirs
+
+# Project root directory (used by some internal tooling)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Storage directory for persistent data
-STORAGE_DIR = BASE_DIR / "storage"
+# Storage directory for persistent data (follows OS conventions)
+STORAGE_DIR = Path(platformdirs.user_data_dir("agntrick"))
 
 # Logs directory
-LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR = Path(platformdirs.user_log_dir("agntrick"))
