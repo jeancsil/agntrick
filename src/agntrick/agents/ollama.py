@@ -1,7 +1,9 @@
+# src/agntrick/agents/ollama.py
 """Ollama Agent using local GLM-4.7-Flash model.
 
 This agent uses LocalReasoningLLM to connect to a local Ollama server
 running GLM-4.7-Flash with thinking tags automatically stripped from responses.
+It serves as a versatile orchestrator capable of delegating to other agents.
 """
 
 from typing import Any, Sequence
@@ -10,18 +12,22 @@ from agntrick.agent import AgentBase
 from agntrick.llm.local_reasoning import get_local_developer_model
 from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
+from agntrick.tools import AgentInvocationTool
 
 
-@AgentRegistry.register("ollama", mcp_servers=["fetch"])
+@AgentRegistry.register("ollama", mcp_servers=["web-forager", "fetch", "hacker-news"])
 class OllamaAgent(AgentBase):
     """Agent using local GLM-4.7-Flash model via Ollama.
 
-    This agent connects to a local Ollama server at http://127.0.0.1:8080
-    using the GLM-4.7-Flash model. The LocalReasoningLLM automatically
-    strips <reasoning>...</reasoning> tags from model responses.
+    A versatile local AI orchestrator that can:
+    - Search the web and fetch content via MCP tools
+    - Delegate to specialized agents (developer, learning, news, youtube)
+    - Handle research, writing, and analysis tasks directly
 
     MCP Servers:
-        fetch: Extract clean text from URLs
+        web-forager: Web search for current information
+        fetch: Extract clean content from URLs
+        hacker-news: Access Hacker News stories and discussions
 
     Server Configuration:
         Make sure your Ollama server is running with:
@@ -40,12 +46,12 @@ class OllamaAgent(AgentBase):
 
     @property
     def system_prompt(self) -> str:
-        """Return the system prompt for the Ollama agent."""
-        return load_prompt("developer")
+        """Return the orchestrator system prompt."""
+        return load_prompt("ollama")
 
     def local_tools(self) -> Sequence[Any]:
-        """Return list of local tools (none for this base implementation)."""
-        return []
+        """Return local tools including agent invocation."""
+        return [AgentInvocationTool().to_langchain_tool()]
 
     @property
     def model(self) -> Any:
