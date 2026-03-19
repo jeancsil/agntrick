@@ -1,4 +1,3 @@
-# tests/test_ollama_agent.py
 """Tests for OllamaAgent."""
 
 from agntrick.agents.ollama import OllamaAgent
