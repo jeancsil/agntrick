@@ -1,3 +1,4 @@
+# src/agntrick/agents/ollama.py
 """Ollama Agent using local GLM-4.7-Flash model.
 
 This agent uses LocalReasoningLLM to connect to a local Ollama server
