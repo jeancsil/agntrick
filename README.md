@@ -143,6 +143,7 @@ Agntrick includes several pre-built agents for common use cases:
 | `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries | - |
 | `learning` | Tutor: Step-by-step tutorials and explanations | `fetch`, `web-forager` |
 | `news` | News Anchor: Aggregates top stories | `fetch` |
+| `ollama` | Local Agent: Uses local GLM-4.7-Flash via Ollama (port 8080) | `fetch` |
 | `youtube` | Video Analyst: Extract insights from YouTube videos | `fetch` |
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent.

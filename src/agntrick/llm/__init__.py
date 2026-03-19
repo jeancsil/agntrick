@@ -4,6 +4,10 @@ This module provides utilities for detecting available LLM providers
 and creating appropriate model instances.
 """
 
+from agntrick.llm.local_reasoning import (
+    LocalReasoningLLM,
+    get_local_developer_model,
+)
 from agntrick.llm.providers import (
     DEFAULT_MODELS,
     Provider,
@@ -18,4 +22,6 @@ __all__ = [
     "_create_model",
     "detect_provider",
     "get_default_model",
+    "LocalReasoningLLM",
+    "get_local_developer_model",
 ]
