@@ -1,4 +1,3 @@
-# src/agntrick/agents/ollama.py
 """Ollama Agent using local GLM-4.7-Flash model.
 
 This agent uses LocalReasoningLLM to connect to a local Ollama server
@@ -49,10 +48,6 @@ class OllamaAgent(AgentBase):
         """Return the orchestrator system prompt."""
         return load_prompt("ollama")
 
-    def local_tools(self) -> Sequence[Any]:
-        """Return local tools including agent invocation."""
-        return [AgentInvocationTool().to_langchain_tool()]
-
     @property
     def model(self) -> Any:
         """Return the custom LocalReasoningLLM model.
@@ -66,3 +61,7 @@ class OllamaAgent(AgentBase):
     def model(self, value: Any) -> None:
         """No-op setter to allow parent's __init__ to set self.model."""
         pass
+
+    def local_tools(self) -> Sequence[Any]:
+        """Return local tools including agent invocation."""
+        return [AgentInvocationTool().to_langchain_tool()]
