@@ -133,7 +133,7 @@ class AgentBase(Agent):
         """
         from agntrick.storage.database import Database
 
-        db = Database(db_path)
+        db = Database(Path(db_path))
         kwargs["checkpointer"] = db.get_checkpointer(is_async=True)
         return cls(**kwargs)
 
