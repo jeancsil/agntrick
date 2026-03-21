@@ -137,7 +137,15 @@ class GitCommandTool(Tool):
             if result.returncode != 0:
                 return f"Error: {result.stderr.strip() or 'Git command failed'}"
 
-            return result.stdout
+            # Truncate large outputs (diffs can be huge)
+            output = result.stdout
+            if len(output.splitlines()) > 500:
+                lines = output.splitlines()
+                output = "\n".join(lines[:500])
+                output += f"\n\n(... {len(lines) - 500} more lines truncated)"
+                output += "\nTip: Use 'git diff <file>' for specific files or 'git diff --stat' for overview."
+
+            return output
 
         except FileNotFoundError:
             return "Error: Not a git repository or git is not installed."
@@ -356,7 +364,7 @@ class TestCommitterAgent:
 
 ## Success Criteria
 
-- [ ] Agent runs via CLI: `agntrick commiter -i "help"`
+- [ ] Agent runs via CLI: `agntrick committer -i "help"`
 - [ ] Agent shows git status
 - [ ] Agent shows staged changes
 - [ ] Agent generates commit message suggestions
