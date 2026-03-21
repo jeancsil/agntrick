@@ -1,3 +1,4 @@
+from .agent_invocation import AgentInvocationTool
 from .code_searcher import CodeSearcher
 from .codebase_explorer import (
     FileEditorTool,
@@ -12,6 +13,7 @@ from .youtube_cache import YouTubeTranscriptCache
 from .youtube_transcript import YouTubeTranscriptTool
 
 __all__ = [
+    "AgentInvocationTool",
     "CalculatorTool",
     "WeatherTool",
     "CodeSearcher",

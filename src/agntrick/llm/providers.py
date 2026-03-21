@@ -1,5 +1,6 @@
 """LLM provider detection and model creation utilities."""
 
+import logging
 import os
 from typing import Any, Callable, Literal
 
@@ -7,6 +8,8 @@ from dotenv import load_dotenv
 from pydantic import SecretStr
 
 load_dotenv()  # Load .env before reading environment variables
+
+logger = logging.getLogger(__name__)
 
 Provider = Literal[
     "anthropic",
@@ -221,6 +224,45 @@ def _create_openai(model_name: str, temperature: float) -> Any:
     )
 
 
+def _looks_like_ollama_model(model_name: str) -> bool:
+    """Check if a model name looks like an Ollama/local model.
+
+    Args:
+        model_name: The model name to check.
+
+    Returns:
+        True if the model name appears to be a local/Ollama model.
+
+    Note:
+        This specifically excludes models that might be z.ai models (e.g., glm-4.5-air).
+        Ollama models typically have patterns like: llama3.2, glm-4-flash, mistral:latest
+    """
+    # Models that are definitely Ollama/local (not cloud providers)
+    # Exclude "glm-" prefix since z.ai uses that pattern (glm-4.5-air)
+    ollama_prefixes = ("llama", "mistral", "codellama", "phi", "gemma", "qwen", "deepseek")
+    # Also check for common Ollama model suffixes
+    ollama_suffixes = ("-flash", "-coder", "-instruct", ":latest", ":v")
+    name_lower = model_name.lower()
+    has_prefix = any(name_lower.startswith(prefix) for prefix in ollama_prefixes)
+    has_suffix = any(suffix in name_lower for suffix in ollama_suffixes)
+    return has_prefix or has_suffix
+
+
+def _is_glm_model(model_name: str) -> bool:
+    """Check if a model name is a GLM model (z.ai).
+
+    Args:
+        model_name: The model name to check.
+
+    Returns:
+        True if the model name appears to be a GLM/z.ai model.
+    """
+    name_lower = model_name.lower()
+    # GLM models from z.ai typically start with "glm-" or "glm" followed by version
+    # Examples: glm-4.7, glm-4-flash, glm-4.5-air
+    return name_lower.startswith("glm")
+
+
 def _create_model(model_name: str, temperature: float) -> Any:
     """Create the appropriate LLM model instance based on the detected provider.
 
@@ -233,6 +275,37 @@ def _create_model(model_name: str, temperature: float) -> Any:
     """
     provider = detect_provider()
 
+    # Debug logging to trace model creation
+    logger.debug(
+        f"Creating model: name='{model_name}', provider='{provider}', "
+        f"OPENAI_BASE_URL='{os.getenv('OPENAI_BASE_URL')}', "
+        f"OLLAMA_BASE_URL='{os.getenv('OLLAMA_BASE_URL')}'"
+    )
+
+    # Smart routing: if model looks like Ollama AND OLLAMA_BASE_URL is set, use Ollama
+    # This handles cases where OPENAI_MODEL_NAME is set to a local model name
+    # but only if Ollama is actually configured (OLLAMA_BASE_URL is set)
+    ollama_base_url = os.getenv("OLLAMA_BASE_URL")
+    openai_base_url = os.getenv("OPENAI_BASE_URL")
+
+    # If using OpenAI provider with a non-OpenAI base URL (like z.ai), don't redirect to Ollama
+    is_custom_openai_endpoint = openai_base_url and "openai.com" not in openai_base_url
+
+    looks_like_ollama = _looks_like_ollama_model(model_name)
+    if provider == "openai" and ollama_base_url and looks_like_ollama and not is_custom_openai_endpoint:
+        logger.info(f"Model '{model_name}' looks like an Ollama model - routing to Ollama at {ollama_base_url}")
+        return _create_ollama(model_name, temperature)
+
+    # Check for z.ai GLM models: if model starts with "glm" and OPENAI_BASE_URL is set
+    # to a non-OpenAI endpoint (like z.ai), route to the custom endpoint
+    if provider == "openai" and _is_glm_model(model_name) and is_custom_openai_endpoint:
+        logger.info(
+            f"Model '{model_name}' is a GLM model on OpenAI provider - "
+            f"routing to OpenAI-compatible API at {openai_base_url}"
+        )
+        return _create_openai(model_name, temperature)
+
+    # Default to the provider's factory
     factory = _FACTORIES.get(provider)
     if factory:
         return factory(model_name, temperature)
