@@ -6,6 +6,7 @@ with MCP tool integration and LLM provider abstraction.
 
 import asyncio
 from abc import abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Sequence, Union
 
 from langchain.agents import create_agent
@@ -102,6 +103,40 @@ class AgentBase(Agent):
         """
         return []
 
+    @classmethod
+    def with_persistent_memory(
+        cls,
+        db_path: str | Path,
+        **kwargs: Any,
+    ) -> "AgentBase":
+        """Create an agent with persistent SQLite-backed memory.
+
+        This factory method creates an agent with a SqliteSaver checkpointer
+        for persistent conversation history across restarts.
+
+        Args:
+            db_path: Path to SQLite database for checkpoint storage.
+            **kwargs: Additional arguments passed to the agent's __init__.
+
+        Returns:
+            An agent instance with SqliteSaver checkpointer.
+
+        Example:
+            ```python
+            from agntrick import AgentBase
+
+            agent = MyAgent.with_persistent_memory(
+                db_path="~/conversations.db",
+                model_name="gpt-4",
+            )
+            ```
+        """
+        from agntrick.storage.database import Database
+
+        db = Database(Path(db_path))
+        kwargs["checkpointer"] = db.get_checkpointer(is_async=True)
+        return cls(**kwargs)
+
     async def _load_mcp_tools(self) -> List[Any]:
         """Load MCP tools from the provider.
 
@@ -183,6 +218,41 @@ class AgentBase(Agent):
             config=config or self._default_config(),
         )
         return str(result["messages"][-1].content)
+
+    async def run_with_memory(
+        self,
+        input_data: Union[str, List[BaseMessage]],
+        *,
+        thread_id: str | None = None,
+        max_tokens: int | None = None,
+    ) -> Union[str, BaseMessage]:
+        """Run agent with conversation memory support.
+
+        This is a convenience method that runs the agent with an explicit
+        thread ID for persistent conversation history. The agent must be
+        initialized with a persistent checkpointer (e.g., SqliteSaver)
+        for history to persist across runs.
+
+        Args:
+            input_data: The input for the agent.
+            thread_id: Optional thread ID override for conversation scoping.
+                If not provided, uses the agent's default thread_id.
+            max_tokens: Optional max tokens for context window.
+                NOTE: Not yet implemented - reserved for future token truncation.
+
+        Returns:
+            The agent's response as a string or BaseMessage.
+        """
+        config = self._default_config()
+
+        if thread_id is not None:
+            config["configurable"]["thread_id"] = thread_id
+
+        # TODO: Implement token truncation if max_tokens is provided
+        # This would require fetching checkpoint history and trimming
+        # to stay within the token limit.
+
+        return await self.run(input_data, config=config)
 
     def get_tools(self) -> List[Any]:
         """Get the list of available tools.
