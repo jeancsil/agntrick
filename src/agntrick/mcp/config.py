@@ -31,6 +31,10 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "args": ["-y", "@devabdultech/hn-mcp-server"],
         "transport": "stdio",
     },
+    "toolbox": {
+        "url": "http://localhost:8080/sse",
+        "transport": "sse",
+    },
 }
 
 

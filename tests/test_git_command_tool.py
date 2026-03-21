@@ -22,6 +22,7 @@ class TestGitCommandTool:
         """Default repo_path should be current directory."""
         tool = GitCommandTool()
         from pathlib import Path
+
         assert tool.repo_path == str(Path.cwd())
 
     def test_custom_repo_path(self):
@@ -44,6 +45,7 @@ class TestGitCommandTool:
 
     def test_status_command_executes(self, monkeypatch):
         """git status should execute successfully."""
+
         class MockResult:
             returncode = 0
             stdout = "On branch main\nnothing to commit"
@@ -61,6 +63,7 @@ class TestGitCommandTool:
 
     def test_git_error_returns_error_message(self, monkeypatch):
         """Git errors should be returned as error messages."""
+
         class MockResult:
             returncode = 1
             stdout = ""
@@ -78,7 +81,6 @@ class TestGitCommandTool:
 
     def test_timeout_handling(self, monkeypatch):
         """Command timeout should return timeout error."""
-        import subprocess
 
         def mock_run(*args, **kwargs):
             raise subprocess.TimeoutExpired("git", 30)
@@ -91,6 +93,7 @@ class TestGitCommandTool:
 
     def test_large_output_truncated(self, monkeypatch):
         """Large outputs should be truncated after 500 lines."""
+
         class MockResult:
             returncode = 0
             stdout = "\n".join([f"Line {i}" for i in range(600)])
