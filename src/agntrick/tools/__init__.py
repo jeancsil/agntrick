@@ -8,6 +8,7 @@ from .codebase_explorer import (
     StructureExplorerTool,
 )
 from .example import CalculatorTool, WeatherTool
+from .git_command import GitCommandTool
 from .syntax_validator import SyntaxValidator, ValidationResult, get_validator
 from .youtube_cache import YouTubeTranscriptCache
 from .youtube_transcript import YouTubeTranscriptTool
@@ -22,6 +23,7 @@ __all__ = [
     "FileFragmentReaderTool",
     "FileFinderTool",
     "FileEditorTool",
+    "GitCommandTool",
     "SyntaxValidator",
     "ValidationResult",
     "get_validator",
