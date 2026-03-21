@@ -6,7 +6,9 @@
 
 ## Overview
 
-Create a `CommitterAgent` that analyzes git changes and generates conventional commit messages. The agent will be accessible via CLI and WhatsApp (through agntrick-whatsapp).
+Create a `CommitterAgent` (spelled with double 't') that analyzes git changes and generates conventional commit messages. The agent will be accessible via CLI first, with WhatsApp integration through agntrick-whatsapp coming later.
+
+**Note:** WhatsApp integration is out of scope for this initial implementation and will be added in a future update to agntrick-whatsapp.
 
 ## Purpose
 
@@ -21,42 +23,46 @@ The CommitterAgent helps developers:
 ### Files to Create
 
 ```
-src/agntrick/agents/commiter.py         # New agent
+src/agntrick/agents/committer.py        # New agent (spelled with double 't')
 src/agntrick/tools/git_command.py       # Unified git tool
-prompts/commiter.md                     # System prompt
+prompts/committer.md                    # System prompt
+tests/test_committer_agent.py           # Tests (new)
+tests/test_git_command_tool.py          # Tests (new)
 ```
 
 ### Files to Update
 
 ```
 src/agntrick/tools/__init__.py          # Export git tools
-tests/test_commiter_agent.py            # Tests (new)
-tests/test_git_command_tool.py          # Tests (new)
+src/agntrick/prompts.py                 # Add fallback prompt (optional)
 ```
 
 ## Components
 
 ### CommitterAgent
 
-**Location:** `src/agntrick/agents/commiter.py`
+**Location:** `src/agntrick/agents/committer.py` (spelled with double 't')
 
 **Responsibilities:**
 - Extend `AgentBase`
-- Register as `"commiter"` in `AgentRegistry`
+- Register as `"committer"` in `AgentRegistry` (no MCP servers required)
 - Provide system prompt for commit analysis
 - Expose `GitCommandTool` as local tool
 
 **Interface:**
 ```python
-@AgentRegistry.register("commiter")
+@AgentRegistry.register("committer")  # No MCP servers needed for git operations
 class CommitterAgent(AgentBase):
     @property
     def system_prompt(self) -> str:
-        return load_prompt("commiter")
+        return load_prompt("committer")
 
     def local_tools(self) -> Sequence[Any]:
-        return [GitCommandTool(str(Path.cwd())).to_langchain_tool()]
+        # Tool defaults to current directory, accepts optional repo_path
+        return [GitCommandTool().to_langchain_tool()]
 ```
+
+**MCP Registration:** No MCP servers required. All git operations are performed locally via subprocess.
 
 ### GitCommandTool
 
@@ -67,8 +73,9 @@ class CommitterAgent(AgentBase):
 - Support multiple git operations
 - Handle errors gracefully
 - Return structured output
+- Validate input to prevent command injection
 
-**Supported Operations:**
+**Supported Operations (whitelisted):**
 | Command | Description |
 |---------|-------------|
 | `status` | Get git repository status |
@@ -81,8 +88,25 @@ class CommitterAgent(AgentBase):
 **Interface:**
 ```python
 class GitCommandTool(Tool):
+    """Execute git commands to analyze repository changes.
+
+    Only whitelisted git commands are supported for security.
+    All commands are executed with subprocess.run() using list arguments.
+    """
+
     name = "git_command"
     description = "Execute git commands to analyze repository changes"
+
+    # Whitelist of allowed git subcommands
+    ALLOWED_COMMANDS = {"status", "diff", "log", "show", "branch"}
+
+    def __init__(self, repo_path: str | None = None):
+        """Initialize git tool.
+
+        Args:
+            repo_path: Path to git repository. Defaults to current directory.
+        """
+        self.repo_path = repo_path or str(Path.cwd())
 
     def invoke(self, input_str: str) -> str:
         """Execute a git command.
@@ -93,14 +117,52 @@ class GitCommandTool(Tool):
         Returns:
             Command output or error message
         """
+        try:
+            # Parse and validate command
+            parts = input_str.strip().split()
+            if not parts or parts[0] not in self.ALLOWED_COMMANDS:
+                return f"Error: Unsupported git command. Allowed: {', '.join(sorted(self.ALLOWED_COMMANDS))}"
+
+            # Build command with list arguments (no shell=True)
+            cmd = ["git", "-C", self.repo_path] + parts
+
+            # Execute with timeout
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                return f"Error: {result.stderr.strip() or 'Git command failed'}"
+
+            return result.stdout
+
+        except FileNotFoundError:
+            return "Error: Not a git repository or git is not installed."
+        except subprocess.TimeoutExpired:
+            return "Error: Git command timed out."
+        except Exception as e:
+            return f"Error: {str(e)}"
 ```
+
+**Security Considerations:**
+- Only whitelisted git subcommands are allowed
+- Uses `subprocess.run()` with list arguments (never `shell=True`)
+- No arbitrary command execution
+- 30-second timeout to prevent hanging
 
 ### System Prompt
 
-**Location:** `prompts/commiter.md`
+**Location:** `prompts/committer.md`
 
 **Content:**
-- Define conventional commit format (feat, fix, docs, refactor, style, test, chore)
+- Define conventional commit format:
+  - Format: `<type>(<scope>): <subject>`
+  - Types: feat, fix, docs, refactor, style, test, chore, build, ci, perf, revert
+  - Breaking changes: append `!` after type/scope or add `BREAKING CHANGE:` footer
+  - Reference: https://www.conventionalcommits.org/
 - Instructions for analyzing changes
 - Guidelines for generating commit messages
 - Personality: concise, helpful, commit-focused
@@ -133,25 +195,27 @@ Returns formatted response with:
 
 ```bash
 # Check what's staged
-agntrick commiter -i "what's staged?"
+agntrick committer -i "what's staged?"
 
 # Get commit message suggestion
-agntrick commiter -i "summarize changes and suggest commit message"
+agntrick committer -i "summarize changes and suggest commit message"
 
 # View recent commits
-agntrick commiter -i "show last 5 commits"
+agntrick committer -i "show last 5 commits"
 
 # View specific commit
-agntrick commiter -i "show commit abc123"
+agntrick committer -i "show commit abc123"
 ```
 
-### WhatsApp Usage
+### WhatsApp Usage (Future)
 
 ```
-/commiter what's staged?
-/commiter suggest commit message
-/commiter show recent history
+/committer what's staged?
+/committer suggest commit message
+/committer show recent history
 ```
+
+**Note:** WhatsApp integration will be added in a future update to agntrick-whatsapp.
 
 ## Error Handling
 
@@ -160,26 +224,92 @@ agntrick commiter -i "show commit abc123"
 | Not a git repository | "Error: Not a git repository. Please run this command in a git repository." |
 | No staged changes | "No staged changes found. Use `git add <files>` to stage changes." |
 | Git command fails | Return stderr with helpful context |
-| Large diff output | Truncate with warning: "Output truncated due to size. Use specific file paths for detailed diffs." |
+| Unsupported git command | "Error: Unsupported git command. Allowed: branch, diff, log, show, status" |
+| Large diff output | Truncate after 500 lines with warning: "Output truncated (500+ lines). Use `git diff <file>` for specific files." |
 | Invalid commit hash | "Error: Commit 'xyz' not found." |
+| Command timeout | "Error: Git command timed out (30s)." |
+
+**Diff Truncation Policy:**
+- Truncate after 500 lines
+- Suggest using `git diff --stat` for overview
+- Suggest using `git diff <file>` for specific files
 
 ## Testing
 
 ### Unit Tests (`tests/test_git_command_tool.py`)
 
-- Test each git command (status, diff, log, show, branch)
+```python
+class TestGitCommandTool:
+    """Tests for GitCommandTool."""
+
+    def test_status_returns_output(self, monkeypatch):
+        """Test git status returns output."""
+        ...
+
+    def test_diff_returns_staged_changes(self, monkeypatch):
+        """Test git diff --cached shows staged changes."""
+        ...
+
+    def test_log_shows_commit_history(self, monkeypatch):
+        """Test git log shows commit history."""
+        ...
+
+    def test_error_not_git_repository(self, monkeypatch):
+        """Test error when not in a git repository."""
+        ...
+
+    def test_unsupported_command_rejected(self):
+        """Test unsupported commands return error."""
+        ...
+
+    def test_command_timeout(self, monkeypatch):
+        """Test timeout handling."""
+        ...
+```
+
+**Test Coverage:**
+- Each git command (status, diff, log, show, branch)
 - Mock subprocess calls
-- Test error handling
-- Test output parsing
+- Error handling (not a repo, timeout, unsupported command)
+- Output parsing and truncation
 
-### Integration Tests (`tests/test_commiter_agent.py`)
+### Integration Tests (`tests/test_committer_agent.py`)
 
-- Test agent with different scenarios:
-  - Staged changes only
-  - Mixed staged/unstaged
-  - No changes
-  - View history
-  - View specific commit
+```python
+class TestCommitterAgent:
+    """Tests for CommitterAgent."""
+
+    def test_agent_is_registered(self):
+        """Test agent is registered in AgentRegistry."""
+        ...
+
+    def test_system_prompt_loaded(self):
+        """Test system prompt is loaded correctly."""
+        ...
+
+    def test_staged_changes_summary(self, monkeypatch):
+        """Test agent summarizes staged changes."""
+        ...
+
+    def test_suggests_commit_message(self, monkeypatch):
+        """Test agent generates commit message suggestions."""
+        ...
+
+    def test_no_changes_helpful_response(self, monkeypatch):
+        """Test agent provides help when no changes exist."""
+        ...
+
+    def test_view_commit_history(self, monkeypatch):
+        """Test agent shows commit history."""
+        ...
+```
+
+**Test Scenarios:**
+- Staged changes only
+- Mixed staged/unstaged
+- No changes
+- View history
+- View specific commit
 - Mock git tool output
 - Verify LLM response structure
 
@@ -191,25 +321,37 @@ agntrick commiter -i "show commit abc123"
 
 ## Future Enhancements
 
-1. **Remote integration** (later):
+1. **WhatsApp integration** (agntrick-whatsapp):
+   - Add `/committer` command support
+   - Enable use via WhatsApp messages
+
+2. **Remote integration** (later):
    - GitHub PR/MR support
    - GitLab merge request support
 
-2. **Advanced features** (later):
+3. **Advanced features** (later):
    - Commit message linting
    - Branch comparison
    - Interactive staging suggestions
 
 ## Implementation Checklist
 
-- [ ] Create `GitCommandTool` class
-- [ ] Create `CommitterAgent` class
-- [ ] Create `prompts/commiter.md`
-- [ ] Update `tools/__init__.py`
-- [ ] Add unit tests for `GitCommandTool`
-- [ ] Add integration tests for `CommitterAgent`
+- [ ] Create `GitCommandTool` class (`src/agntrick/tools/git_command.py`)
+- [ ] Create `CommitterAgent` class (`src/agntrick/agents/committer.py`)
+- [ ] Create system prompt (`prompts/committer.md`)
+- [ ] Update `src/agntrick/tools/__init__.py`:
+  ```python
+  from .git_command import GitCommandTool
+
+  __all__ = [
+      # ... existing exports ...
+      "GitCommandTool",
+  ]
+  ```
+- [ ] Add unit tests (`tests/test_git_command_tool.py`)
+- [ ] Add integration tests (`tests/test_committer_agent.py`)
 - [ ] Run `make check` and fix any issues
-- [ ] Run `make test` and ensure coverage maintained
+- [ ] Run `make test` and ensure coverage maintained (80%+)
 - [ ] Update README.md with new agent
 
 ## Success Criteria
