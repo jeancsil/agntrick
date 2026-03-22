@@ -17,8 +17,9 @@ class TestOllamaAgent:
         agent = OllamaAgent()
         prompt = agent.system_prompt
 
-        # Should contain orchestrator identity
-        assert "orchestrator" in prompt.lower()
+        # Should contain key identity phrases
+        assert "versatile" in prompt.lower()
+        assert "delegate" in prompt.lower()
 
         # Should NOT contain developer-specific content
         assert "Principal Software Engineer" not in prompt
