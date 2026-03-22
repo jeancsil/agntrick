@@ -6,7 +6,9 @@
 
 **Architecture:** Add web search/fetch and Hacker News tools directly to `agntrick-toolkit` using the same libraries that `web-forager` uses (`ddgs`, `httpx`). Remove per-instance MCP instantiation from `agntrick` and `agntrick-whatsapp`.
 
-**Tech Stack:** Python 3.12, FastMCP, ddgs (DuckDuckGo search), httpx, beautifulsoup4
+**Tech Stack:** Python 3.12, FastMCP (from `mcp` package), ddgs (DuckDuckGo search), httpx, beautifulsoup4
+
+**Note:** This project uses `from mcp.server.fastmcp import FastMCP` (from the `mcp` package), NOT the standalone `fastmcp` package.
 
 ---
 
@@ -56,7 +58,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "ddgs>=9.5.2",            # DuckDuckGo search
     "httpx>=0.28.0",          # Async HTTP client
-    "beautifulsoup4>=4.11.0", # HTML parsing
+    "beautifulsoup4>=4.12.0", # HTML parsing (compatible with Python 3.12)
 ]
 ```
 
@@ -80,6 +82,11 @@ git commit -m "chore: add ddgs, httpx, beautifulsoup4 for web tools"
 **Files:**
 - Create: `~/code/agntrick-toolkit/src/agntrick_toolbox/tools/web.py`
 - Create: `~/code/agntrick-toolkit/tests/test_tools/test_web.py`
+
+- [ ] **Step 0: Verify test_tools directory exists**
+
+Run: `ls ~/code/agntrick-toolkit/tests/test_tools/__init__.py 2>/dev/null || echo "not found"`
+Expected: File exists (if not, the directory was created during initial setup)
 
 - [ ] **Step 1: Write the failing test for web_search**
 
@@ -580,14 +587,14 @@ git commit -m "feat: add hacker_news_top and hacker_news_item tools"
 
 - [ ] **Step 1: Add imports and registration calls**
 
-In `server.py`, add imports after line 13:
+In `server.py`, add imports after the existing tool imports (after `from .tools.utils import register_utils_tools`):
 
 ```python
 from .tools.hackernews import register_hackernews_tools
 from .tools.web import register_web_tools
 ```
 
-Add registration calls after line 29 (after `register_shell_tool(mcp)`):
+Add registration calls after `register_shell_tool(mcp)`:
 
 ```python
 register_web_tools(mcp)  # web_search, web_fetch
@@ -735,9 +742,14 @@ All tools are now consolidated in agntrick-toolkit:
 - [ ] **Step 1: Start the toolkit server**
 
 Run: `cd ~/code/agntrick-toolkit && uv run toolbox-server`
-Expected: Server starts on port 8080
+Expected: Server starts on port 8080, logs show "Starting agntrick-toolbox on port 8080"
 
-- [ ] **Step 2: Test tools via agntrick CLI**
+- [ ] **Step 2: Verify health endpoint**
+
+Run: `curl http://localhost:8080/health` (or check server logs for startup confirmation)
+Expected: Returns "OK" or server logs show successful startup
+
+- [ ] **Step 3: Test tools via agntrick CLI**
 
 In another terminal:
 ```bash
@@ -791,16 +803,27 @@ After completing all tasks:
 
 If issues arise:
 
-1. **Revert agntrick config:**
+1. **Revert agntrick-toolkit (if new tools cause problems):**
+   ```bash
+   cd ~/code/agntrick-toolkit
+   # Revert all toolkit commits from this plan
+   git log --oneline -5  # Find the commits to revert
+   git revert <commit-hash>  # Revert server.py registration
+   git revert <commit-hash>  # Revert hackernews.py
+   git revert <commit-hash>  # Revert web.py
+   git revert <commit-hash>  # Revert pyproject.toml
+   ```
+
+2. **Revert agntrick config:**
    ```bash
    cd ~/code/agents
    git revert HEAD~1  # Reverts the config.py change
    ```
 
-2. **Revert agntrick-whatsapp:**
+3. **Revert agntrick-whatsapp:**
    ```bash
    cd ~/code/agntrick-whatsapp
    git revert HEAD~1  # Reverts the router.py change
    ```
 
-3. **Toolkit changes are additive** - no need to revert, old MCP servers still work independently.
+4. **Alternative: Keep old MCP servers as fallback** - The removed `web-forager` and `hacker-news` entries can be restored to `agntrick/mcp/config.py` if toolkit tools have issues.
