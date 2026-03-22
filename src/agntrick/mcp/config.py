@@ -21,20 +21,12 @@ DEFAULT_MCP_SERVERS: Dict[str, Dict[str, Any]] = {
         "url": "https://remote.mcpservers.org/fetch/mcp",
         "transport": "http",
     },
-    "web-forager": {
-        "command": "uvx",
-        "args": ["web-forager", "serve"],
-        "transport": "stdio",
-    },
-    "hacker-news": {
-        "command": "npx",
-        "args": ["-y", "@devabdultech/hn-mcp-server"],
-        "transport": "stdio",
-    },
     "toolbox": {
         "url": "http://localhost:8080/sse",
         "transport": "sse",
     },
+    # Removed: web-forager (now in toolbox as web_search, web_fetch)
+    # Removed: hacker-news (now in toolbox as hacker_news_top, hacker_news_item)
 }
 
 
