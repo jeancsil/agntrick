@@ -139,6 +139,7 @@ Agntrick includes several pre-built agents for common use cases:
 
 | Agent | Purpose | MCP Servers |
 |-------|---------|-------------|
+| `committer` | Git Helper: Analyze changes and generate conventional commit messages | - |
 | `developer` | Code Master: Read, search & edit code | `fetch` |
 | `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries | - |
 | `learning` | Tutor: Step-by-step tutorials and explanations | `fetch`, `web-forager` |
