@@ -11,28 +11,18 @@ from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
 
 
-@AgentRegistry.register("learning", mcp_servers=["fetch", "web-forager"])
+@AgentRegistry.register("learning", mcp_servers=["toolbox"])
 class LearningAgent(AgentBase):
     """Agent specialized in creating tutorials and educational content.
 
-    This agent uses web search and content fetching to create comprehensive,
-    step-by-step tutorials and explanations on any topic.
+    This agent uses toolbox MCP tools for web research and content fetching
+    to create comprehensive, step-by-step tutorials.
 
     Capabilities:
     - Creates structured tutorials with clear steps
     - Explains complex concepts in simple terms
     - Provides examples and code snippets
-    - Researches current best practices via web search
-
-    Args:
-        model_name: The name of LLM model to use.
-        temperature: The temperature for LLM responses.
-        initial_mcp_tools: Optional pre-loaded MCP tools.
-        thread_id: The thread ID for conversation memory.
-
-    Example:
-        >>> agent = LearningAgent()
-        >>> response = await agent.run("Explain Docker containers with a tutorial")
+    - Researches current best practices via toolbox tools
     """
 
     @property
