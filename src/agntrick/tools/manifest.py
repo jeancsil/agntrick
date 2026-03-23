@@ -75,7 +75,7 @@ class ToolManifestClient:
 
     async def fetch_manifest(self) -> ToolManifest:
         """Fetch fresh manifest from toolbox server."""
-        url = f"{self.toolbox_url}/manifest"
+        url = f"{self.toolbox_url}/api/manifest"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
