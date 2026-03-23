@@ -7,6 +7,7 @@ with MCP tool integration and LLM provider abstraction.
 import asyncio
 import logging
 from abc import abstractmethod
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Union
 
@@ -119,22 +120,27 @@ class AgentBase(Agent):
         Returns:
             The complete system prompt string.
         """
+        # Add current date/time at the beginning of all prompts
+        now = datetime.now(timezone.utc)
+        date_header = f"## CURRENT DATE/TIME\n\nCurrent UTC date and time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n"
+
         base_prompt = self.system_prompt
 
         # If we have a manifest and tool categories, append tools section
         if self._tool_manifest is not None and self._tool_categories:
             try:
                 agent_name = self._agent_name or self.__class__.__name__.replace("Agent", "").lower()
-                return generate_system_prompt(
+                full_prompt = generate_system_prompt(
                     agent_name=agent_name,
                     manifest=self._tool_manifest,
                     categories=self._tool_categories,
                 )
+                return date_header + full_prompt
             except Exception as e:
                 logger.warning(f"Failed to generate system prompt with tools: {e}")
-                return base_prompt
+                return date_header + base_prompt
 
-        return base_prompt
+        return date_header + base_prompt
 
     def local_tools(self) -> Sequence[Any]:
         """Built-in tools available even without MCP.
