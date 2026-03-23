@@ -102,7 +102,7 @@ Returns the agent's response or an error message."""
 
         # Invoke agent in async context
         try:
-            return asyncio.run(self._invoke_agent_async(agent_cls, prompt, timeout))
+            return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
             return f"Error: Agent '{agent_name}' encountered an error: {e}"
@@ -110,6 +110,7 @@ Returns the agent's response or an error message."""
     async def _invoke_agent_async(
         self,
         agent_cls: Any,
+        agent_name: str,
         prompt: str,
         timeout: float,
     ) -> str:
@@ -117,6 +118,7 @@ Returns the agent's response or an error message."""
 
         Args:
             agent_cls: The agent class to instantiate.
+            agent_name: Name of the agent (for tool categories lookup).
             prompt: The prompt to send to the agent.
             timeout: Timeout in seconds.
 
@@ -124,7 +126,8 @@ Returns the agent's response or an error message."""
             Agent response or error message.
         """
         try:
-            agent = agent_cls()
+            tool_categories = AgentRegistry.get_tool_categories(agent_name)
+            agent = agent_cls(_agent_name=agent_name, tool_categories=tool_categories)
             result = await asyncio.wait_for(
                 agent.run(prompt),
                 timeout=timeout,

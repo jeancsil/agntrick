@@ -15,7 +15,11 @@ from agntrick.registry import AgentRegistry
 from agntrick.tools import AgentInvocationTool
 
 
-@AgentRegistry.register("ollama", mcp_servers=["toolbox"])
+@AgentRegistry.register(
+    "ollama",
+    mcp_servers=["toolbox"],
+    tool_categories=["web", "hackernews", "document", "git", "search", "media"],
+)
 class OllamaAgent(AgentBase):
     """Agent using local GLM-4.7-Flash model via Ollama.
 

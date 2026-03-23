@@ -5,6 +5,7 @@ with MCP tool integration and LLM provider abstraction.
 """
 
 import asyncio
+import logging
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Union
@@ -17,6 +18,10 @@ from agntrick.config import get_config
 from agntrick.interfaces.base import Agent
 from agntrick.llm import _create_model, get_default_model
 from agntrick.mcp import MCPProvider
+from agntrick.prompts.generator import generate_system_prompt
+from agntrick.tools.manifest import ToolManifest, ToolManifestClient
+
+logger = logging.getLogger(__name__)
 
 
 class AgentBase(Agent):
@@ -56,6 +61,9 @@ class AgentBase(Agent):
         initial_mcp_tools: List[Any] | None = None,
         thread_id: str = "1",
         checkpointer: Any | None = None,
+        tool_categories: List[str] | None = None,
+        toolbox_url: str = "http://localhost:8080",
+        _agent_name: str | None = None,
         **kwargs: Any,
     ):
         """Initialize the agent.
@@ -67,6 +75,9 @@ class AgentBase(Agent):
             initial_mcp_tools: Optional pre-loaded MCP tools.
             thread_id: Thread ID for conversation memory.
             checkpointer: Optional checkpointer for persistent memory.
+            tool_categories: Optional list of tool categories to document in prompt (e.g., ["web", "git"]).
+            toolbox_url: URL of the toolbox server for tool manifest fetching.
+            _agent_name: Internal agent name (set by registry when creating agents).
             **kwargs: Additional arguments (for future compatibility).
         """
         config = get_config()
@@ -85,6 +96,10 @@ class AgentBase(Agent):
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
         self._init_lock = asyncio.Lock()
+        self._tool_categories = tool_categories
+        self._toolbox_url = toolbox_url
+        self._tool_manifest: ToolManifest | None = None
+        self._agent_name = _agent_name  # Set by registry when creating agents
 
     @property
     @abstractmethod
@@ -94,6 +109,32 @@ class AgentBase(Agent):
         Returns:
             The system prompt string.
         """
+
+    def _get_system_prompt(self) -> str:
+        """Get system prompt with dynamic tool documentation.
+
+        Combines the agent's base system_prompt with tool documentation
+        fetched from the toolbox server (if tool_categories are specified).
+
+        Returns:
+            The complete system prompt string.
+        """
+        base_prompt = self.system_prompt
+
+        # If we have a manifest and tool categories, append tools section
+        if self._tool_manifest is not None and self._tool_categories:
+            try:
+                agent_name = self._agent_name or self.__class__.__name__.replace("Agent", "").lower()
+                return generate_system_prompt(
+                    agent_name=agent_name,
+                    manifest=self._tool_manifest,
+                    categories=self._tool_categories,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate system prompt with tools: {e}")
+                return base_prompt
+
+        return base_prompt
 
     def local_tools(self) -> Sequence[Any]:
         """Built-in tools available even without MCP.
@@ -149,10 +190,28 @@ class AgentBase(Agent):
             return []
         return await self._mcp_provider.get_tools()
 
+    async def _fetch_tool_manifest(self) -> ToolManifest | None:
+        """Fetch tool manifest from toolbox server.
+
+        Returns:
+            ToolManifest if successful, None if toolbox unavailable.
+        """
+        if not self._tool_categories:
+            return None
+
+        try:
+            client = ToolManifestClient(self._toolbox_url)
+            manifest = await client.get_manifest()
+            logger.debug(f"Fetched manifest with {len(manifest.tools)} tools from toolbox")
+            return manifest
+        except Exception as e:
+            logger.warning(f"Failed to fetch tool manifest from {self._toolbox_url}: {e}")
+            return None
+
     async def _ensure_initialized(self) -> None:
         """Ensure the agent graph is initialized.
 
-        Lazily initializes the graph and loads MCP tools on first use.
+        Lazily initializes the graph, loads MCP tools, and fetches tool manifest.
         """
         if self._graph is not None:
             return
@@ -162,11 +221,18 @@ class AgentBase(Agent):
             if self._graph is not None:
                 return
 
+            # Fetch tool manifest if categories specified
+            if self._tool_manifest is None and self._tool_categories:
+                self._tool_manifest = await self._fetch_tool_manifest()
+
+            # Get system prompt (potentially with tools)
+            system_prompt = self._get_system_prompt()
+
             self._tools.extend(await self._load_mcp_tools())
             self._graph = create_agent(
                 model=self.model,
                 tools=self._tools,
-                system_prompt=self.system_prompt,
+                system_prompt=system_prompt,
                 checkpointer=self._checkpointer or InMemorySaver(),
             )
 
