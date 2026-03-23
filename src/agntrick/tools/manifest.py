@@ -76,35 +76,14 @@ class ToolManifestClient:
 
     async def fetch_manifest(self) -> ToolManifest:
         """Fetch fresh manifest from toolbox server."""
-        url = f"{self.toolbox_url}/sse"
+        url = f"{self.toolbox_url}/manifest"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # For now, we'll parse the list_tools response
-            # In the future, this could be a dedicated /manifest endpoint
             response = await client.get(url)
             response.raise_for_status()
 
-            # Parse the MCP tools list
-            # This is a simplified version - actual implementation
-            # would call the list_tools MCP tool
-            try:
-                tools_data = json.loads(response.text) if response.text else []
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse manifest response as JSON")
-                return ToolManifest(tools=[])
-
-            tools = []
-            for item in tools_data if isinstance(tools_data, list) else tools_data.get("tools", []):
-                if isinstance(item, dict):
-                    tools.append(
-                        ToolInfo(
-                            name=item.get("name", ""),
-                            category=item.get("category", "general"),
-                            description=item.get("description", ""),
-                        )
-                    )
-
-            return ToolManifest(tools=tools)
+            # Parse the ToolManifest JSON response
+            return ToolManifest(**response.json())
 
     async def get_manifest(self, force_refresh: bool = False) -> ToolManifest:
         """Get manifest, using cache if fresh."""

@@ -14,8 +14,8 @@ class TestToolManifestClient:
         from agntrick.tools.manifest import ToolManifestClient
 
         mock_response = MagicMock()
-        mock_response.text = (
-            '{"version": "1.0.0", "tools": [{"name": "web_search", "category": "web", "description": "Search"}]}'
+        mock_response.json = MagicMock(
+            return_value={"version": "1.0.0", "tools": [{"name": "web_search", "category": "web", "description": "Search"}]}
         )
 
         with patch("agntrick.tools.manifest.httpx.AsyncClient") as mock_client:
