@@ -63,7 +63,7 @@ class AgentBase(Agent):
         thread_id: str = "1",
         checkpointer: Any | None = None,
         tool_categories: List[str] | None = None,
-        toolbox_url: str = "http://localhost:8080",
+        toolbox_url: str | None = None,
         _agent_name: str | None = None,
         **kwargs: Any,
     ):
@@ -77,7 +77,8 @@ class AgentBase(Agent):
             thread_id: Thread ID for conversation memory.
             checkpointer: Optional checkpointer for persistent memory.
             tool_categories: Optional list of tool categories to document in prompt (e.g., ["web", "git"]).
-            toolbox_url: URL of the toolbox server for tool manifest fetching.
+            toolbox_url: URL of the toolbox server for tool manifest fetching. If not provided,
+                        uses TOOLBOX_URL env var or defaults to http://localhost:8080/sse.
             _agent_name: Internal agent name (set by registry when creating agents).
             **kwargs: Additional arguments (for future compatibility).
         """
@@ -98,9 +99,13 @@ class AgentBase(Agent):
         self._graph: Any | None = None
         self._init_lock = asyncio.Lock()
         self._tool_categories = tool_categories
+        # Get toolbox_url from: parameter > config > default
+        if toolbox_url is None:
+            toolbox_url = config.mcp.toolbox_url or "http://localhost:8080"
         self._toolbox_url = toolbox_url
         self._tool_manifest: ToolManifest | None = None
-        self._agent_name = _agent_name  # Set by registry when creating agents
+        # Get agent name from: parameter > config > default
+        self._agent_name = _agent_name or config.agents.default_agent_name
 
     @property
     @abstractmethod
@@ -117,6 +122,10 @@ class AgentBase(Agent):
         Combines the agent's base system_prompt with tool documentation
         fetched from the toolbox server (if tool_categories are specified).
 
+        Supports customization via config file (.agntrick.yaml):
+        - agents.system_prompt_template: Direct template string
+        - agents.system_prompt_file: Path to file containing template
+
         Returns:
             The complete system prompt string.
         """
@@ -125,6 +134,23 @@ class AgentBase(Agent):
         date_header = f"## CURRENT DATE/TIME\n\nCurrent UTC date and time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n"
 
         base_prompt = self.system_prompt
+
+        # Check for custom system prompt template from config or file
+        config = get_config()
+        custom_prompt = None
+
+        # Priority: config template > config file > agent's prompt
+        if config.agents.system_prompt_template:
+            custom_prompt = config.agents.system_prompt_template
+            logger.debug("Using system prompt from config (agents.system_prompt_template)")
+        elif hasattr(config.agents, "system_prompt_file") and config.agents.system_prompt_file:
+            prompt_path = Path(config.agents.system_prompt_file)
+            if prompt_path.exists():
+                try:
+                    custom_prompt = prompt_path.read_text(encoding="utf-8")
+                    logger.debug(f"Using system prompt from config file: {prompt_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to read system prompt file {prompt_path}: {e}")
 
         # If we have a manifest and tool categories, append tools section
         if self._tool_manifest is not None and self._tool_categories:
@@ -138,9 +164,9 @@ class AgentBase(Agent):
                 return date_header + full_prompt
             except Exception as e:
                 logger.warning(f"Failed to generate system prompt with tools: {e}")
-                return date_header + base_prompt
 
-        return date_header + base_prompt
+        # Use custom prompt if available, otherwise use agent's base prompt
+        return date_header + (custom_prompt if custom_prompt is not None else base_prompt)
 
     def local_tools(self) -> Sequence[Any]:
         """Built-in tools available even without MCP.
@@ -197,10 +223,15 @@ class AgentBase(Agent):
         return await self._mcp_provider.get_tools()
 
     async def _fetch_tool_manifest(self) -> ToolManifest | None:
-        """Fetch tool manifest from toolbox server.
+        """Fetch tool manifest from toolbox server with graceful degradation.
 
         Returns:
             ToolManifest if successful, None if toolbox unavailable.
+
+        Note:
+            This method implements graceful degradation - if the toolbox server
+            is unavailable, the agent will continue to function with local tools only.
+            Failures are logged but do not prevent agent initialization.
         """
         if not self._tool_categories:
             return None
@@ -210,8 +241,15 @@ class AgentBase(Agent):
             manifest = await client.get_manifest()
             logger.debug(f"Fetched manifest with {len(manifest.tools)} tools from toolbox")
             return manifest
+        except ConnectionError as e:
+            logger.warning(
+                f"Toolbox server at {self._toolbox_url} unavailable: {e}. Agent will run with local tools only."
+            )
+            return None
         except Exception as e:
-            logger.warning(f"Failed to fetch tool manifest from {self._toolbox_url}: {e}")
+            logger.warning(
+                f"Failed to fetch tool manifest from {self._toolbox_url}: {e}. Agent will run with local tools only."
+            )
             return None
 
     async def _ensure_initialized(self) -> None:

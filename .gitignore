@@ -48,6 +48,7 @@ logs/
 
 # Configuration files
 **/whatsapp.yaml
+.agntrick.yaml
 
 # Runtime data (sessions, databases, media)
 storage/whatsapp/

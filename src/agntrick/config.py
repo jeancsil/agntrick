@@ -40,6 +40,7 @@ class MCPConfig:
 
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     timeout: int = 60  # Connection timeout in seconds
+    toolbox_url: str | None = None  # Toolbox MCP server URL
 
 
 @dataclass
@@ -47,6 +48,9 @@ class AgentsConfig:
     """Agent-specific configuration."""
 
     prompts_dir: str | None = None
+    default_agent_name: str = "Assistant"  # Default agent name for prompts
+    system_prompt_template: str | None = None  # Optional custom system prompt template
+    system_prompt_file: str | None = None  # Path to file containing system prompt template
 
 
 @dataclass
