@@ -1,5 +1,6 @@
 """MCP provider: injectable MCP client and session-scoped tools for agents."""
 
+import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, cast
 
@@ -70,13 +71,17 @@ class MCPProvider:
         return self._tools_cache
 
     @asynccontextmanager
-    async def tool_session(self, fail_fast: bool = True) -> Any:
+    async def tool_session(self, fail_fast: bool = False) -> Any:
         """
         Async context manager: load MCP tools with sessions that close on exit.
 
         IMPORTANT: Connections are opened sequentially. While slightly slower than
         parallel, this avoids "Attempted to exit cancel scope in a different task"
         errors from anyio (used by mcp) which requires task identity for cleanup.
+
+        Args:
+            fail_fast: If True, raise exception on first MCP connection failure.
+                      If False (default), log errors and continue with degraded mode.
         """
         import asyncio
         import logging
@@ -84,6 +89,12 @@ class MCPProvider:
 
         CONN_TIMEOUT = 60
         all_tools = []
+        failed_servers = []
+
+        # Check environment variable for fail_fast override
+        # MCP_FAIL_FAST=true will cause immediate failure on connection errors
+        if os.environ.get("MCP_FAIL_FAST", "").lower() in ("true", "1", "yes"):
+            fail_fast = True
 
         # We use a stack to track entered contexts for reliable cleanup
         async with AsyncExitStack() as stack:
@@ -105,14 +116,24 @@ class MCPProvider:
                         all_tools.extend(tools)
                 except (asyncio.TimeoutError, TimeoutError) as e:
                     err = TimeoutError(f"Connection timed out after {CONN_TIMEOUT}s")
+                    failed_servers.append(name)
                     if fail_fast:
                         raise MCPConnectionError(name, err) from e
-                    logging.error(f"Failed to connect to MCP server '{name}': {err}")
+                    logging.warning(f"MCP server '{name}' unavailable (timeout): {err}")
                 except Exception as e:
+                    failed_servers.append(name)
                     if fail_fast:
                         logging.debug(f"MCP connection failed for '{name}'", exc_info=True)
                         raise MCPConnectionError(name, e) from e
-                    logging.error(f"Failed to connect to MCP server '{name}': {e}")
+                    logging.warning(f"MCP server '{name}' unavailable: {e}")
+
+            # Log degraded mode if any servers failed
+            if failed_servers:
+                failed_list = ", ".join(failed_servers)
+                logging.warning(
+                    f"Running in degraded mode: {len(failed_servers)} MCP server(s) "
+                    f"unavailable: {failed_list}. Agent will use local tools only."
+                )
 
             # Once all (or some) tools are loaded, yield them to the agent
             try:

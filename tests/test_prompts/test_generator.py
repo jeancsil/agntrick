@@ -1,0 +1,79 @@
+"""Tests for dynamic prompt generator."""
+
+
+class TestGenerateToolsSection:
+    """Tests for generate_tools_section."""
+
+    def test_generates_markdown_for_tools(self) -> None:
+        """Should generate markdown documentation for tools."""
+        from agntrick.prompts.generator import generate_tools_section
+        from agntrick.tools.manifest import ToolInfo, ToolManifest
+
+        manifest = ToolManifest(
+            tools=[
+                ToolInfo(name="web_search", category="web", description="Search the web"),
+                ToolInfo(name="web_fetch", category="web", description="Fetch URL content"),
+                ToolInfo(name="git_status", category="git", description="Get git status"),
+            ]
+        )
+
+        result = generate_tools_section(manifest)
+
+        assert "AVAILABLE TOOLS" in result
+        assert "web_search" in result
+        assert "web_fetch" in result
+        assert "git_status" in result
+
+    def test_filters_by_categories(self) -> None:
+        """Should filter tools by category when specified."""
+        from agntrick.prompts.generator import generate_tools_section
+        from agntrick.tools.manifest import ToolInfo, ToolManifest
+
+        manifest = ToolManifest(
+            tools=[
+                ToolInfo(name="web_search", category="web", description="Search"),
+                ToolInfo(name="git_status", category="git", description="Status"),
+            ]
+        )
+
+        result = generate_tools_section(manifest, categories=["web"])
+
+        assert "web_search" in result
+        assert "git_status" not in result
+
+    def test_empty_categories_list_returns_empty(self) -> None:
+        """Should return empty when categories list is empty."""
+        from agntrick.prompts.generator import generate_tools_section
+        from agntrick.tools.manifest import ToolInfo, ToolManifest
+
+        manifest = ToolManifest(
+            tools=[
+                ToolInfo(name="web_search", category="web", description="Search"),
+            ]
+        )
+        result = generate_tools_section(manifest, categories=[])
+        assert result == ""
+
+
+class TestGenerateSystemPrompt:
+    """Tests for generate_system_prompt."""
+
+    def test_combines_base_with_tools(self) -> None:
+        """Should combine base prompt with tools section."""
+        from agntrick.prompts.generator import generate_system_prompt
+        from agntrick.tools.manifest import ToolInfo, ToolManifest
+
+        manifest = ToolManifest(
+            tools=[
+                ToolInfo(name="web_search", category="web", description="Search"),
+            ]
+        )
+
+        result = generate_system_prompt(
+            agent_name="learning",
+            manifest=manifest,
+            categories=["web"],
+        )
+
+        assert "expert educator" in result.lower()  # From base prompt
+        assert "web_search" in result  # From tools section

@@ -15,7 +15,7 @@ from agntrick.exceptions import PromptNotFoundError
 logger = logging.getLogger(__name__)
 
 # Location of bundled prompts within the package
-_BUNDLED_PROMPTS_DIR = Path(__file__).parent / "prompts"
+_BUNDLED_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 # Default prompts as fallbacks
 _DEFAULT_PROMPTS: dict[str, str] = {
