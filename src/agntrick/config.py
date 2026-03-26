@@ -94,14 +94,21 @@ _config: AgntrickConfig | None = None
 def _find_config_file() -> Path | None:
     """Find the agntrick configuration file.
 
-    Searches in order:
-    1. ./.agntrick.yaml (current directory)
-    2. ~/.agntrick.yaml (home directory)
-    3. AGNTRICK_CONFIG environment variable
+    Searches in order (highest to lowest priority):
+    1. AGNTRICK_CONFIG environment variable
+    2. ./.agntrick.yaml (current directory)
+    3. ~/.agntrick.yaml (home directory)
 
     Returns:
         Path to the configuration file, or None if not found.
     """
+    # Check environment variable first (highest priority)
+    env_config = os.getenv("AGNTRICK_CONFIG")
+    if env_config:
+        env_path = Path(env_config)
+        if env_path.exists():
+            return env_path
+
     # Check current directory
     local_config = Path.cwd() / ".agntrick.yaml"
     if local_config.exists():
@@ -111,13 +118,6 @@ def _find_config_file() -> Path | None:
     home_config = Path.home() / ".agntrick.yaml"
     if home_config.exists():
         return home_config
-
-    # Check environment variable
-    env_config = os.getenv("AGNTRICK_CONFIG")
-    if env_config:
-        env_path = Path(env_config)
-        if env_path.exists():
-            return env_path
 
     return None
 
