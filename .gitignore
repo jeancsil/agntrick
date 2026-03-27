@@ -30,6 +30,9 @@ MANIFEST
 .env
 .venv
 
+# Worktrees
+.worktrees/
+
 # Editor
 .vscode/
 .idea/
