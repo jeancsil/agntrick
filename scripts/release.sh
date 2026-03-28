@@ -104,6 +104,10 @@ create_tag_and_release() {
         log_info "Detected pre-release: $version"
     fi
 
+    if git tag -l "$tag" | grep -q .; then
+        log_error "Tag $tag already exists. Delete it first: git tag -d $tag && git push origin :refs/tags/$tag"
+    fi
+
     log_info "Creating tag $tag..."
     git tag -a "$tag" -m "Release $tag"
 
@@ -147,8 +151,12 @@ main() {
     run_checks
     run_tests
 
-    git add pyproject.toml
-    git commit -m "release: agntrick $version"
+    if git diff --quiet pyproject.toml; then
+        log_warn "Version already set to $version in pyproject.toml"
+    else
+        git add pyproject.toml
+        git commit -m "release: agntrick $version"
+    fi
 
     create_tag_and_release "$version"
 
