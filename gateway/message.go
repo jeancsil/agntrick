@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/rs/zerolog"
 	waE2E "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -15,17 +17,14 @@ import (
 // Self-messages are detected by checking IsFromMe + Chat==Sender (JID equality).
 // This works for both phone-based JIDs (34677427318@s.whatsapp.net) and LID-based JIDs (118657162162293@lid).
 func handleMessage(eh *EventHandler, msg *events.Message) {
+	startTime := time.Now()
 	logger := eh.logger.With().Str("tenant_id", eh.tenantID).Logger()
 
-	// Log all message details for diagnostics
 	logger.Info().
 		Str("chat", msg.Info.Chat.String()).
-		Str("chat_user", msg.Info.Chat.User).
-		Str("chat_server", msg.Info.Chat.Server).
 		Str("sender", msg.Info.Sender.String()).
-		Str("sender_user", msg.Info.Sender.User).
 		Bool("is_from_me", msg.Info.IsFromMe).
-		Msg("Received message event in handleMessage")
+		Msg("Processing incoming message")
 
 	// Reject group messages
 	if msg.Info.Chat.Server == types.GroupServer {
@@ -52,18 +51,46 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 		return
 	}
 
-	logger.Info().Str("message", messageText).Msg("Extracted message text")
-
 	// Use chat JID for sending responses (like the old code used chat_jid for self-messages)
 	targetJID := msg.Info.Chat
 
-	// Send typing indicator
-	_ = eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	// Start persistent typing indicator that re-sends composing presence every 3 seconds.
+	// WhatsApp auto-expires typing indicators after ~3-5 seconds, so we must refresh
+	// to keep the indicator visible during long LLM processing (90+ seconds).
+	typingCtx, cancelTyping := context.WithCancel(context.Background())
+	defer cancelTyping()
 
-	// Forward to Python API
-	response, err := forwardToPythonAPI(eh, messageText)
+	go func() {
+		logger.Debug().Msg("Typing indicator loop started")
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+
+		// Send initial composing presence immediately
+		_ = eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+
+		for {
+			select {
+			case <-ticker.C:
+				_ = eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+			case <-typingCtx.Done():
+				logger.Debug().Msg("Typing indicator loop stopped")
+				return
+			}
+		}
+	}()
+
+	// Forward to Python API with progress logging
+	response, err := forwardToPythonAPI(eh, messageText, logger)
+
+	// Stop typing indicator loop
+	cancelTyping()
+
+	elapsed := time.Since(startTime)
+
 	if err != nil {
-		logger.Error().Err(err).Msg("Failed to forward message to Python API")
+		logger.Error().Err(err).
+			Dur("elapsed", elapsed).
+			Msg("Failed to forward message to Python API")
 		_ = eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
 		return
 	}
@@ -75,6 +102,11 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 
 	// Clear typing indicator
 	_ = eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
+
+	logger.Info().
+		Dur("elapsed", time.Since(startTime)).
+		Int("response_len", len(response)).
+		Msg("Message processing completed")
 }
 
 // isSelfMessage checks if the message is from the user to themselves.
@@ -188,14 +220,57 @@ func extractMessageText(msg *events.Message) string {
 	return ""
 }
 
-// forwardToPythonAPI forwards the message to the Python API
-func forwardToPythonAPI(eh *EventHandler, messageText string) (string, error) {
+// forwardToPythonAPI forwards the message to the Python API and logs progress during the LLM wait.
+// Spawns a background goroutine that logs status every 15 seconds until the API responds.
+func forwardToPythonAPI(eh *EventHandler, messageText string, logger zerolog.Logger) (string, error) {
 	tenant, err := eh.manager.config.GetTenantByID(eh.tenantID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tenant config: %w", err)
 	}
 
-	return eh.manager.httpClient.ForwardMessage(eh.tenantID, tenant.Phone, messageText)
+	// Start progress logger for the LLM call
+	progressCtx, cancelProgress := context.WithCancel(context.Background())
+	defer cancelProgress()
+
+	startTime := time.Now()
+	go logLLMProgress(progressCtx, logger, startTime)
+
+	logger.Info().Msg("Forwarding message to Python API (waiting for LLM response)")
+
+	response, err := eh.manager.httpClient.ForwardMessage(eh.tenantID, tenant.Phone, messageText)
+
+	cancelProgress()
+
+	if err != nil {
+		return "", err
+	}
+
+	logger.Info().
+		Dur("elapsed", time.Since(startTime)).
+		Msg("LLM response received")
+
+	return response, nil
+}
+
+// logLLMProgress logs periodic INFO-level status updates while waiting for an LLM response.
+// Stops when the context is cancelled (i.e., when the API responds or errors).
+const llmProgressInterval = 15 * time.Second
+
+func logLLMProgress(ctx context.Context, logger zerolog.Logger, startTime time.Time) {
+	ticker := time.NewTicker(llmProgressInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			elapsed := time.Since(startTime)
+			logger.Info().
+				Dur("elapsed", elapsed).
+				Msg("Still waiting for LLM response")
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // sendResponseToWhatsApp sends the API response back to WhatsApp

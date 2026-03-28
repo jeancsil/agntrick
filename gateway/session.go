@@ -209,7 +209,10 @@ func (eh *EventHandler) handleEvent(evt interface{}) {
 			Str("sender", v.Info.Sender.String()).
 			Bool("is_from_me", v.Info.IsFromMe).
 			Msg("Received WhatsApp message event")
-		eh.handleMessage(v)
+		// Dispatch async to avoid blocking whatsmeow's event processing loop.
+		// Long-running operations (e.g., LLM calls via Python API) can take 90+ seconds,
+		// which triggers whatsmeow's "Node handling took" warning if handled synchronously.
+		go eh.handleMessage(v)
 	default:
 		// Log other events at debug level for diagnostics
 		eh.logger.Debug().Type("event_type", evt).Msg("Unhandled WhatsApp event")
