@@ -10,104 +10,48 @@ permissions:
 jobs:
   publish-pypi:
     runs-on: ubuntu-latest
-    if: startsWith(github.event.release.tag_name, 'v') && !startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
+    if: "!github.event.release.prerelease"
     environment:
       name: pypi
       url: https://pypi.org/p/agntrick
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
       - name: Build package
-        run: make build
+        run: uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-whatsapp-pypi:
-    runs-on: ubuntu-latest
-    if: startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
-    environment:
-      name: pypi
-      url: https://pypi.org/p/agntrick-whatsapp
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Build WhatsApp package
-        run: make build-whatsapp
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: packages/agntrick-whatsapp/dist
 
   publish-testpypi:
     runs-on: ubuntu-latest
-    if: |
-      github.event.release.prerelease == true &&
-      startsWith(github.event.release.tag_name, 'v') &&
-      !startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
+    if: "github.event.release.prerelease"
     environment:
       name: testpypi
       url: https://test.pypi.org/p/agntrick
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
       - name: Build package
-        run: make build
+        run: uv build
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-
-  publish-whatsapp-testpypi:
-    runs-on: ubuntu-latest
-    if: |
-      github.event.release.prerelease == true &&
-      startsWith(github.event.release.tag_name, 'agntrick-whatsapp-v')
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/agntrick-whatsapp
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Build WhatsApp package
-        run: make build-whatsapp
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          packages-dir: packages/agntrick-whatsapp/dist
