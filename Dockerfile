@@ -1,5 +1,11 @@
-# Use official Python image as base
-FROM python:3.12-slim
+# Stage 1: Build Go gateway
+FROM golang:1.25-alpine AS go-builder
+WORKDIR /build/gateway
+COPY gateway/ .
+RUN go build -o /agntrick-gateway .
+
+# Stage 2: Python API base
+FROM python:3.12-slim AS python-base
 
 # Set working directory
 WORKDIR /app
@@ -46,12 +52,17 @@ COPY config ./config
 # This installs the package in editable mode with all dependencies
 RUN uv sync --frozen --no-dev
 
-# The source code will be mounted as a volume at runtime
-# This allows for live code changes without rebuilding the image
-# The volume mount will override the src/ directory copied above
+# Copy Go binary from go-builder stage
+COPY --from=go-builder /agntrick-gateway /usr/local/bin/
 
 # Create logs directory
 RUN mkdir -p /app/logs
 
-# Set the default command to show help
-CMD ["uv", "run", "agntrick", "--help"]
+# Stage 3: Runtime
+FROM python-base
+
+# Health check for the application
+HEALTHCHECK --interval=30s --timeout=5s CMD curl -f http://localhost:8000/health || exit 1
+
+# Set the default command to run both services
+CMD ["sh", "-c", "agntrick-gateway & agntrick serve"]

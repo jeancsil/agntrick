@@ -11,8 +11,15 @@ from agntrick.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
-# Agents that can be delegated to (excludes ollama to prevent recursion)
-DELEGATABLE_AGENTS = ["developer", "learning", "news", "youtube"]
+# Agents that can be delegated to (excludes assistant and ollama to prevent recursion)
+DELEGATABLE_AGENTS = [
+    "developer",
+    "learning",
+    "news",
+    "youtube",
+    "committer",
+    "github-pr-reviewer",
+]
 
 
 class AgentInvocationTool(Tool):
@@ -49,6 +56,8 @@ Available agents:
 - learning: Educational tutorials, step-by-step guides, explanations
 - news: Current news, events, breaking stories
 - youtube: Video transcript extraction and analysis
+- committer: Git commit message generation from code changes
+- github-pr-reviewer: GitHub PR review with inline comments
 
 Input (JSON):
 {
@@ -102,7 +111,41 @@ Returns the agent's response or an error message."""
 
         # Invoke agent in async context
         try:
-            return asyncio.run(self._invoke_agent_async(agent_cls, prompt, timeout))
+            # Check if we're already in an async context (e.g., FastAPI/uvicorn)
+            try:
+                asyncio.get_running_loop()
+                # We're in an async context, run in a thread to avoid blocking
+                import threading
+
+                result: list[str | None] = [None]
+                exception: list[Exception | None] = [None]
+
+                def run_in_new_loop() -> None:
+                    try:
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            result[0] = new_loop.run_until_complete(
+                                self._invoke_agent_async(agent_cls, agent_name, prompt, timeout)
+                            )
+                        finally:
+                            new_loop.close()
+                    except Exception as e:
+                        exception[0] = e
+
+                thread = threading.Thread(target=run_in_new_loop)
+                thread.start()
+                thread.join(timeout=timeout + 5)  # Add buffer to the timeout
+
+                if exception[0]:
+                    raise exception[0]
+                if result[0] is None:
+                    return f"Error: Agent '{agent_name}' timed out after {timeout} seconds."
+
+                return result[0]
+            except RuntimeError:
+                # No running loop, use asyncio.run()
+                return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
             return f"Error: Agent '{agent_name}' encountered an error: {e}"
@@ -110,6 +153,7 @@ Returns the agent's response or an error message."""
     async def _invoke_agent_async(
         self,
         agent_cls: Any,
+        agent_name: str,
         prompt: str,
         timeout: float,
     ) -> str:
@@ -117,6 +161,7 @@ Returns the agent's response or an error message."""
 
         Args:
             agent_cls: The agent class to instantiate.
+            agent_name: Name of the agent (for tool categories lookup).
             prompt: The prompt to send to the agent.
             timeout: Timeout in seconds.
 
@@ -124,7 +169,8 @@ Returns the agent's response or an error message."""
             Agent response or error message.
         """
         try:
-            agent = agent_cls()
+            tool_categories = AgentRegistry.get_tool_categories(agent_name)
+            agent = agent_cls(_agent_name=agent_name, tool_categories=tool_categories)
             result = await asyncio.wait_for(
                 agent.run(prompt),
                 timeout=timeout,

@@ -40,6 +40,7 @@ class MCPConfig:
 
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     timeout: int = 60  # Connection timeout in seconds
+    toolbox_url: str | None = None  # Toolbox MCP server URL
 
 
 @dataclass
@@ -47,6 +48,61 @@ class AgentsConfig:
     """Agent-specific configuration."""
 
     prompts_dir: str | None = None
+    default_agent_name: str = "Assistant"  # Default agent name for prompts
+    system_prompt_template: str | None = None  # Optional custom system prompt template
+    system_prompt_file: str | None = None  # Path to file containing system prompt template
+
+
+@dataclass
+class APIConfig:
+    """API server configuration."""
+
+    host: str = "127.0.0.1"
+    port: int = 8000
+    debug: bool = False
+
+
+@dataclass
+class AuthConfig:
+    """Authentication configuration."""
+
+    api_keys: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class StorageConfig:
+    """Storage configuration."""
+
+    base_path: str | None = None
+
+    def get_tenant_db_path(self, tenant_id: str) -> Path:
+        safe_id = "".join(c for c in tenant_id if c.isalnum() or c in "-_")
+        base = Path(self.base_path) if self.base_path else Path.home() / ".local" / "share" / "agntrick"
+        return base / "tenants" / safe_id / "agntrick.db"
+
+
+@dataclass
+class WhatsAppTenantConfig:
+    """Per-tenant WhatsApp configuration."""
+
+    id: str = ""
+    phone: str = ""
+    default_agent: str = "developer"
+    allowed_contacts: list[str] = field(default_factory=list)
+    system_prompt: str | None = None
+
+
+@dataclass
+class WhatsAppConfig:
+    """WhatsApp channel configuration."""
+
+    tenants: list[WhatsAppTenantConfig] = field(default_factory=list)
+
+    def get_tenant_by_phone(self, phone: str) -> WhatsAppTenantConfig | None:
+        for t in self.tenants:
+            if t.phone == phone:
+                return t
+        return None
 
 
 @dataclass
@@ -62,6 +118,10 @@ class AgntrickConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
     agents: AgentsConfig = field(default_factory=AgentsConfig)
+    api: APIConfig = field(default_factory=APIConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
+    whatsapp: WhatsAppConfig = field(default_factory=WhatsAppConfig)
 
     _config_path: str | None = field(default=None, init=False, repr=False)
 
@@ -75,11 +135,31 @@ class AgntrickConfig:
         Returns:
             A new AgntrickConfig instance.
         """
+        # Parse WhatsApp tenants
+        wa_dict = config_dict.get("whatsapp", {})
+        tenants = []
+        for t in wa_dict.get("tenants", []):
+            tenants.append(
+                WhatsAppTenantConfig(
+                    id=t.get("id", ""),
+                    phone=t.get("phone", ""),
+                    default_agent=t.get("default_agent", "developer"),
+                    allowed_contacts=t.get("allowed_contacts", []),
+                    system_prompt=t.get("system_prompt"),
+                )
+            )
+
         return cls(
             llm=LLMConfig(**config_dict.get("llm", {})),
             logging=LoggingConfig(**config_dict.get("logging", {})),
             mcp=MCPConfig(**config_dict.get("mcp", {})),
             agents=AgentsConfig(**config_dict.get("agents", {})),
+            api=APIConfig(**config_dict.get("api", {})),
+            auth=AuthConfig(
+                api_keys=config_dict.get("auth", {}).get("api_keys", {}),
+            ),
+            storage=StorageConfig(**config_dict.get("storage", {})),
+            whatsapp=WhatsAppConfig(tenants=tenants),
         )
 
 
@@ -90,14 +170,23 @@ _config: AgntrickConfig | None = None
 def _find_config_file() -> Path | None:
     """Find the agntrick configuration file.
 
-    Searches in order:
-    1. ./.agntrick.yaml (current directory)
-    2. ~/.agntrick.yaml (home directory)
-    3. AGNTRICK_CONFIG environment variable
+    Searches in order (highest to lowest priority):
+    1. AGNTRICK_CONFIG environment variable
+    2. ./.agntrick.yaml (current directory)
+    3. ~/.agntrick.yaml (home directory)
 
     Returns:
         Path to the configuration file, or None if not found.
     """
+    # Check environment variable first (highest priority)
+    env_config = os.getenv("AGNTRICK_CONFIG")
+    if env_config:
+        env_path = Path(env_config)
+        if env_path.exists():
+            return env_path
+        # Env var explicitly set but file missing — don't fall through
+        return None
+
     # Check current directory
     local_config = Path.cwd() / ".agntrick.yaml"
     if local_config.exists():
@@ -107,13 +196,6 @@ def _find_config_file() -> Path | None:
     home_config = Path.home() / ".agntrick.yaml"
     if home_config.exists():
         return home_config
-
-    # Check environment variable
-    env_config = os.getenv("AGNTRICK_CONFIG")
-    if env_config:
-        env_path = Path(env_config)
-        if env_path.exists():
-            return env_path
 
     return None
 

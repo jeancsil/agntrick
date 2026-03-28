@@ -1,9 +1,12 @@
 services:
-  agntrick:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: agntrick
+    container_name: agntrick-app
+
+    # Memory limit of 512MB
+    mem_limit: 512m
 
     # DNS configuration for reliable network resolution
     dns:
@@ -34,8 +37,15 @@ services:
     environment:
       - UV_LINK_MODE=copy
 
-    # Override default command - this will be overridden when running specific commands
-    command: [ "uv", "run", "agntrick", "--help" ]
+    # Command to run both Go gateway and Python API
+    command: ["sh", "-c", "agntrick-gateway & agntrick serve"]
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     # Keep container running for interactive use (optional)
     stdin_open: true
     tty: true

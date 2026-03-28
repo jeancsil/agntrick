@@ -15,23 +15,25 @@ from agntrick.registry import AgentRegistry
 from agntrick.tools import AgentInvocationTool
 
 
-@AgentRegistry.register("ollama", mcp_servers=["web-forager", "fetch", "hacker-news"])
+@AgentRegistry.register(
+    "ollama",
+    mcp_servers=["toolbox"],
+    tool_categories=["web", "hackernews", "document", "git", "search", "media"],
+)
 class OllamaAgent(AgentBase):
     """Agent using local GLM-4.7-Flash model via Ollama.
 
     A versatile local AI orchestrator that can:
-    - Search the web and fetch content via MCP tools
+    - Search the web and fetch content via toolbox MCP tools
     - Delegate to specialized agents (developer, learning, news, youtube)
     - Handle research, writing, and analysis tasks directly
 
     MCP Servers:
-        web-forager: Web search for current information
-        fetch: Extract clean content from URLs
-        hacker-news: Access Hacker News stories and discussions
+        toolbox: Centralized tool server with web search, fetch, and more
 
     Server Configuration:
-        Make sure your Ollama server is running with:
-        ollama serve --port 8080
+        Make sure toolbox is running:
+        cd agntrick-toolkit && uv run toolbox-server
 
     Usage:
         agntrick ollama -i "Your question here"
