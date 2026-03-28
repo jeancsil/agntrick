@@ -11,8 +11,15 @@ from agntrick.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
-# Agents that can be delegated to (excludes ollama to prevent recursion)
-DELEGATABLE_AGENTS = ["developer", "learning", "news", "youtube"]
+# Agents that can be delegated to (excludes assistant and ollama to prevent recursion)
+DELEGATABLE_AGENTS = [
+    "developer",
+    "learning",
+    "news",
+    "youtube",
+    "committer",
+    "github-pr-reviewer",
+]
 
 
 class AgentInvocationTool(Tool):
@@ -49,6 +56,8 @@ Available agents:
 - learning: Educational tutorials, step-by-step guides, explanations
 - news: Current news, events, breaking stories
 - youtube: Video transcript extraction and analysis
+- committer: Git commit message generation from code changes
+- github-pr-reviewer: GitHub PR review with inline comments
 
 Input (JSON):
 {
