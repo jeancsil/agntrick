@@ -1,9 +1,8 @@
 <div align="center">
 
 # 🎩 Agntrick
-**Build AI agents that *actually* do things.**
+**Multi-tenant WhatsApp AI platform.**
 
-[![PyPI version](https://img.shields.io/pypi/v/agntrick?style=plastic&logo=pypi&logoColor=white)](https://pypi.org/project/agntrick/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?style=plastic&logo=python&logoColor=white)](https://python.org)
 [![LangChain](https://img.shields.io/badge/langchain-%23007BA7.svg?style=plastic&logo=langchain&logoColor=white)](https://python.langchain.com/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-green?style=plastic&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
@@ -13,8 +12,9 @@
 
 <br>
 
-Combine **local tools** and **MCP servers** in a single, elegant runtime.
-Write agents in **5 lines of code**. Run them anywhere.
+**Production-ready WhatsApp integration** with Go gateway reliability and Python agent flexibility.
+
+Connect multiple WhatsApp numbers, deploy AI agents, and scale effortlessly.
 
 </div>
 
@@ -22,171 +22,285 @@ Write agents in **5 lines of code**. Run them anywhere.
 
 ## 💡 Why Agntrick?
 
-Instead of spending days wiring together LLMs, tools, and execution environments, Agntrick gives you a production-ready setup instantly.
+**Enterprise WhatsApp Integration**
 
-*   **Write Less, Do More:** Create a fully functional agent with just 5 lines of Python using the zero-config `@AgentRegistry.register` decorator.
-*   **Context is King (MCP):** Native integration with Model Context Protocol (MCP) servers to give your agents live data (Web search, APIs, internal databases).
-*   **Hardcore Local Tools:** Built-in blazing fast tools (`ripgrep`, `fd`, AST parsing) so your agents can explore and understand local codebases out-of-the-box.
-*   **Stateful & Resilient:** Powered by **LangGraph** to support memory, cyclic reasoning, and human-in-the-loop workflows.
-*   **Docker-First Isolation:** Every agent runs in isolated containers—no more "it works on my machine" when sharing with your team.
+- **Multi-tenant by design**: Support multiple WhatsApp accounts (phone numbers) in a single deployment
+- **Go gateway reliability**: Built on whatsmeow with robust session management, LID-based JID support, and async event handling
+- **Python agent flexibility**: LangGraph-powered agents with 10+ LLM provider support
+- **Production features**: Persistent typing indicators, progress logging, session recovery
 
----
+**Developer Experience**
 
-## 📦 Installation
-
-### From PyPI
-
-```bash
-pip install agntrick
-
-# Or with development dependencies
-pip install "agntrick[dev]"
-```
-
-### From Source
-
-```bash
-git clone https://github.com/jeancsil/agntrick.git
-cd agntrick
-make install
-```
+- **5-line agents**: Create custom agents with `@AgentRegistry.register` decorator
+- **MCP native**: Model Context Protocol servers for live data access
+- **Docker-first**: Isolated, consistent environments from dev to production
+- **Type-safe**: Full type hints with strict mypy checking
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Add your Brain (API Key)
-
-You need an **LLM API key** to breathe life into your agents. Agntrick supports 10+ LLM providers via LangChain!
+### Option 1: Docker (Recommended)
 
 ```bash
-# Copy the template
-cp .env.example .env
+# Clone the repository
+git clone https://github.com/jeancsil/agntrick.git
+cd agntrick
 
-# Edit .env and paste your API key
-# Choose one of the following providers:
-# OPENAI_API_KEY=sk-your-key-here
-# ANTHROPIC_API_KEY=sk-ant-your-key-here
-# GOOGLE_API_KEY=your-google-key
-# GROQ_API_KEY=gsk-your-key-here
-# MISTRAL_API_KEY=your-mistral-key-here
-# COHERE_API_KEY=your-cohere-key-here
+# Start the platform
+docker compose up -d
 
-# For Ollama (local), no API key needed:
-# OLLAMA_BASE_URL=http://localhost:11434
+# View logs
+tail -f logs/whatsapp.log
 ```
 
-### 2. Run Your First Agent
+### Option 2: Local Development
+
+**Requirements:**
+- Go 1.21+
+- Python 3.12+
+- `uv` package manager
 
 ```bash
-# List all available agents
-agntrick list
+# Install Python dependencies
+uv sync
 
-# Run an agent with input
-agntrick developer -i "Explain this codebase"
+# Build Go gateway
+make gateway-build
 
-# Or try the learning agent with web search
-agntrick learning -i "Explain quantum computing in simple terms"
+# Start Python API
+agntrick serve
+
+# In another terminal, start Go gateway
+cd gateway && go run .
 ```
 
-<details>
-<summary><strong>🔑 Supported Environment Variables</strong></summary>
+### Authenticate with WhatsApp
 
-Only one provider's API key is required. The framework auto-detects which provider to use based on available credentials.
-
-```bash
-# Anthropic (Recommended)
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-
-# OpenAI
-OPENAI_API_KEY=sk-your-key-here
-
-# Google GenAI / Vertex
-GOOGLE_API_KEY=your-google-key
-GOOGLE_VERTEX_PROJECT_ID=your-project-id
-
-# Mistral AI
-MISTRAL_API_KEY=your-mistral-key-here
-
-# Cohere
-COHERE_API_KEY=your-cohere-key-here
-
-# Azure OpenAI
-AZURE_OPENAI_API_KEY=your-azure-key
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-
-# AWS Bedrock
-AWS_PROFILE=your-profile
-
-# Ollama (Local, no API key needed)
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Hugging Face
-HUGGINGFACEHUB_API_TOKEN=your-hf-token
-```
-
-📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed environment variable configurations and provider comparison.
-
-</details>
+1. Open the QR code page: `http://localhost:8000/api/v1/whatsapp/qr/personal/page`
+2. Scan with WhatsApp (Settings > Linked Devices)
+3. Send yourself a message to test
 
 ---
 
-## 🧰 Available Out of the Box
+## ⚙️ Configuration
 
-### 🤖 Bundled Agents
+Create `.agntrick.yaml`:
 
-Agntrick includes several pre-built agents for common use cases:
+```yaml
+llm:
+  provider: anthropic  # or openai, google, ollama, etc.
+  model: claude-sonnet-4-6
+  temperature: 0.7
 
-| Agent | Purpose | MCP Servers |
-|-------|---------|-------------|
-| `committer` | Git Helper: Analyze changes and generate conventional commit messages | - |
-| `developer` | Code Master: Read, search & edit code | `fetch` |
-| `github-pr-reviewer` | PR Reviewer: Reviews diffs, posts inline comments & summaries | - |
-| `learning` | Tutor: Step-by-step tutorials and explanations | `fetch`, `web-forager` |
-| `news` | News Anchor: Aggregates top stories | `fetch` |
-| `ollama` | Local Agent: Uses local GLM-4.7-Flash via Ollama (port 8080) | `fetch` |
-| `youtube` | Video Analyst: Extract insights from YouTube videos | `fetch` |
-| `whatsapp-multi-tenant` | WhatsApp Assistant: Multi-tenant messaging via WhatsApp API | - |
+api:
+  host: 127.0.0.1
+  port: 8000
 
-📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent.
+storage:
+  base_path: ~/.local/share/agntrick
+
+logging:
+  level: INFO
+  api_log: logs/api.log
+  whatsapp_log: logs/whatsapp.log
+
+auth:
+  api_keys:
+    "your-api-key": "admin"
+
+whatsapp:
+  tenants:
+    - id: personal
+      phone: "+34677427318"
+      default_agent: developer
+      allowed_contacts: []
+    - id: work
+      phone: "+15551234567"
+      default_agent: assistant
+      allowed_contacts:
+        - "+15559876543"
+```
+
+**Configuration Options:**
+
+| Option | Description |
+|--------|-------------|
+| `whatsapp.tenants` | List of WhatsApp accounts to manage |
+| `tenants[].id` | Unique tenant identifier |
+| `tenants[].phone` | Phone number in E.164 format |
+| `tenants[].default_agent` | Agent to use for messages from this tenant |
+| `tenants[].allowed_contacts` | Optional whitelist (empty = all contacts) |
+| `auth.api_keys` | API keys for gateway-to-API communication |
 
 ---
 
-### 📦 Local Tools
+## 🛠️ Create Custom Agents
 
-Fast, zero-dependency tools for working with local codebases:
+### The 5-Line Agent
+
+```python
+from agntrick import AgentBase, AgentRegistry
+
+@AgentRegistry.register("my-assistant", mcp_servers=["fetch"])
+class MyAssistant(AgentBase):
+    @property
+    def system_prompt(self) -> str:
+        return "You are a helpful assistant with web search access."
+```
+
+Deploy instantly — messages from your configured WhatsApp numbers will route to your agent.
+
+### Advanced: Custom Tools
+
+```python
+from langchain_core.tools import StructuredTool
+from agntrick import AgentBase, AgentRegistry
+
+@AgentRegistry.register("data-analyst")
+class DataAnalyst(AgentBase):
+    @property
+    def system_prompt(self) -> str:
+        return "You analyze CSV files and generate insights."
+
+    def local_tools(self) -> list:
+        return [
+            StructuredTool.from_function(
+                func=self.analyze_csv,
+                name="analyze_csv",
+                description="Analyze a CSV file and return statistics",
+            )
+        ]
+
+    def analyze_csv(self, filepath: str) -> str:
+        # Your analysis logic
+        return f"Analyzed {filepath}: found 1000 rows, 5 columns"
+```
+
+---
+
+## 🏗️ Architecture
+
+### Multi-Tenant Platform
+
+```mermaid
+flowchart TB
+    subgraph User [👤 User]
+        Phone[WhatsApp Phone]
+        Browser[Web Browser - QR Page]
+    end
+
+    subgraph Gateway [🚪 Go Gateway]
+        SM[Session Manager]
+        MH[Message Handler]
+        QG[QR Generator]
+        HC[HTTP Client]
+    end
+
+    subgraph API [🌐 Python API]
+        FE[FastAPI Server]
+        WA[WhatsApp Routes]
+        AE[Agent Executor]
+        QR[SSE QR Stream]
+    end
+
+    subgraph Agents [🤖 Agent Layer]
+        AB[AgentBase]
+        LG[LangGraph Runtime]
+        LT[Local Tools]
+        MT[MCP Tools]
+    end
+
+    subgraph External [🌍 External Services]
+        LLM[LLM Providers]
+        MCP[MCP Servers]
+        WA[WhatsApp Network]
+    end
+
+    Phone <-->|WhatsApp Protocol| SM
+    SM --> MH
+    MH --> HC
+    HC --> FE
+
+    Browser -->|SSE| QR
+    QG --> QR
+    QR --> FE
+
+    FE --> AE
+    AE --> AB
+    AB --> LG
+    AB --> LT
+    AB --> MT
+
+    LG --> LLM
+    MT --> MCP
+
+    SM <-->|Multi-tenant| WA
+
+    classDef whatsapp fill:#25D366,color:#fff
+    classDef go fill:#00ADD8,color:#fff
+    classDef python fill:#3776AB,color:#fff
+    classDef llm fill:#9945FF,color:#fff
+
+    class WA whatsapp
+    class SM,MH,QG,HC go
+    class FE,WA,AE,QR python
+    class LLM llm
+```
+
+### Component Overview
+
+**Go Gateway** (`gateway/`):
+- **Multi-tenant**: Manage multiple WhatsApp accounts simultaneously
+- **Session persistence**: Sessions survive restarts via device reuse
+- **LID-based JID support**: Handles WhatsApp's Linked Identity Device format
+- **Async event handling**: Long LLM calls don't block message processing
+- **Typing indicator persistence**: Re-sends every 3s during LLM responses
+- **Progress logging**: INFO-level updates during long operations
+
+**Python API** (`src/agntrick/api/`):
+- **FastAPI server**: RESTful endpoints for agent execution
+- **WhatsApp webhooks**: Receive messages from Go gateway
+- **QR code streaming**: SSE for real-time QR code delivery
+- **Tenant isolation**: Separate agent instances per tenant
+- **API key auth**: Secure gateway-to-API communication
+
+**Agent Framework** (`src/agntrick/`):
+- **AgentBase**: LangGraph-powered base class with built-in tool management
+- **AgentRegistry**: Decorator-based registration with auto-discovery
+- **MCP integration**: Native Model Context Protocol support
+- **10+ LLM providers**: Anthropic, OpenAI, Google, Mistral, Ollama, etc.
+
+---
+
+## 🧰 Available Integrations
+
+### Local Tools
+
+Fast, zero-dependency tools for your agents:
 
 | Tool | Capability |
 |------|------------|
-| `find_files` | Fast search via `fd` |
+| `find_files` | Fast file search via `fd` |
 | `discover_structure` | Directory tree mapping |
 | `get_file_outline` | AST signature parsing |
 | `read_file_fragment` | Precise file reading |
-| `code_search` | Fast search via `ripgrep` |
+| `code_search` | Fast code search via `ripgrep` |
 | `edit_file` | Safe file editing |
-| `youtube_transcript` | Extract transcripts from YouTube videos |
 
-📖 **See [docs/tools.md](docs/tools.md)** for detailed documentation of each tool.
+### MCP Servers
 
----
-
-### 🌐 MCP Servers
-
-Model Context Protocol servers for extending agent capabilities:
+Extend your agents with Model Context Protocol servers:
 
 | Server | Purpose |
 |--------|---------|
 | `fetch` | Extract clean text from URLs |
 | `web-forager` | Web search and content fetching |
-| `kiwi-com-flight-search` | Search real-time flights |
+| `kiwi-com-flight-search` | Real-time flight search |
 
-📖 **See [docs/mcp-servers.md](docs/mcp-servers.md)** for details on each server and how to add custom MCP servers.
+### LLM Providers
 
----
-
-### 🧠 LLM Providers
-
-Agntrick supports **10 LLM providers** out of the box, covering 90%+ of the market:
+Support for 10+ providers covering 90%+ of the market:
 
 | Provider | Type | Use Case |
 |----------|------|----------|
@@ -201,433 +315,92 @@ Agntrick supports **10 LLM providers** out of the box, covering 90%+ of the mark
 | **Ollama** | Local | Run LLMs locally (zero API cost) |
 | **Hugging Face** | Cloud | Open models from Hugging Face Hub |
 
-📖 **See [docs/llm-providers.md](docs/llm-providers.md)** for detailed setup instructions.
-
----
-
-## 🛠️ Build Your Own Agent
-
-### The 5-Line Superhero 🦸‍♂️
-
-```python
-from agntrick import AgentBase, AgentRegistry
-
-@AgentRegistry.register("my-agent", mcp_servers=["fetch"])
-class MyAgent(AgentBase):
-    @property
-    def system_prompt(self) -> str:
-        return "You are my custom agent with the power to fetch websites."
-```
-
-Boom. Run it instantly:
-```bash
-agntrick my-agent -i "Summarize https://example.com"
-```
-
-### Advanced: Custom Local Tools 🔧
-
-Want to add your own Python logic? Easy.
-
-```python
-from langchain_core.tools import StructuredTool
-from agntrick import AgentBase, AgentRegistry
-
-@AgentRegistry.register("data-processor")
-class DataProcessorAgent(AgentBase):
-    @property
-    def system_prompt(self) -> str:
-        return "You process data files like a boss."
-
-    def local_tools(self) -> list:
-        return [
-            StructuredTool.from_function(
-                func=self.process_csv,
-                name="process_csv",
-                description="Process a CSV file path",
-            )
-        ]
-
-    def process_csv(self, filepath: str) -> str:
-        # Magic happens here ✨
-        return f"Successfully processed {filepath}!"
-```
-
----
-
-## ⚙️ Configuration
-
-Agntrick can be configured via a `.agntrick.yaml` file in your project root or home directory:
-
-```yaml
-# .agntrick.yaml
-llm:
-  provider: anthropic  # or openai, google, ollama, etc.
-  model: claude-sonnet-4-6  # optional model override
-  temperature: 0.7
-
-mcp:
-  servers:
-    - fetch
-    - web-forager
-
-logging:
-  level: INFO
-  file: logs/agent.log
-
-whatsapp:
-  tenants:
-    - id: personal
-      phone: "+34611111111"
-      default_agent: developer
-      allowed_contacts: []
-  api:
-    host: 127.0.0.1
-    port: 8000
-  storage:
-    base_path: ~/.local/share/agntrick
-  auth:
-    api_keys:
-      "admin-key-123": "admin"
-```
-
-## 🚀 Docker Quick Start
-
-### Build and Run with Docker
-
-```bash
-# Build the Docker image (multi-stage build)
-make docker-build
-
-# Run the WhatsApp API server
-docker compose up -d
-
-# View logs
-tail -f logs/agntrick.log
-```
-
-### Docker Benefits
-
-- **Memory Efficient**: Limited to 512MB memory usage
-- **Health Checks**: Built-in `/health` endpoint monitoring
-- **Isolated Environment**: Consistent development and production environment
-- **Multi-Stage Build**: Optimized image with Go gateway + Python API
-
-### Quick Development
-
-```bash
-# Run tests in Docker environment
-docker compose run --rm app make test
-
-# Interactive development with mounted volumes
-docker compose run --rm app agntrick developer -i "Examine this codebase"
-```
-
-### Quick Configuration
-
-For WhatsApp setup, use environment variables:
-
-```bash
-export AGNTRICK_CONFIG=$(cat <<'EOF'
-llm:
-  provider: openai
-  model: gpt-4o-mini
-  temperature: 0.8
-
-api:
-  host: 127.0.0.1
-  port: 8000
-
-storage:
-  base_path: ~/.local/share/agntrick
-
-logging:
-  level: INFO
-  file: logs/agntrick.log
-
-auth:
-  api_keys:
-    "admin-key-123": "admin"
-
-whatsapp:
-  tenants:
-    - id: personal
-      phone: "+34611111111"
-      default_agent: developer
-      allowed_contacts: []
-EOF
-)
-
-echo $AGNTRICK_CONFIG > .agntrick.yaml
-```
-
 ---
 
 ## 💻 CLI Reference
 
-Command your agents directly from the terminal.
-
 ```bash
-# 📋 List all registered agents
-agntrick list
-
-# 🕵️ Get detailed info about what an agent can do
-agntrick info developer
-
-# 🚀 Run an agent with input
-agntrick developer -i "Analyze the architecture of this project"
-
-# 🌐 Start the FastAPI server (multi-tenant WhatsApp support)
+# Start the platform (Python API)
 agntrick serve
 
-# ⏱️ Run with an execution timeout (seconds)
-agntrick developer -i "Refactor this module" -t 120
-
-# 📝 Run with debug-level verbosity
-agntrick developer -i "Hello" -v
-
-# 📜 View logs
-tail -f logs/agent.log
-
-# 🔍 Check WhatsApp QR codes for a tenant
-curl http://localhost:8000/api/v1/whatsapp/qr/personal/page
-```
-
-### Multi-Tenant CLI Commands
-
-```bash
-# Start server with custom config
+# Start with custom config
 agntrick serve --config .agntrick.yaml
 
-# Start server with specific host/port
+# Start with custom host/port
 agntrick serve --host 0.0.0.0 --port 8080
 
-# Server with debug logging
+# Enable debug logging
 agntrick serve --log-level DEBUG
 
 # Check API health
 curl http://localhost:8000/health
 
-# List available agents via API
-curl http://localhost:8000/api/v1/agents
+# View API logs
+tail -f logs/api.log
 
-# Execute agent via API
-curl -X POST http://localhost:8000/api/v1/agents/developer/run \
-  -H "Authorization: Bearer admin-key-123" \
-  -d '{"input": "Explain this codebase"}'
-```
-
----
-
-## 🏗️ Architecture
-
-Under the hood, we seamlessly bridge the gap between user intent and execution:
-
-### Multi-Tenant WhatsApp Architecture
-
-```mermaid
-flowchart TB
-    subgraph User [👤 User Space]
-        Input[User Input]
-    end
-
-    subgraph CLI [💻 CLI - agntrick]
-        Typer[Typer Interface]
-    end
-
-    subgraph Registry [📋 Registry]
-        AR[AgentRegistry]
-        AD[Auto-discovery]
-    end
-
-    subgraph Agents [🤖 Agents]
-        Dev[developer agent]
-        Learning[learning agent]
-        News[news agent]
-        WA[WhatsApp multi-tenant]
-    end
-
-    subgraph Core [🧠 Core Engine]
-        AB[AgentBase]
-        LG[LangGraph Runtime]
-        CP[(Checkpointing)]
-    end
-
-    subgraph Tools [🧰 Tools & Skills]
-        LT[Local Tools]
-        MCP[MCP Tools]
-    end
-
-    subgraph API [🌐 FastAPI Server]
-        API1[GET /health]
-        API2[POST /api/v1/agents/{name}/run]
-        API3[POST /api/v1/channels/whatsapp/message]
-        API4[GET /api/v1/whatsapp/qr/{tenant_id}]
-    end
-
-    subgraph Gateway [🚪 Go Gateway]
-        GW1[WhatsApp Session Manager]
-        GW2[Message Handler]
-        GW3[QR Code Generator]
-    end
-
-    subgraph External [🌍 External World]
-        LLM[LLM API]
-        MCPS[MCP Servers]
-        WA-API[WhatsApp API]
-    end
-
-    Input --> Typer
-    Typer --> AR
-    AR --> AD
-    AR -->|Routes to| Dev & Learning & News & WA
-
-    Dev & Learning & News & WA -->|Inherits from| AB
-
-    AB --> LG
-    LG <--> CP
-    AB -->|Uses| LT
-    AB -->|Uses| MCP
-
-    LT -->|Reasoning| LLM
-    MCP -->|Queries| MCPS
-    MCPS -->|Provides Data| LLM
-
-    AB --> API
-    API --> Gateway
-    Gateway --> WA-API
-    WA-API -->|Multi-tenant| GW1 & GW2 & GW3
-
-    LLM --> Output[Final Response]
+# View gateway logs
+tail -f logs/whatsapp.log
 ```
 
 ### API Endpoints
 
-The WhatsApp Multi-Tenant API provides the following endpoints:
-
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Health check endpoint |
-| `GET` | `/ready` | Readiness check endpoint |
-| `GET` | `/api/v1/agents` | List all available agents |
-| `POST` | `/api/v1/agents/{name}/run` | Execute an agent with input |
-| `GET` | `/api/v1/whatsapp/qr/{tenant_id}` | SSE stream for QR codes |
-| `GET` | `/api/v1/whatsapp/qr/{tenant_id}/page` | HTML QR code page |
-| `POST` | `/api/v1/whatsapp/qr/{tenant_id}` | Receive QR from Go gateway |
+| `GET` | `/health` | Health check |
+| `GET` | `/ready` | Readiness check |
+| `GET` | `/api/v1/whatsapp/qr/{tenant_id}` | SSE QR code stream |
+| `GET` | `/api/v1/whatsapp/qr/{tenant_id}/page` | HTML QR code viewer |
+| `POST` | `/api/v1/whatsapp/qr/{tenant_id}` | Receive QR from gateway |
 | `POST` | `/api/v1/whatsapp/status/{tenant_id}` | Connection status update |
-| `POST` | `/api/v1/channels/whatsapp/message` | WhatsApp webhook for incoming messages |
-
-### Key Components
-
-1. **Go Gateway** (`gateway/`): Multi-tenant WhatsApp session management via whatsmeow
-   - `config.go` - YAML config parsing with API key support
-   - `session.go` - WhatsApp session manager with async event handling
-   - `message.go` - Message handling with LID-based JID support and typing indicator persistence
-   - `http_client.go` - HTTP client with JSON response parsing
-   - `qr.go` - QR code generation
-
-2. **Python API** (`src/agntrick/api/`):
-   - FastAPI server with tenant-scoped database isolation
-   - API key authentication
-   - Agent execution endpoints
-   - WhatsApp webhook handling
-   - QR code SSE streaming
-   - Middleware (request logging, error handling)
-   - Security (rate limiting, input sanitization)
-
-3. **WhatsApp Module** (`src/agntrick/whatsapp/`):
-   - Phone-to-tenant registry
-
-## 🧪 Multi-Tenant WhatsApp Features
-
-The Go gateway provides production-ready WhatsApp integration with several reliability features:
-
-### Message Handling
-
-- **Async dispatch**: Message handling runs in separate goroutines, preventing whatsmeow's "Node handling took" warnings during long LLM calls
-- **LID-based JID support**: Handles WhatsApp's Linked Identity Device format for "note to self" messages
-- **Self-message detection**: Multi-strategy detection (exact JID → Store.ID → Store.LID → phone fallback)
-- **ExtendedTextMessage**: Extracts text from both Conversation and ExtendedTextMessage fields
-
-### User Experience
-
-- **Persistent typing indicator**: Re-sends composing presence every 3 seconds during LLM processing, keeping the indicator visible on WhatsApp
-- **Progress logging**: INFO-level status updates every 15 seconds while waiting for LLM responses
-- **Session persistence**: WhatsApp sessions survive gateway restarts via device reuse
-
-### Reliability
-
-- **JSON response parsing**: Extracts only the response field from Python API, avoiding raw JSON in WhatsApp messages
-- **API key authentication**: Secure gateway-to-API communication via X-API-Key header
-- **Graceful shutdown**: Clean session termination on signals
+| `POST` | `/api/v1/channels/whatsapp/message` | Incoming message webhook |
 
 ---
 
-## 🧑‍💻 Local Development
+## 🐳 Docker Deployment
 
-<details>
-<summary><strong>System Requirements & Setup</strong></summary>
-
-**Requirements:**
-- Python 3.12+
-- `uv` package manager
-- `ripgrep`, `fd`, `fzf` (for local tools)
+### Build and Run
 
 ```bash
-# Install dependencies (blazingly fast with uv ⚡)
+# Build the image
+make docker-build
+
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
+
+### Docker Benefits
+
+- **Memory efficient**: Limited to 512MB
+- **Health checks**: Built-in monitoring endpoints
+- **Isolated environment**: Consistent across deployments
+- **Multi-stage build**: Optimized Go gateway + Python API
+
+---
+
+## 🧑‍💻 Development
+
+```bash
+# Install dependencies
 make install
 
-# Run the test suite
+# Run tests
 make test
 
-# Run agents directly
-agntrick developer -i "Hello"
+# Run linting
+make check
+
+# Format code
+make format
+
+# Build packages
+make build
 ```
-</details>
-
-<details>
-<summary><strong>Useful `make` Commands</strong></summary>
-
-```bash
-make install    # Install dependencies with uv
-make test       # Run pytest with coverage
-make format     # Auto-format codebase with ruff
-make check      # Strict linting (mypy + ruff)
-make build      # Build wheel and sdist packages
-make build-clean # Remove build artifacts
-```
-</details>
-
-<details>
-<summary><strong>📦 Release Commands</strong></summary>
-
-Automated release commands for publishing to PyPI:
-
-```bash
-# Release core agntrick package
-make release VERSION=0.3.0
-
-# Release agntrick-whatsapp package
-make release-whatsapp VERSION=0.4.0
-
-# Release both packages with different versions
-make release-both CORE=0.3.0 WHATSAPP=0.4.0
-```
-
-📖 **See [RELEASING.md](RELEASING.md)** for complete release documentation, troubleshooting, and manual release procedures.
-</details>
-
----
-
-## 🤝 Contributing
-
-We love contributions! Check out our [AGENTS.md](AGENTS.md) for development guidelines.
-
-**For maintainers:** See [RELEASING.md](RELEASING.md) for how to publish new versions to PyPI.
-
-**The Golden Rules:**
-1. `make check` should pass without complaints.
-2. `make test` should stay green.
-3. Don't drop test coverage (we like our 80% mark!).
 
 ---
 
@@ -638,19 +411,16 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 ---
 
 <p align="center">
-  <strong>Stand on the shoulders of giants:</strong><br>
+  <strong>Built with:</strong><br>
   <a href="https://python.langchain.com/"><img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" height="28" alt="LangChain"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-Protocol-4B32C3?style=for-the-badge" height="28" alt="MCP"></a>
   <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-FF0000?style=for-the-badge" height="28" alt="LangGraph"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" height="28" alt="Go"></a>
 </p>
 
 <p align="center">
-  If you find this useful, please consider giving it a ⭐ or buying me a coffee!<br>
+  If you find this useful, please consider giving it a ⭐<br>
   <a href="https://github.com/jeancsil/agntrick/stargazers">
-    <img src="https://img.shields.io/github/stars/jeancsil/agntrick?style=social&size=large" height="28" alt="Star the repo" style="vertical-align: middle;">
-  </a>
-  &nbsp;
-  <a href="https://buymeacoffee.com/jeancsil" target="_blank">
-    <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" height="28" alt="Buy Me A Coffee" style="vertical-align: middle;">
+    <img src="https://img.shields.io/github/stars/jeancsil/agntrick?style=social&size=large" height="28" alt="Star">
   </a>
 </p>
