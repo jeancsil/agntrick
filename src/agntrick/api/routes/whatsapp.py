@@ -1,14 +1,15 @@
 """WhatsApp QR code and status endpoints with SSE support."""
 
 import asyncio
-import json
 import logging
 import time
 from collections import defaultdict
-from typing import AsyncGenerator
+from collections.abc import AsyncIterable
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel
 
 from agntrick.config import get_config
@@ -178,67 +179,54 @@ async def qr_page(tenant_id: str) -> str:
     return "\n".join(html_parts)
 
 
-@router.get("/qr/{tenant_id}")
-async def qr_stream(tenant_id: str, request: Request) -> StreamingResponse:
+@router.get("/qr/{tenant_id}", response_class=EventSourceResponse)
+async def qr_stream(tenant_id: str, request: Request) -> AsyncIterable[ServerSentEvent]:
     """SSE endpoint for streaming QR codes and connection status.
+
+    Uses FastAPI's native EventSourceResponse with ServerSentEvent objects.
+    Built-in keep-alive pings every 15 seconds, proper Cache-Control headers,
+    and graceful cancellation handling.
 
     Args:
         tenant_id: The tenant ID.
         request: The FastAPI request.
 
     Returns:
-        StreamingResponse with SSE events.
+        AsyncIterable of ServerSentEvent objects.
     """
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    sse_queues[tenant_id].append(queue)
 
-    async def event_stream() -> AsyncGenerator[str, None]:
-        """Generate SSE events."""
-        # Create a queue for this client
-        queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
-        sse_queues[tenant_id].append(queue)
+    try:
+        # Send current QR code if available
+        if tenant_id in qr_codes and "image" in qr_codes[tenant_id]:
+            yield ServerSentEvent(
+                data={"image": qr_codes[tenant_id]["image"]},
+                event="qr_code",
+            )
 
-        try:
-            # Send current QR code if available
-            if tenant_id in qr_codes and "image" in qr_codes[tenant_id]:
-                data = json.dumps({"image": qr_codes[tenant_id]["image"]})
-                yield f"event: qr_code\ndata: {data}\n\n"
+        # Send current status if available
+        if tenant_id in connection_status and connection_status[tenant_id].get("status") == "connected":
+            phone = connection_status[tenant_id].get("phone", "")
+            yield ServerSentEvent(data={"phone": phone}, event="connected")
 
-            # Send current status if available
-            if tenant_id in connection_status and connection_status[tenant_id].get("status") == "connected":
-                phone = connection_status[tenant_id].get("phone", "")
-                data = json.dumps({"phone": phone})
-                yield f"event: connected\ndata: {data}\n\n"
+        # Keep connection alive and send new events
+        while not await request.is_disconnected():
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                event_type = event.get("type", "message")
+                event_data = event.get("data", {})
+                yield ServerSentEvent(data=event_data, event=event_type)
+            except asyncio.TimeoutError:
+                # Native EventSourceResponse sends keep-alive pings automatically
+                # but we yield a comment to keep the connection active
+                yield ServerSentEvent(comment="keepalive")
 
-            # Keep connection alive and send new events
-            while True:
-                # Check if client disconnected
-                if await request.is_disconnected():
-                    break
-
-                try:
-                    # Wait for new events (with heartbeat every 15 seconds)
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                    event_type: str = event.get("type", "message")
-                    event_data: str | dict[str, str] = event.get("data", {})
-                    yield f"event: {event_type}\ndata: {event_data}\n\n"
-                except asyncio.TimeoutError:
-                    # Send heartbeat to keep connection alive
-                    yield ": heartbeat\n\n"
-        except asyncio.CancelledError:
-            pass
-        finally:
-            # Remove queue on disconnect
-            if queue in sse_queues[tenant_id]:
-                sse_queues[tenant_id].remove(queue)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        },
-    )
+    except asyncio.CancelledError:
+        return
+    finally:
+        if queue in sse_queues.get(tenant_id, []):
+            sse_queues[tenant_id].remove(queue)
 
 
 @router.post("/qr/{tenant_id}")
@@ -255,9 +243,8 @@ async def receive_qr_code(tenant_id: str, request: QRCodeRequest) -> dict[str, s
     qr_codes[tenant_id]["image"] = request.image
 
     # Notify all SSE clients
-    event_data = json.dumps({"image": request.image})
     for queue in sse_queues[tenant_id]:
-        await queue.put({"type": "qr_code", "data": event_data})
+        await queue.put({"type": "qr_code", "data": {"image": request.image}})
 
     return {"status": "ok", "message": "QR code received"}
 
@@ -279,12 +266,11 @@ async def receive_status(tenant_id: str, request: StatusRequest) -> dict[str, st
 
     # Notify all SSE clients
     if request.status == "connected" and request.phone:
-        event_data = json.dumps({"phone": request.phone})
         for queue in sse_queues[tenant_id]:
-            await queue.put({"type": "connected", "data": event_data})
+            await queue.put({"type": "connected", "data": {"phone": request.phone}})
     elif request.status == "disconnected":
         for queue in sse_queues[tenant_id]:
-            await queue.put({"type": "disconnected", "data": json.dumps({})})
+            await queue.put({"type": "disconnected", "data": {}})
 
     # Track activity and cleanup
     _last_activity[tenant_id] = time.time()

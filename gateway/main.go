@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 const (
 	defaultConfigPath = ".agntrick.yaml"
+	parentConfigPath  = "../.agntrick.yaml"
 )
 
 func main() {
@@ -22,6 +24,13 @@ func main() {
 	configPath := os.Getenv("AGNTRICK_CONFIG")
 	if configPath == "" {
 		configPath = defaultConfigPath
+		// If config not found in current dir, try parent directory
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			if _, parentErr := os.Stat(parentConfigPath); parentErr == nil {
+				configPath = parentConfigPath
+				logger.Info().Str("config", configPath).Msg("Config not found in current directory, using parent")
+			}
+		}
 	}
 
 	logger.Info().Str("config", configPath).Msg("Loading configuration")
@@ -54,12 +63,22 @@ func main() {
 			Msg("Tenant")
 	}
 
-	// TODO: Initialize session manager for multi-tenant WhatsApp sessions
-	// TODO: Start HTTP server for receiving messages from Python API
-	// TODO: Setup signal handlers for graceful shutdown
+	// Initialize session manager
+	sm, err := NewSessionManager(config, logger)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to create session manager")
+	}
+
+	// Auto-start sessions for all configured tenants
+	ctx := context.Background()
+	for _, tenant := range config.WhatsApp.Tenants {
+		if err := sm.StartSession(ctx, tenant.ID); err != nil {
+			logger.Error().Err(err).Str("tenant_id", tenant.ID).Msg("Failed to start session")
+		}
+	}
 
 	// Setup graceful shutdown
-	setupGracefulShutdown(logger)
+	setupGracefulShutdown(logger, sm)
 }
 
 func setupLogger() zerolog.Logger {
@@ -83,15 +102,16 @@ func setupLogger() zerolog.Logger {
 	return logger
 }
 
-func setupGracefulShutdown(logger zerolog.Logger) {
+func setupGracefulShutdown(logger zerolog.Logger, sm *SessionManager) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	sig := <-sigChan
 	logger.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
 
-	// TODO: Close all WhatsApp sessions gracefully
-	// TODO: Flush any pending messages
+	if err := sm.StopAll(context.Background()); err != nil {
+		logger.Error().Err(err).Msg("Failed to stop sessions")
+	}
 
 	logger.Info().Msg("Gateway shutdown complete")
 	os.Exit(0)

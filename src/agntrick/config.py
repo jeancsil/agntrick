@@ -184,6 +184,8 @@ def _find_config_file() -> Path | None:
         env_path = Path(env_config)
         if env_path.exists():
             return env_path
+        # Env var explicitly set but file missing — don't fall through
+        return None
 
     # Check current directory
     local_config = Path.cwd() / ".agntrick.yaml"

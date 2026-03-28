@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agntrick.api.middleware import catch_exceptions_middleware, request_logging_middleware
+from agntrick.api.middleware import RequestLoggingAndErrorMiddleware
 
 
 class TestCatchExceptionsMiddleware:
@@ -14,6 +14,7 @@ class TestCatchExceptionsMiddleware:
     def app(self) -> FastAPI:
         """Create test app with exception middleware."""
         app = FastAPI()
+        app.add_middleware(RequestLoggingAndErrorMiddleware)
 
         @app.get("/ok")
         def ok_handler():
@@ -23,8 +24,6 @@ class TestCatchExceptionsMiddleware:
         def error_handler():
             raise ValueError("Test error")
 
-        # Register middleware (in reverse order for test)
-        app.middleware("http")(catch_exceptions_middleware)
         return app
 
     def test_successful_request(self, app: FastAPI):
@@ -58,13 +57,12 @@ class TestRequestLoggingMiddleware:
     def app(self, mock_logger) -> FastAPI:
         """Create test app with logging middleware."""
         app = FastAPI()
+        app.add_middleware(RequestLoggingAndErrorMiddleware)
 
         @app.get("/test")
         async def test_handler():
             return {"message": "test"}
 
-        # Register middleware
-        app.middleware("http")(request_logging_middleware)
         return app
 
     def test_request_logging_includes_tenant_id_and_duration(self, app: FastAPI, mock_logger):

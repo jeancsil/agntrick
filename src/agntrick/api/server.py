@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agntrick.api.middleware import catch_exceptions_middleware, request_logging_middleware
+from agntrick.api.middleware import RequestLoggingAndErrorMiddleware
 from agntrick.api.routes import agents, health, whatsapp
 from agntrick.config import get_config
 
@@ -28,6 +28,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.tenant_manager = TenantManager(base_path=config.storage.base_path)
 
     yield
+
+    # Clean up SSE connections
+    from agntrick.api.routes.whatsapp import sse_queues
+
+    for tenant_id, queues in sse_queues.items():
+        for queue in queues:
+            await queue.put({"type": "shutdown", "data": "{}"})
+    sse_queues.clear()
 
     app.state.tenant_manager.close_all()
     logger.info("Shutting down agntrick API server")
@@ -51,10 +59,7 @@ def create_app() -> FastAPI:
     )
 
     # Register error handling and logging middleware
-    # Note: FastAPI middleware is executed in reverse order of registration
-    # Exception handler should be outermost (registered first)
-    app.middleware("http")(catch_exceptions_middleware)
-    app.middleware("http")(request_logging_middleware)
+    app.add_middleware(RequestLoggingAndErrorMiddleware)
 
     app.include_router(health.router, tags=["health"])
     app.include_router(agents.router, tags=["agents"])
@@ -75,4 +80,5 @@ def run_server() -> None:
         port=config.api.port,
         reload=config.api.debug,
         factory=True,
+        timeout_graceful_shutdown=5,
     )
