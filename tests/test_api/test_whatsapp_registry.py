@@ -200,7 +200,7 @@ class TestWhatsAppRegistry:
                 webhook_data = {"from": "+34611111111", "message": "Hello, world!", "tenant_id": "personal"}
 
                 response = authed_client.post(
-                    "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "test-tenant"}, json=webhook_data
+                    "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "test-api-key"}, json=webhook_data
                 )
 
         assert response.status_code == 200
@@ -222,7 +222,7 @@ class TestWhatsAppRegistry:
 
                 response = authed_client.post(
                     "/api/v1/channels/whatsapp/message",
-                    headers={"X-API-Key": "test-tenant"},
+                    headers={"X-API-Key": "test-api-key"},
                     json={"from": "+34699999999", "message": "Hello"},
                 )
 

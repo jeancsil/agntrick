@@ -118,7 +118,11 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 func (sm *SessionManager) StopSession(ctx context.Context, tenantID string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+	return sm.stopSessionLocked(ctx, tenantID)
+}
 
+// stopSessionLocked stops a session assuming the mutex is already held.
+func (sm *SessionManager) stopSessionLocked(ctx context.Context, tenantID string) error {
 	client, exists := sm.clients[tenantID]
 	if !exists {
 		return fmt.Errorf("session for tenant '%s' not found", tenantID)
@@ -148,7 +152,7 @@ func (sm *SessionManager) StopAll(ctx context.Context) error {
 	sm.logger.Info().Int("count", len(sm.clients)).Msg("Stopping all WhatsApp sessions")
 
 	for tenantID := range sm.clients {
-		if err := sm.StopSession(ctx, tenantID); err != nil {
+		if err := sm.stopSessionLocked(ctx, tenantID); err != nil {
 			sm.logger.Error().
 				Str("tenant_id", tenantID).
 				Err(err).
@@ -212,8 +216,12 @@ func (eh *EventHandler) handleQRCode(evt *events.QR) {
 
 // handleConnected handles connected events
 func (eh *EventHandler) handleConnected(evt *events.Connected) {
+	if eh.session.Store.ID == nil {
+		eh.logger.Warn().Msg("Connected but Store.ID is nil")
+		return
+	}
 	phone := eh.session.Store.ID.ToNonAD().String()
-	eh.logger.Info().Str("phone", phone).Msg("WhatsApp connected")
+	eh.logger.Info().Str("tenant_id", eh.tenantID).Msg("WhatsApp connected")
 
 	// Send status to Python API
 	if err := eh.manager.httpClient.SendConnectedStatus(eh.tenantID, phone); err != nil {

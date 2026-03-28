@@ -103,7 +103,7 @@ async def test_e2e_whatsapp_pipeline_success(authed_client: TestClient, monkeypa
             webhook_data = {"from": "+34611111111", "message": "Hello, world!", "tenant_id": "personal"}
 
             response = authed_client.post(
-                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "personal"}, json=webhook_data
+                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "test-api-key"}, json=webhook_data
             )
 
     # Verify the response
@@ -188,14 +188,14 @@ async def test_e2e_whatsapp_pipeline_multiple_agents(authed_client: TestClient, 
             webhook_data_personal = {"from": "+34611111111", "message": "How do I Python?", "tenant_id": "personal"}
 
             response_personal = authed_client.post(
-                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "personal"}, json=webhook_data_personal
+                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "test-api-key"}, json=webhook_data_personal
             )
 
             # Test work tenant
             webhook_data_work = {"from": "+34633333333", "message": "Recipe for pasta?", "tenant_id": "work"}
 
             response_work = authed_client.post(
-                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "work"}, json=webhook_data_work
+                "/api/v1/channels/whatsapp/message", headers={"X-API-Key": "work-api-key"}, json=webhook_data_work
             )
 
     # Verify responses
@@ -227,7 +227,7 @@ async def test_e2e_whatsapp_pipeline_unknown_phone_returns_404(authed_client: Te
 
             response = authed_client.post(
                 "/api/v1/channels/whatsapp/message",
-                headers={"X-API-Key": "personal"},
+                headers={"X-API-Key": "test-api-key"},
                 json={"from": "+34699999999", "message": "Hello"},
             )
 
@@ -250,12 +250,12 @@ async def test_e2e_whatsapp_pipeline_invalid_phone_mapping_returns_400(authed_cl
 
             response = authed_client.post(
                 "/api/v1/channels/whatsapp/message",
-                headers={"X-API-Key": "personal"},
+                headers={"X-API-Key": "test-api-key"},
                 json={"from": "+34611111111", "message": "Hello", "tenant_id": "work"},  # Claims to be work
             )
 
     assert response.status_code == 400
-    assert "maps to tenant personal" in response.json()["detail"]
+    assert "does not match" in response.json()["detail"]
 
 
 def test_e2e_whatsapp_pipeline_missing_auth_returns_401(authed_client: TestClient, monkeypatch):
@@ -284,7 +284,7 @@ def test_e2e_whatsapp_pipeline_missing_fields_returns_400(authed_client: TestCli
         # Missing 'message' field
         response = authed_client.post(
             "/api/v1/channels/whatsapp/message",
-            headers={"X-API-Key": "personal"},
+            headers={"X-API-Key": "test-api-key"},
             json={"from": "+34611111111"},
         )
 

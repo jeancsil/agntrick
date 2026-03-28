@@ -134,7 +134,7 @@ class TestRetryAsync:
 
     @pytest.mark.asyncio
     async def test_retry_successful_after_failure(self):
-        """Test successful call after initial failures."""
+        """Test successful call after initial transient failures."""
         from agntrick.api.resilience import RetryConfig, retry_async
 
         attempt_count = 0
@@ -143,7 +143,7 @@ class TestRetryAsync:
             nonlocal attempt_count
             attempt_count += 1
             if attempt_count < 3:
-                raise ValueError("Temporary failure")
+                raise ConnectionError("Temporary failure")
             return "success"
 
         result = await retry_async(flaky_func, RetryConfig(max_retries=5))
@@ -156,10 +156,26 @@ class TestRetryAsync:
         from agntrick.api.resilience import RetryConfig, retry_async
 
         async def always_fail_func():
-            raise ValueError("Always fails")
+            raise ConnectionError("Always fails")
 
-        with pytest.raises(ValueError, match="Always fails"):
+        with pytest.raises(ConnectionError, match="Always fails"):
             await retry_async(always_fail_func, RetryConfig(max_retries=2))
+
+    @pytest.mark.asyncio
+    async def test_retry_non_transient_error_not_retried(self):
+        """Test that non-transient errors are raised immediately without retry."""
+        from agntrick.api.resilience import RetryConfig, retry_async
+
+        attempt_count = 0
+
+        async def value_error_func():
+            nonlocal attempt_count
+            attempt_count += 1
+            raise ValueError("Programming error")
+
+        with pytest.raises(ValueError, match="Programming error"):
+            await retry_async(value_error_func, RetryConfig(max_retries=5))
+        assert attempt_count == 1  # Should not retry
 
     @pytest.mark.asyncio
     async def test_retry_with_exponential_backoff(self):
@@ -175,7 +191,7 @@ class TestRetryAsync:
             nonlocal attempt_count
             attempt_count += 1
             if attempt_count < 3:
-                raise ValueError("Temporary failure")
+                raise ConnectionError("Temporary failure")
             return "success"
 
         result = await retry_async(flaky_func, RetryConfig(max_retries=3, backoff_factor=0.1))

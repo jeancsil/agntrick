@@ -53,6 +53,10 @@ logs/
 **/whatsapp.yaml
 .agntrick.yaml
 
+# Go compiled binaries
+gateway/gateway
+gateway/agntrick-gateway
+
 # Runtime data (sessions, databases, media)
 storage/whatsapp/
 !storage/whatsapp/.gitkeep

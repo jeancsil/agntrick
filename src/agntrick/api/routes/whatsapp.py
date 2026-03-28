@@ -1,7 +1,9 @@
 """WhatsApp QR code and status endpoints with SSE support."""
 
 import asyncio
+import json
 import logging
+import time
 from collections import defaultdict
 from typing import AsyncGenerator
 
@@ -35,6 +37,25 @@ qr_codes: dict[str, dict[str, str]] = defaultdict(dict)
 connection_status: dict[str, dict[str, str]] = defaultdict(dict)
 # Event queues for SSE clients
 sse_queues: dict[str, list[asyncio.Queue]] = defaultdict(list)
+# Timestamps for cleanup
+_last_activity: dict[str, float] = {}
+_MAX_INACTIVE_TENANTS = 100  # Maximum number of inactive tenant entries to keep
+
+
+def _cleanup_stale_entries() -> None:
+    """Remove entries for inactive tenants to prevent unbounded memory growth."""
+    now = time.time()
+    if len(_last_activity) <= _MAX_INACTIVE_TENANTS:
+        return
+
+    # Remove entries older than 1 hour
+    cutoff = now - 3600
+    stale = [tid for tid, ts in _last_activity.items() if ts < cutoff]
+    for tid in stale:
+        qr_codes.pop(tid, None)
+        connection_status.pop(tid, None)
+        sse_queues.pop(tid, None)
+        del _last_activity[tid]
 
 
 class QRCodeRequest(BaseModel):
@@ -178,12 +199,14 @@ async def qr_stream(tenant_id: str, request: Request) -> StreamingResponse:
         try:
             # Send current QR code if available
             if tenant_id in qr_codes and "image" in qr_codes[tenant_id]:
-                yield f"event: qr_code\ndata: {{'image': '{qr_codes[tenant_id]['image']}'}}\n\n"
+                data = json.dumps({"image": qr_codes[tenant_id]["image"]})
+                yield f"event: qr_code\ndata: {data}\n\n"
 
             # Send current status if available
             if tenant_id in connection_status and connection_status[tenant_id].get("status") == "connected":
                 phone = connection_status[tenant_id].get("phone", "")
-                yield f"event: connected\ndata: {{'phone': '{phone}'}}\n\n"
+                data = json.dumps({"phone": phone})
+                yield f"event: connected\ndata: {data}\n\n"
 
             # Keep connection alive and send new events
             while True:
@@ -232,7 +255,7 @@ async def receive_qr_code(tenant_id: str, request: QRCodeRequest) -> dict[str, s
     qr_codes[tenant_id]["image"] = request.image
 
     # Notify all SSE clients
-    event_data = f"{{'image': '{request.image}'}}"
+    event_data = json.dumps({"image": request.image})
     for queue in sse_queues[tenant_id]:
         await queue.put({"type": "qr_code", "data": event_data})
 
@@ -256,12 +279,16 @@ async def receive_status(tenant_id: str, request: StatusRequest) -> dict[str, st
 
     # Notify all SSE clients
     if request.status == "connected" and request.phone:
-        event_data: str = f"{{'phone': '{request.phone}'}}"
+        event_data = json.dumps({"phone": request.phone})
         for queue in sse_queues[tenant_id]:
             await queue.put({"type": "connected", "data": event_data})
     elif request.status == "disconnected":
         for queue in sse_queues[tenant_id]:
-            await queue.put({"type": "disconnected", "data": "{}"})
+            await queue.put({"type": "disconnected", "data": json.dumps({})})
+
+    # Track activity and cleanup
+    _last_activity[tenant_id] = time.time()
+    _cleanup_stale_entries()
 
     return {"status": "ok", "message": "Status updated"}
 
@@ -288,11 +315,11 @@ async def whatsapp_webhook(
     """
     logger = logging.getLogger(__name__)
 
-    # Check API key
+    # Check API key against keys (not values) of api_keys dict
     api_key = request.headers.get("X-API-Key")
     config = get_config()
 
-    if not api_key or api_key not in config.auth.api_keys.values():
+    if not api_key or api_key not in config.auth.api_keys:
         logger.warning("Invalid API key attempted for WhatsApp webhook")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -302,12 +329,10 @@ async def whatsapp_webhook(
         phone = body.get("from")
         message = body.get("message")
         tenant_id = body.get("tenant_id")
-    except Exception as e:
-        logger.error("Invalid request body for WhatsApp webhook: %s", str(e))
-        raise HTTPException(status_code=400, detail=f"Invalid request body: {e}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body")
 
     if not phone or not message:
-        logger.warning("Missing 'from' or 'message' in WhatsApp webhook request")
         raise HTTPException(status_code=400, detail="Missing 'from' or 'message' in request body")
 
     # Look up tenant by phone number
@@ -316,21 +341,21 @@ async def whatsapp_webhook(
     # If tenant_id provided in body, use it for validation
     if tenant_id:
         if resolved_tenant_id != tenant_id:
-            logger.error("Phone number %s maps to tenant %s, but requested %s", phone, resolved_tenant_id, tenant_id)
+            logger.error("Phone number maps to different tenant")
             raise HTTPException(
                 status_code=400,
-                detail=f"Phone number {phone} maps to tenant {resolved_tenant_id}, but requested {tenant_id}",
+                detail="Phone number does not match provided tenant_id",
             )
     else:
         tenant_id = resolved_tenant_id
 
     if not tenant_id:
-        logger.error("No tenant found for phone number: %s", phone)
-        raise HTTPException(status_code=404, detail=f"No tenant found for phone number: {phone}")
+        logger.error("No tenant found for phone number")
+        raise HTTPException(status_code=404, detail="No tenant found for phone number")
 
     # Get logger with tenant context
     tenant_logger = TenantLogAdapter(logger, tenant_id)
-    tenant_logger.info("Received WhatsApp message from phone: %s", phone)
+    tenant_logger.info("Received WhatsApp message")
 
     # Get tenant configuration
     tenant_config = None
@@ -341,12 +366,12 @@ async def whatsapp_webhook(
 
     if not tenant_config:
         tenant_logger.error("Tenant configuration not found: %s", tenant_id)
-        raise HTTPException(status_code=404, detail=f"Tenant configuration not found: {tenant_id}")
+        raise HTTPException(status_code=404, detail="Tenant configuration not found")
 
     # Check if contact is allowed
     if tenant_config.allowed_contacts and phone not in tenant_config.allowed_contacts:
-        tenant_logger.warning("Phone number %s is not in allowed contacts for tenant %s", phone, tenant_id)
-        raise HTTPException(status_code=403, detail=f"Phone number {phone} is not in allowed contacts")
+        tenant_logger.warning("Phone number not in allowed contacts for tenant %s", tenant_id)
+        raise HTTPException(status_code=403, detail="Phone number not in allowed contacts")
 
     # Run the tenant's configured agent
     try:
@@ -355,7 +380,7 @@ async def whatsapp_webhook(
 
         if not agent_cls:
             tenant_logger.error("Agent '%s' not found for tenant %s", tenant_config.default_agent, tenant_id)
-            raise HTTPException(status_code=500, detail=f"Agent '{tenant_config.default_agent}' not found")
+            raise HTTPException(status_code=500, detail="Agent not found")
 
         # Create and run agent
         config = get_config()
@@ -384,4 +409,4 @@ async def whatsapp_webhook(
 
     except Exception as e:
         tenant_logger.error("Failed to process WhatsApp message for tenant %s: %s", tenant_id, str(e))
-        raise HTTPException(status_code=500, detail=f"Failed to process message: {e}")
+        raise HTTPException(status_code=500, detail="Internal error processing message")
