@@ -53,7 +53,15 @@ logs/*.log
 *.egg-info/
 dist/
 build/
+*.o
+*.a
+# Go build cache
+gateway/.cache/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Go files - these are handled in the build stage
+# Note: We copy gateway/ in the Dockerfile build stage, so no need to exclude
+# individual Go files here

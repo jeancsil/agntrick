@@ -295,6 +295,25 @@ for _name in AgentRegistry.list_agents():
     app.command(name=_name)(create_agent_command(_name))
 
 
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
+    port: int = typer.Option(8000, "--port", "-p", help="Server port"),
+) -> None:
+    """Start the REST API server."""
+    from agntrick.api.server import run_server
+    from agntrick.config import get_config
+
+    config = get_config()
+    if host != "127.0.0.1":
+        config.api.host = host
+    if port != 8000:
+        config.api.port = port
+
+    console.print(f"[bold green]Starting Agntrick API server on {config.api.host}:{config.api.port}[/bold green]")
+    run_server()
+
+
 @app.callback(invoke_without_command=True)
 def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),

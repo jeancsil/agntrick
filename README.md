@@ -146,6 +146,7 @@ Agntrick includes several pre-built agents for common use cases:
 | `news` | News Anchor: Aggregates top stories | `fetch` |
 | `ollama` | Local Agent: Uses local GLM-4.7-Flash via Ollama (port 8080) | `fetch` |
 | `youtube` | Video Analyst: Extract insights from YouTube videos | `fetch` |
+| `whatsapp-multi-tenant` | WhatsApp Assistant: Multi-tenant messaging via WhatsApp API | - |
 
 📖 **See [docs/agents.md](docs/agents.md)** for detailed information about each agent.
 
@@ -272,6 +273,91 @@ mcp:
 logging:
   level: INFO
   file: logs/agent.log
+
+whatsapp:
+  tenants:
+    - id: personal
+      phone: "+34611111111"
+      default_agent: developer
+      allowed_contacts: []
+  api:
+    host: 127.0.0.1
+    port: 8000
+  storage:
+    base_path: ~/.local/share/agntrick
+  auth:
+    api_keys:
+      "admin-key-123": "admin"
+```
+
+## 🚀 Docker Quick Start
+
+### Build and Run with Docker
+
+```bash
+# Build the Docker image (multi-stage build)
+make docker-build
+
+# Run the WhatsApp API server
+docker compose up -d
+
+# View logs
+tail -f logs/agntrick.log
+```
+
+### Docker Benefits
+
+- **Memory Efficient**: Limited to 512MB memory usage
+- **Health Checks**: Built-in `/health` endpoint monitoring
+- **Isolated Environment**: Consistent development and production environment
+- **Multi-Stage Build**: Optimized image with Go gateway + Python API
+
+### Quick Development
+
+```bash
+# Run tests in Docker environment
+docker compose run --rm app make test
+
+# Interactive development with mounted volumes
+docker compose run --rm app agntrick developer -i "Examine this codebase"
+```
+
+### Quick Configuration
+
+For WhatsApp setup, use environment variables:
+
+```bash
+export AGNTRICK_CONFIG=$(cat <<'EOF'
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.8
+
+api:
+  host: 127.0.0.1
+  port: 8000
+
+storage:
+  base_path: ~/.local/share/agntrick
+
+logging:
+  level: INFO
+  file: logs/agntrick.log
+
+auth:
+  api_keys:
+    "admin-key-123": "admin"
+
+whatsapp:
+  tenants:
+    - id: personal
+      phone: "+34611111111"
+      default_agent: developer
+      allowed_contacts: []
+EOF
+)
+
+echo $AGNTRICK_CONFIG > .agntrick.yaml
 ```
 
 ---
@@ -290,6 +376,9 @@ agntrick info developer
 # 🚀 Run an agent with input
 agntrick developer -i "Analyze the architecture of this project"
 
+# 🌐 Start the FastAPI server (multi-tenant WhatsApp support)
+agntrick serve
+
 # ⏱️ Run with an execution timeout (seconds)
 agntrick developer -i "Refactor this module" -t 120
 
@@ -298,6 +387,33 @@ agntrick developer -i "Hello" -v
 
 # 📜 View logs
 tail -f logs/agent.log
+
+# 🔍 Check WhatsApp QR codes for a tenant
+curl http://localhost:8000/api/v1/whatsapp/qr/personal/page
+```
+
+### Multi-Tenant CLI Commands
+
+```bash
+# Start server with custom config
+agntrick serve --config .agntrick.yaml
+
+# Start server with specific host/port
+agntrick serve --host 0.0.0.0 --port 8080
+
+# Server with debug logging
+agntrick serve --log-level DEBUG
+
+# Check API health
+curl http://localhost:8000/health
+
+# List available agents via API
+curl http://localhost:8000/api/v1/agents
+
+# Execute agent via API
+curl -X POST http://localhost:8000/api/v1/agents/developer/run \
+  -H "Authorization: Bearer admin-key-123" \
+  -d '{"input": "Explain this codebase"}'
 ```
 
 ---
@@ -305,6 +421,8 @@ tail -f logs/agent.log
 ## 🏗️ Architecture
 
 Under the hood, we seamlessly bridge the gap between user intent and execution:
+
+### Multi-Tenant WhatsApp Architecture
 
 ```mermaid
 flowchart TB
@@ -325,6 +443,7 @@ flowchart TB
         Dev[developer agent]
         Learning[learning agent]
         News[news agent]
+        WA[WhatsApp multi-tenant]
     end
 
     subgraph Core [🧠 Core Engine]
@@ -338,17 +457,31 @@ flowchart TB
         MCP[MCP Tools]
     end
 
+    subgraph API [🌐 FastAPI Server]
+        API1[GET /health]
+        API2[POST /api/v1/agents/{name}/run]
+        API3[POST /api/v1/channels/whatsapp/message]
+        API4[GET /api/v1/whatsapp/qr/{tenant_id}]
+    end
+
+    subgraph Gateway [🚪 Go Gateway]
+        GW1[WhatsApp Session Manager]
+        GW2[Message Handler]
+        GW3[QR Code Generator]
+    end
+
     subgraph External [🌍 External World]
         LLM[LLM API]
         MCPS[MCP Servers]
+        WA-API[WhatsApp API]
     end
 
     Input --> Typer
     Typer --> AR
     AR --> AD
-    AR -->|Routes to| Dev & Learning & News
+    AR -->|Routes to| Dev & Learning & News & WA
 
-    Dev & Learning & News -->|Inherits from| AB
+    Dev & Learning & News & WA -->|Inherits from| AB
 
     AB --> LG
     LG <--> CP
@@ -359,8 +492,52 @@ flowchart TB
     MCP -->|Queries| MCPS
     MCPS -->|Provides Data| LLM
 
+    AB --> API
+    API --> Gateway
+    Gateway --> WA-API
+    WA-API -->|Multi-tenant| GW1 & GW2 & GW3
+
     LLM --> Output[Final Response]
 ```
+
+### API Endpoints
+
+The WhatsApp Multi-Tenant API provides the following endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check endpoint |
+| `GET` | `/ready` | Readiness check endpoint |
+| `GET` | `/api/v1/agents` | List all available agents |
+| `POST` | `/api/v1/agents/{name}/run` | Execute an agent with input |
+| `GET` | `/api/v1/whatsapp/qr/{tenant_id}` | SSE stream for QR codes |
+| `GET` | `/api/v1/whatsapp/qr/{tenant_id}/page` | HTML QR code page |
+| `POST` | `/api/v1/whatsapp/qr/{tenant_id}` | Receive QR from Go gateway |
+| `POST` | `/api/v1/whatsapp/status/{tenant_id}` | Connection status update |
+| `POST` | `/api/v1/channels/whatsapp/message` | WhatsApp webhook for incoming messages |
+
+### Key Components
+
+1. **Go Gateway** (`gateway/`): Multi-tenant WhatsApp session management via whatsmeow
+   - `config.go` - YAML config parsing
+   - `session.go` - WhatsApp session manager
+   - `message.go` - Message handling with self-message detection
+   - `http_client.go` - HTTP client for Python API communication
+   - `qr.go` - QR code generation
+
+2. **Python API** (`src/agntrick/api/`):
+   - FastAPI server with tenant-scoped database isolation
+   - API key authentication
+   - Agent execution endpoints
+   - WhatsApp webhook handling
+   - QR code SSE streaming
+   - Middleware (request logging, error handling)
+   - Security (rate limiting, input sanitization)
+
+3. **WhatsApp Module** (`src/agntrick/whatsapp/`):
+   - Phone-to-tenant registry
+
+## 🧪 Multi-Tenant WhatsApp Features
 
 ---
 
