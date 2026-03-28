@@ -519,10 +519,10 @@ The WhatsApp Multi-Tenant API provides the following endpoints:
 ### Key Components
 
 1. **Go Gateway** (`gateway/`): Multi-tenant WhatsApp session management via whatsmeow
-   - `config.go` - YAML config parsing
-   - `session.go` - WhatsApp session manager
-   - `message.go` - Message handling with self-message detection
-   - `http_client.go` - HTTP client for Python API communication
+   - `config.go` - YAML config parsing with API key support
+   - `session.go` - WhatsApp session manager with async event handling
+   - `message.go` - Message handling with LID-based JID support and typing indicator persistence
+   - `http_client.go` - HTTP client with JSON response parsing
    - `qr.go` - QR code generation
 
 2. **Python API** (`src/agntrick/api/`):
@@ -538,6 +538,27 @@ The WhatsApp Multi-Tenant API provides the following endpoints:
    - Phone-to-tenant registry
 
 ## 🧪 Multi-Tenant WhatsApp Features
+
+The Go gateway provides production-ready WhatsApp integration with several reliability features:
+
+### Message Handling
+
+- **Async dispatch**: Message handling runs in separate goroutines, preventing whatsmeow's "Node handling took" warnings during long LLM calls
+- **LID-based JID support**: Handles WhatsApp's Linked Identity Device format for "note to self" messages
+- **Self-message detection**: Multi-strategy detection (exact JID → Store.ID → Store.LID → phone fallback)
+- **ExtendedTextMessage**: Extracts text from both Conversation and ExtendedTextMessage fields
+
+### User Experience
+
+- **Persistent typing indicator**: Re-sends composing presence every 3 seconds during LLM processing, keeping the indicator visible on WhatsApp
+- **Progress logging**: INFO-level status updates every 15 seconds while waiting for LLM responses
+- **Session persistence**: WhatsApp sessions survive gateway restarts via device reuse
+
+### Reliability
+
+- **JSON response parsing**: Extracts only the response field from Python API, avoiding raw JSON in WhatsApp messages
+- **API key authentication**: Secure gateway-to-API communication via X-API-Key header
+- **Graceful shutdown**: Clean session termination on signals
 
 ---
 
