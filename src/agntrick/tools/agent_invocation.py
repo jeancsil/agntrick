@@ -111,7 +111,41 @@ Returns the agent's response or an error message."""
 
         # Invoke agent in async context
         try:
-            return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
+            # Check if we're already in an async context (e.g., FastAPI/uvicorn)
+            try:
+                asyncio.get_running_loop()
+                # We're in an async context, run in a thread to avoid blocking
+                import threading
+
+                result: list[str | None] = [None]
+                exception: list[Exception | None] = [None]
+
+                def run_in_new_loop() -> None:
+                    try:
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            result[0] = new_loop.run_until_complete(
+                                self._invoke_agent_async(agent_cls, agent_name, prompt, timeout)
+                            )
+                        finally:
+                            new_loop.close()
+                    except Exception as e:
+                        exception[0] = e
+
+                thread = threading.Thread(target=run_in_new_loop)
+                thread.start()
+                thread.join(timeout=timeout + 5)  # Add buffer to the timeout
+
+                if exception[0]:
+                    raise exception[0]
+                if result[0] is None:
+                    return f"Error: Agent '{agent_name}' timed out after {timeout} seconds."
+
+                return result[0]
+            except RuntimeError:
+                # No running loop, use asyncio.run()
+                return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
             return f"Error: Agent '{agent_name}' encountered an error: {e}"

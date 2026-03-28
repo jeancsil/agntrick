@@ -38,6 +38,26 @@ class PIIFilter(logging.Filter):
         return text
 
 
+class HttpxLogFilter(logging.Filter):
+    """Suppresses httpx logging format errors from third-party library."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Filter out malformed httpx log records."""
+        # Check for the problematic httpx log format
+        if hasattr(record, "name") and "httpx" in record.name:
+            try:
+                # Test if the format string works
+                if record.args and len(record.args) >= 4:
+                    # httpx format: 'HTTP Request: %s %s "%s %d %s"'
+                    # If this fails, suppress the log
+                    record.msg % record.args if isinstance(record.msg, str) else str(record.msg)
+                return True
+            except (TypeError, ValueError):
+                # Format error - suppress this log record
+                return False
+        return True
+
+
 class TenantLogAdapter(logging.LoggerAdapter):
     """Adds tenant_id to log entries."""
 
@@ -79,10 +99,11 @@ def setup_logging(config: AgntrickConfig) -> None:
     # Create formatter
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    # Console handler with PII filter
+    # Console handler with PII filter and httpx error suppression
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.addFilter(PIIFilter())
+    console_handler.addFilter(HttpxLogFilter())
     root_logger.addHandler(console_handler)
 
     # Determine log directory
