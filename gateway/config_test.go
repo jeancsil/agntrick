@@ -78,9 +78,96 @@ storage:
 		t.Errorf("expected allowed contact '+34633333333', got '%s'", tenant2.AllowedContacts[0])
 	}
 
-	// Verify storage config
-	if config.Storage.BasePath != "~/.local/share/agntrick" {
-		t.Errorf("expected base_path '~/.local/share/agntrick', got '%s'", config.Storage.BasePath)
+	// Verify storage config - tilde should be expanded to home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home directory: %v", err)
+	}
+	expectedPath := homeDir + "/.local/share/agntrick"
+	if config.Storage.BasePath != expectedPath {
+		t.Errorf("expected base_path '%s', got '%s'", expectedPath, config.Storage.BasePath)
+	}
+}
+
+func TestLoadConfig_TildeExpansion(t *testing.T) {
+	// Create a temporary config file with tilde path
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".agntrick.yaml")
+	configContent := `
+whatsapp:
+  tenants:
+    - id: personal
+      phone: "+34611111111"
+      default_agent: developer
+      allowed_contacts: []
+storage:
+  base_path: ~/custom/path
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home directory: %v", err)
+	}
+
+	expectedPath := homeDir + "/custom/path"
+	if config.Storage.BasePath != expectedPath {
+		t.Errorf("expected expanded path '%s', got '%s'", expectedPath, config.Storage.BasePath)
+	}
+
+	// Verify no tilde remains in the path
+	if config.Storage.BasePath[:1] == "~" {
+		t.Errorf("tilde was not expanded, got '%s'", config.Storage.BasePath)
+	}
+}
+
+func TestLoadConfig_GetAPIKey(t *testing.T) {
+	// Create a temporary config file with auth
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".agntrick.yaml")
+	configContent := `
+auth:
+  api_keys:
+    "test-key-123": "personal"
+whatsapp:
+  tenants:
+    - id: personal
+      phone: "+34611111111"
+      default_agent: developer
+      allowed_contacts: []
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	apiKey := config.GetAPIKey()
+	if apiKey != "test-key-123" {
+		t.Errorf("expected API key 'test-key-123', got '%s'", apiKey)
+	}
+}
+
+func TestLoadConfig_GetAPIKey_Empty(t *testing.T) {
+	config := &Config{
+		Auth: AuthConfig{
+			APIKeys: map[string]string{},
+		},
+	}
+
+	apiKey := config.GetAPIKey()
+	if apiKey != "" {
+		t.Errorf("expected empty API key, got '%s'", apiKey)
 	}
 }
 

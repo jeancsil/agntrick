@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -10,8 +12,14 @@ import (
 // Config represents the main configuration structure from .agntrick.yaml
 type Config struct {
 	API      APIConfig      `yaml:"api"`
+	Auth     AuthConfig     `yaml:"auth"`
 	WhatsApp WhatsAppConfig `yaml:"whatsapp"`
 	Storage  StorageConfig  `yaml:"storage"`
+}
+
+// AuthConfig holds authentication configuration
+type AuthConfig struct {
+	APIKeys map[string]string `yaml:"api_keys"`
 }
 
 // APIConfig holds API server configuration
@@ -65,7 +73,24 @@ func LoadConfig(path string) (*Config, error) {
 		config.Storage.BasePath = fmt.Sprintf("%s/.local/share/agntrick", homeDir)
 	}
 
+	// Expand ~ in BasePath if present
+	if strings.HasPrefix(config.Storage.BasePath, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		config.Storage.BasePath = filepath.Join(homeDir, config.Storage.BasePath[2:])
+	}
+
 	return &config, nil
+}
+
+// GetAPIKey returns the first configured API key, or empty string if none configured
+func (c *Config) GetAPIKey() string {
+	for key := range c.Auth.APIKeys {
+		return key
+	}
+	return ""
 }
 
 // GetTenantByID finds a tenant by ID

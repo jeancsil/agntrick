@@ -70,6 +70,15 @@ func Test_isSelfMessageForTesting_selfMessage(t *testing.T) {
 	}
 }
 
+// Test_isSelfMessageForTesting_selfMessageWithDevice tests that JIDs with device suffixes are matched correctly
+func Test_isSelfMessageForTesting_selfMessageWithDevice(t *testing.T) {
+	// Store.ID includes device suffix, Chat does not — should still match
+	result := isSelfMessageForTesting(true, "1234567890@s.whatsapp.net", "1234567890.0:21@s.whatsapp.net")
+	if !result {
+		t.Errorf("Expected isSelfMessageForTesting to return true for self-message with device suffix, got false")
+	}
+}
+
 // Test_isSelfMessageForTesting_nonSelfMessage tests that isSelfMessageForTesting returns false for non-self messages
 func Test_isSelfMessageForTesting_nonSelfMessage(t *testing.T) {
 	result := isSelfMessageForTesting(false, "other@s.whatsapp.net", "1234567890@s.whatsapp.net")
@@ -86,6 +95,36 @@ func Test_isSelfMessageForTesting_differentChat(t *testing.T) {
 	}
 }
 
+// Test_isSelfMessageForTesting_LIDBasedJID tests that LID-based JIDs are NOT matched
+// by the phone-based isSelfMessageForTesting helper (LID matching requires the full isSelfMessage)
+func Test_isSelfMessageForTesting_LIDBasedJID(t *testing.T) {
+	// LID-based chat JID won't match phone-based store ID via this helper
+	result := isSelfMessageForTesting(true, "118657162162293@lid", "34677427318@s.whatsapp.net")
+	if result {
+		t.Errorf("Expected isSelfMessageForTesting to return false for LID vs phone mismatch, got true")
+	}
+}
+
+// Test_normalizePhoneNumber tests JID normalization
+func Test_normalizePhoneNumber(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"34677427318@s.whatsapp.net", "34677427318"},
+		{"34677427318.0:21@s.whatsapp.net", "34677427318"},
+		{"118657162162293@lid", "118657162162293"},
+		{"+34677427318", "34677427318"},
+		{"34677427318", "34677427318"},
+	}
+
+	for _, tc := range tests {
+		result := normalizePhoneNumber(tc.input)
+		if result != tc.expected {
+			t.Errorf("normalizePhoneNumber(%q) = %q, want %q", tc.input, result, tc.expected)
+		}
+	}
+}
 
 // MockMessage simulates a simplified Message struct for testing
 type MockMessage struct {
@@ -97,4 +136,31 @@ func (m MockMessage) GetConversation() string {
 		return *m.Conversation
 	}
 	return ""
+}
+
+// Test_apiResponse_JSON_parse tests that the API response JSON is parsed correctly
+func Test_apiResponse_JSON_parse(t *testing.T) {
+	raw := `{"response":"Hello! I am your assistant.","tenant_id":"personal"}`
+	var resp apiResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("Failed to parse API response: %v", err)
+	}
+	if resp.Response != "Hello! I am your assistant." {
+		t.Errorf("Expected response 'Hello! I am your assistant.', got '%s'", resp.Response)
+	}
+	if resp.TenantID != "personal" {
+		t.Errorf("Expected tenant_id 'personal', got '%s'", resp.TenantID)
+	}
+}
+
+// Test_apiResponse_JSON_emptyResponse tests that empty response is handled
+func Test_apiResponse_JSON_emptyResponse(t *testing.T) {
+	raw := `{"response":"","tenant_id":"personal"}`
+	var resp apiResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("Failed to parse API response: %v", err)
+	}
+	if resp.Response != "" {
+		t.Errorf("Expected empty response, got '%s'", resp.Response)
+	}
 }

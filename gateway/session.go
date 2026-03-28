@@ -10,6 +10,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -17,22 +18,22 @@ import (
 
 // SessionManager manages multiple WhatsApp tenant sessions
 type SessionManager struct {
-	config      *Config
-	storeDir    string
-	clients     map[string]*whatsmeow.Client
-	handlers    map[string]*EventHandler
-	container   *sqlstore.Container
-	mu          sync.RWMutex
-	logger      zerolog.Logger
-	httpClient  *HTTPClient
+	config     *Config
+	storeDir   string
+	clients    map[string]*whatsmeow.Client
+	handlers   map[string]*EventHandler
+	container  *sqlstore.Container
+	mu         sync.RWMutex
+	logger     zerolog.Logger
+	httpClient *HTTPClient
 }
 
 // EventHandler handles WhatsApp events for a specific tenant
 type EventHandler struct {
-	tenantID  string
-	session   *whatsmeow.Client
-	manager   *SessionManager
-	logger    zerolog.Logger
+	tenantID string
+	session  *whatsmeow.Client
+	manager  *SessionManager
+	logger   zerolog.Logger
 }
 
 // NewSessionManager creates a new session manager
@@ -55,7 +56,7 @@ func NewSessionManager(config *Config, logger zerolog.Logger) (*SessionManager, 
 		handlers:   make(map[string]*EventHandler),
 		container:  container,
 		logger:     logger,
-		httpClient: NewHTTPClient(getAPIURL(config)),
+		httpClient: NewHTTPClient(getAPIURL(config), config.GetAPIKey()),
 	}
 
 	return sm, nil
@@ -82,8 +83,25 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 		Str("phone", tenant.Phone).
 		Msg("Starting WhatsApp session")
 
-	// Create device store for this tenant
-	deviceStore := sm.container.NewDevice()
+	// Try to reuse an existing device (preserves session across restarts)
+	// or create a new one if none exists
+	var deviceStore *store.Device
+	existingDevices, err := sm.container.GetAllDevices(context.Background())
+	if err != nil {
+		sm.logger.Warn().Err(err).Msg("Failed to query existing devices, creating new one")
+		deviceStore = sm.container.NewDevice()
+	} else if len(existingDevices) > 0 {
+		deviceStore = existingDevices[0]
+		sm.logger.Info().
+			Str("tenant_id", tenantID).
+			Int("device_count", len(existingDevices)).
+			Msg("Reusing existing device session")
+	} else {
+		deviceStore = sm.container.NewDevice()
+		sm.logger.Info().
+			Str("tenant_id", tenantID).
+			Msg("Creating new device (first run)")
+	}
 
 	// Create client
 	client := whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", tenantID, true))
@@ -186,7 +204,15 @@ func (eh *EventHandler) handleEvent(evt interface{}) {
 	case *events.Disconnected:
 		eh.handleDisconnected(v)
 	case *events.Message:
+		eh.logger.Info().
+			Str("chat", v.Info.Chat.String()).
+			Str("sender", v.Info.Sender.String()).
+			Bool("is_from_me", v.Info.IsFromMe).
+			Msg("Received WhatsApp message event")
 		eh.handleMessage(v)
+	default:
+		// Log other events at debug level for diagnostics
+		eh.logger.Debug().Type("event_type", evt).Msg("Unhandled WhatsApp event")
 	}
 }
 
