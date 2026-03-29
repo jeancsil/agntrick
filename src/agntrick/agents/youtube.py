@@ -13,7 +13,7 @@ from agntrick.tools.youtube_transcript import YouTubeTranscriptTool
 logger = logging.getLogger(__name__)
 
 
-@AgentRegistry.register("youtube", mcp_servers=["fetch"])
+@AgentRegistry.register("youtube", mcp_servers=["toolbox"])
 class YouTubeAgent(AgentBase):
     """YouTube video analysis agent.
 

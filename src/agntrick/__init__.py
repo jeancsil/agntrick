@@ -76,7 +76,12 @@ from agntrick.exceptions import (
 from agntrick.llm import Provider, _create_model, detect_provider, get_default_model
 from agntrick.registry import AgentRegistry
 
-__version__ = "0.2.8"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("agntrick")
+except Exception:
+    __version__ = "0.0.0"
 
 __all__ = [
     # Core

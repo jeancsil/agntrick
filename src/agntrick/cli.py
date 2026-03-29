@@ -69,15 +69,22 @@ async def _run_agent(
     agent_cls: Type[Any],
     input_text: str,
     allowed_mcp: list[str] | None,
+    agent_name: str,
 ) -> str:
     """Run an agent with optional MCP tools."""
+    tool_categories = AgentRegistry.get_tool_categories(agent_name)
+
     if allowed_mcp:
         provider = MCPProvider(server_names=allowed_mcp)
         async with provider.tool_session() as mcp_tools:
-            agent = agent_cls(initial_mcp_tools=mcp_tools)
+            agent = agent_cls(
+                initial_mcp_tools=mcp_tools,
+                _agent_name=agent_name,
+                tool_categories=tool_categories,
+            )
             return str(await agent.run(input_text))
 
-    agent = agent_cls()
+    agent = agent_cls(_agent_name=agent_name, tool_categories=tool_categories)
     return str(await agent.run(input_text))
 
 
@@ -102,7 +109,12 @@ def execute_agent(agent_name: str, input_text: str, timeout_sec: int) -> str:
 
     allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
     try:
-        return asyncio.run(asyncio.wait_for(_run_agent(agent_cls, input_text, allowed_mcp), timeout=float(timeout_sec)))
+        return asyncio.run(
+            asyncio.wait_for(
+                _run_agent(agent_cls, input_text, allowed_mcp, agent_name),
+                timeout=float(timeout_sec),
+            ),
+        )
     except asyncio.TimeoutError as exc:
         raise TimeoutError(f"Run timed out after {timeout_sec}s.") from exc
 
@@ -142,6 +154,11 @@ def agent_info(
         console.print(f"[bold]MCP Servers:[/bold] {', '.join(mcp_servers)}")
     else:
         console.print("[bold]MCP Servers:[/bold] (configured but empty list)")
+
+    # Tool categories
+    tool_categories = AgentRegistry.get_tool_categories(agent_name)
+    if tool_categories:
+        console.print(f"[bold]Tool Categories:[/bold] {', '.join(tool_categories)}")
 
     # Create agent instance first (needed for system prompt and tools)
     agent = None
@@ -276,6 +293,25 @@ AgentRegistry.discover_agents()
 # Create dynamic commands for each agent (excluding whatsapp-messenger which has a custom command)
 for _name in AgentRegistry.list_agents():
     app.command(name=_name)(create_agent_command(_name))
+
+
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
+    port: int = typer.Option(8000, "--port", "-p", help="Server port"),
+) -> None:
+    """Start the REST API server."""
+    from agntrick.api.server import run_server
+    from agntrick.config import get_config
+
+    config = get_config()
+    if host != "127.0.0.1":
+        config.api.host = host
+    if port != 8000:
+        config.api.port = port
+
+    console.print(f"[bold green]Starting Agntrick API server on {config.api.host}:{config.api.port}[/bold green]")
+    run_server()
 
 
 @app.callback(invoke_without_command=True)

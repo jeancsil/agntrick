@@ -3,7 +3,7 @@ from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
 
 
-@AgentRegistry.register("news", mcp_servers=["fetch"])
+@AgentRegistry.register("news", mcp_servers=["toolbox"], tool_categories=["web", "hackernews"])
 class NewsAgent(AgentBase):
     """News agent that fetches and summarizes recent AI updates via MCP."""
 
