@@ -67,23 +67,35 @@ do_start() {
         (cd "$GATEWAY_DIR" && go build -o agntrick-gateway .) || log_error "Failed to build gateway"
     fi
 
-    # Start Go gateway
-    if ! is_running "${GATEWAY_PID:-}"; then
-        log_info "Starting Go gateway..."
-        nohup "${GATEWAY_DIR}/agntrick-gateway" > "$GATEWAY_LOG" 2>&1 &
-        GATEWAY_PID=$!
-        log_info "Gateway started (PID: $GATEWAY_PID)"
-    fi
-
-    # Give gateway a moment to initialize
-    sleep 1
-
-    # Start Python API
+    # Start Python API FIRST (gateway needs it to send QR codes)
     if ! is_running "${API_PID:-}"; then
         log_info "Starting Python API on ${HOST}:${PORT}..."
         nohup agntrick serve --host "$HOST" --port "$PORT" > "$API_LOG" 2>&1 &
         API_PID=$!
         log_info "API started (PID: $API_PID)"
+
+        # Wait for API to be ready before starting gateway
+        log_info "Waiting for API to be ready..."
+        for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
+                log_info "API is ready"
+                break
+            fi
+            if [ "$i" -eq 30 ]; then
+                log_error "API failed to start within 30 seconds"
+                cat "$API_LOG"
+                return 1
+            fi
+            sleep 1
+        done
+    fi
+
+    # Start Go gateway (needs API running to send QR codes)
+    if ! is_running "${GATEWAY_PID:-}"; then
+        log_info "Starting Go gateway..."
+        nohup "${GATEWAY_DIR}/agntrick-gateway" > "$GATEWAY_LOG" 2>&1 &
+        GATEWAY_PID=$!
+        log_info "Gateway started (PID: $GATEWAY_PID)"
     fi
 
     save_pids
