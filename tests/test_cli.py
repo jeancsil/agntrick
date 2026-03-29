@@ -22,8 +22,10 @@ from agntrick.mcp import MCPConnectionError
 class MockAgent:
     """Mock agent for CLI testing."""
 
-    def __init__(self, initial_mcp_tools=None):
+    def __init__(self, initial_mcp_tools=None, _agent_name=None, tool_categories=None):
         self._initial_mcp_tools = initial_mcp_tools or []
+        self._agent_name = _agent_name
+        self._tool_categories = tool_categories
 
     async def run(self, input_data):
         return "mock response"
@@ -112,7 +114,7 @@ def test_cli_run_agent_without_mcp():
     """Test _run_agent without MCP tools."""
     agent_cls = MockAgent
 
-    result = asyncio.run(_run_agent(agent_cls, "test input", None))
+    result = asyncio.run(_run_agent(agent_cls, "test input", None, "test-agent"))
     assert result == "mock response"
 
 
@@ -126,7 +128,7 @@ def test_cli_run_agent_with_mcp():
         mock_provider.tool_session.return_value.__aenter__.return_value = mock_mcp_tools
         mock_provider_class.return_value = mock_provider
 
-        result = asyncio.run(_run_agent(agent_cls, "test input", ["test-server"]))
+        result = asyncio.run(_run_agent(agent_cls, "test input", ["test-server"], "test-agent"))
         assert result == "mock response"
         mock_provider_class.assert_called_once_with(server_names=["test-server"])
 

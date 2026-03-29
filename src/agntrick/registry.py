@@ -31,6 +31,7 @@ class _AgentRegistryImplementation:
     def __init__(self) -> None:
         self._registry: Dict[str, Type[Agent]] = {}
         self._mcp_servers: Dict[str, Optional[List[str]]] = {}
+        self._tool_categories: Dict[str, Optional[List[str]]] = {}
         self._strict_registration: bool = False
 
     def set_strict_registration(self, strict: bool = True) -> None:
@@ -42,9 +43,20 @@ class _AgentRegistryImplementation:
         name: str,
         mcp_servers: Optional[List[str]] = None,
         *,
+        tool_categories: Optional[List[str]] = None,
         override: bool = False,
     ) -> Callable[[Type[Agent]], Type[Agent]]:
-        """Decorator to register an agent class and its allowed MCP servers."""
+        """Decorator to register an agent class with its MCP servers and tool categories.
+
+        Args:
+            name: Agent identifier.
+            mcp_servers: List of MCP server names this agent can use.
+            tool_categories: List of tool categories to document in system prompt (e.g., ["web", "git"]).
+            override: Whether to override existing registration.
+
+        Returns:
+            Decorator function.
+        """
 
         def decorator(agent_cls: Type[Agent]) -> Type[Agent]:
             if name in self._registry and not override:
@@ -59,6 +71,7 @@ class _AgentRegistryImplementation:
                 )
             self._registry[name] = agent_cls
             self._mcp_servers[name] = mcp_servers
+            self._tool_categories[name] = tool_categories
             _logger.debug("Registered agent '%s' with class %s", name, agent_cls.__name__)
             return agent_cls
 
@@ -71,6 +84,10 @@ class _AgentRegistryImplementation:
     def get_mcp_servers(self, name: str) -> Optional[List[str]]:
         """Return the list of MCP server names this agent is allowed to use."""
         return self._mcp_servers.get(name)
+
+    def get_tool_categories(self, name: str) -> Optional[List[str]]:
+        """Return the list of tool categories to document for this agent."""
+        return self._tool_categories.get(name)
 
     def list_agents(self) -> list[str]:
         """List all registered agent names."""
@@ -87,9 +104,10 @@ class _AgentRegistryImplementation:
             _logger.error("Failed to discover agents: %s", e)
 
     def clear(self) -> None:
-        """Clear all registered agents and their MCP server configurations."""
+        """Clear all registered agents and their configurations."""
         self._registry.clear()
         self._mcp_servers.clear()
+        self._tool_categories.clear()
 
 
 # Export a singleton instance. Using the same name as the original class

@@ -17,8 +17,9 @@ class TestOllamaAgent:
         agent = OllamaAgent()
         prompt = agent.system_prompt
 
-        # Should contain orchestrator identity
-        assert "orchestrator" in prompt.lower()
+        # Should contain key identity phrases
+        assert "versatile" in prompt.lower()
+        assert "delegate" in prompt.lower()
 
         # Should NOT contain developer-specific content
         assert "Principal Software Engineer" not in prompt
@@ -40,9 +41,7 @@ class TestOllamaAgent:
         """Agent should have correct MCP servers configured."""
         mcp_servers = AgentRegistry.get_mcp_servers("ollama")
         assert mcp_servers is not None
-        assert "web-forager" in mcp_servers
-        assert "fetch" in mcp_servers
-        assert "hacker-news" in mcp_servers
+        assert "toolbox" in mcp_servers
 
     def test_mcp_servers_excludes_kiwi(self):
         """Agent should NOT have kiwi-com-flight-search (too niche)."""

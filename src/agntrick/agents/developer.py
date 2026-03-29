@@ -14,7 +14,7 @@ from agntrick.tools import (
 )
 
 
-@AgentRegistry.register("developer", mcp_servers=["fetch"])
+@AgentRegistry.register("developer", mcp_servers=["toolbox"])
 class DeveloperAgent(AgentBase):
     """
     A specialized agent for codebase exploration and development.

@@ -319,8 +319,25 @@ New code should include tests. Aim to maintain or improve coverage.
 
 ```
 agntrick/
+├── gateway/                # Go WhatsApp gateway
+│   ├── config.go          # YAML config parsing
+│   ├── session.go        # WhatsApp session manager
+│   ├── message.go        # Message handling with self-message detection
+│   ├── http_client.go    # HTTP client for Python API communication
+│   ├── qr.go             # QR code generation
+│   └── go.mod            # Go module definition
 ├── src/agntrick/
-│   ├── core/               # Agent implementations
+│   ├── api/              # FastAPI server
+│   │   ├── main.py       # FastAPI application entry point
+│   │   ├── routes/       # API route handlers
+│   │   ├── middleware/   # Middleware (logging, error handling, auth)
+│   │   ├── models/       # Pydantic models for request/response
+│   │   └── database/     # Database connection and session management
+│   ├── whatsapp/         # WhatsApp integration
+│   │   ├── tenant_registry.py  # Phone-to-tenant registry
+│   │   ├── webhook.py    # WhatsApp webhook handlers
+│   │   └── session_manager.py  # Session management utilities
+│   ├── core/             # Agent implementations
 │   │   ├── langgraph_agent.py   # Base class - modify carefully
 │   │   ├── simple_agent.py
 │   │   ├── chef_agent.py
@@ -328,23 +345,61 @@ agntrick/
 │   │   ├── news_agent.py
 │   │   ├── developer_agent.py
 │   │   └── travel_coordinator_agent.py
-│   ├── interfaces/         # Abstract base classes
+│   ├── interfaces/       # Abstract base classes
 │   │   └── base.py              # Agent and Tool ABCs
-│   ├── mcp/                # MCP integration
+│   ├── mcp/              # MCP integration
 │   │   ├── config.py            # Server configurations
 │   │   └── provider.py          # Connection management
-│   ├── tools/              # Tool implementations
+│   ├── tools/            # Tool implementations
 │   │   ├── codebase_explorer.py # Code navigation tools
 │   │   ├── code_searcher.py     # ripgrep wrapper
 │   │   ├── syntax_validator.py  # Tree-sitter validation
 │   │   ├── web_search.py
 │   │   └── example.py
-│   ├── constants.py        # BASE_DIR, LOGS_DIR, timeouts
-│   ├── registry.py         # Agent discovery and registration
-│   └── cli.py              # Typer CLI interface
-├── tests/                  # Test suite
-├── pyproject.toml          # Project config, dependencies
-└── uv.lock                 # Lockfile (DO NOT EDIT DIRECTLY)
+│   ├── constants.py      # BASE_DIR, LOGS_DIR, timeouts
+│   ├── registry.py       # Agent discovery and registration
+│   └── cli.py            # Typer CLI interface
+├── tests/                # Test suite
+│   ├── test_gateway/    # Go gateway tests
+│   └── test_api/        # API server tests
+├── docker-compose.yml    # Docker multi-container setup
+├── Dockerfile           # Multi-stage Docker build
+├── pyproject.toml       # Project config, dependencies
+└── uv.lock              # Lockfile (DO NOT EDIT DIRECTLY)
+```
+
+## GO TESTING
+
+When working on the Go gateway, use the following commands:
+
+```bash
+cd gateway && go test ./...          # Run all Go tests
+cd gateway && go test -v ./...       # Verbose Go test output
+cd gateway && go fmt ./...           # Format Go code
+cd gateway && go vet ./...           # Lint Go code
+```
+
+## COMMANDS REFERENCE
+
+```bash
+# From project root:
+make check          # Run mypy + ruff (linting)
+make test           # Run pytest with coverage
+make format         # Auto-format with ruff
+make install        # Install dependencies
+make clean          # Remove caches and artifacts
+
+# Run the CLI:
+agntrick list
+agntrick info developer
+agntrick developer -i "input"
+
+# Start FastAPI server (multi-tenant WhatsApp support):
+agntrick serve
+
+# Gateway-specific commands:
+make gateway-build   # Build Go gateway
+make gateway-test   # Test Go gateway
 ```
 
 ---
@@ -374,6 +429,9 @@ make clean      # Remove caches and artifacts
 agntrick list
 agntrick info developer
 agntrick developer -i "input"
+
+# Start FastAPI server (multi-tenant WhatsApp support):
+agntrick serve
 ```
 
 ---

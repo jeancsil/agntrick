@@ -30,6 +30,9 @@ MANIFEST
 .env
 .venv
 
+# Worktrees
+.worktrees/
+
 # Editor
 .vscode/
 .idea/
@@ -48,6 +51,11 @@ logs/
 
 # Configuration files
 **/whatsapp.yaml
+.agntrick.yaml
+
+# Go compiled binaries
+gateway/gateway
+gateway/agntrick-gateway
 
 # Runtime data (sessions, databases, media)
 storage/whatsapp/
