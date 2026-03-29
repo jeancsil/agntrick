@@ -18,14 +18,14 @@ import (
 
 // SessionManager manages multiple WhatsApp tenant sessions
 type SessionManager struct {
-	config     *Config
-	storeDir   string
-	clients    map[string]*whatsmeow.Client
-	handlers   map[string]*EventHandler
-	container  *sqlstore.Container
-	mu         sync.RWMutex
-	logger     zerolog.Logger
-	httpClient *HTTPClient
+	config      *Config
+	storeDir    string
+	clients     map[string]*whatsmeow.Client
+	handlers    map[string]*EventHandler
+	containers  map[string]*sqlstore.Container // per-tenant session storage
+	mu          sync.RWMutex
+	logger      zerolog.Logger
+	httpClient  *HTTPClient
 }
 
 // EventHandler handles WhatsApp events for a specific tenant
@@ -43,23 +43,38 @@ func NewSessionManager(config *Config, logger zerolog.Logger) (*SessionManager, 
 		return nil, fmt.Errorf("failed to create store directory: %w", err)
 	}
 
-	// Initialize SQL store for session data
-	container, err := sqlstore.New(context.Background(), "sqlite3", filepath.Join(storeDir, "whatsapp_sessions.db")+"?_foreign_keys=on", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sqlstore: %w", err)
-	}
-
 	sm := &SessionManager{
 		config:     config,
 		storeDir:   storeDir,
 		clients:    make(map[string]*whatsmeow.Client),
 		handlers:   make(map[string]*EventHandler),
-		container:  container,
+		containers: make(map[string]*sqlstore.Container),
 		logger:     logger,
 		httpClient: NewHTTPClient(getAPIURL(config), config.GetAPIKey()),
 	}
 
 	return sm, nil
+}
+
+// getContainer returns (or creates) a per-tenant sqlstore.Container.
+func (sm *SessionManager) getContainer(tenantID string) (*sqlstore.Container, error) {
+	if c, ok := sm.containers[tenantID]; ok {
+		return c, nil
+	}
+
+	tenantDir := filepath.Join(sm.storeDir, tenantID)
+	if err := os.MkdirAll(tenantDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create tenant store directory: %w", err)
+	}
+
+	dbPath := filepath.Join(tenantDir, "whatsapp_sessions.db") + "?_foreign_keys=on"
+	container, err := sqlstore.New(context.Background(), "sqlite3", dbPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sqlstore for tenant %s: %w", tenantID, err)
+	}
+
+	sm.containers[tenantID] = container
+	return container, nil
 }
 
 // StartSession starts a WhatsApp session for a tenant
@@ -83,30 +98,34 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 		Str("phone", tenant.Phone).
 		Msg("Starting WhatsApp session")
 
+	// Get per-tenant container (isolated SQLite DB)
+	container, err := sm.getContainer(tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to get container: %w", err)
+	}
+
 	// Try to reuse an existing device (preserves session across restarts)
 	// or create a new one if none exists
 	var deviceStore *store.Device
-	existingDevices, err := sm.container.GetAllDevices(context.Background())
+	existingDevices, err := container.GetAllDevices(context.Background())
 	if err != nil {
-		sm.logger.Warn().Err(err).Msg("Failed to query existing devices, creating new one")
-		deviceStore = sm.container.NewDevice()
-	} else if len(existingDevices) > 0 {
+		return fmt.Errorf("failed to get devices: %w", err)
+	}
+
+	if len(existingDevices) > 0 {
 		deviceStore = existingDevices[0]
 		sm.logger.Info().
 			Str("tenant_id", tenantID).
-			Int("device_count", len(existingDevices)).
 			Msg("Reusing existing device session")
 	} else {
-		deviceStore = sm.container.NewDevice()
+			deviceStore = container.NewDevice()
 		sm.logger.Info().
 			Str("tenant_id", tenantID).
-			Msg("Creating new device (first run)")
+			Msg("Created new device session")
 	}
 
-	// Create client
 	client := whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", tenantID, true))
 
-	// Create event handler
 	handler := &EventHandler{
 		tenantID: tenantID,
 		session:  client,
@@ -114,7 +133,6 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 		logger:   sm.logger.With().Str("tenant_id", tenantID).Logger(),
 	}
 
-	// Register event handlers
 	client.AddEventHandler(handler.handleEvent)
 
 	// Connect to WhatsApp
@@ -136,29 +154,23 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 func (sm *SessionManager) StopSession(ctx context.Context, tenantID string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
 	return sm.stopSessionLocked(ctx, tenantID)
 }
 
-// stopSessionLocked stops a session assuming the mutex is already held.
 func (sm *SessionManager) stopSessionLocked(ctx context.Context, tenantID string) error {
 	client, exists := sm.clients[tenantID]
 	if !exists {
 		return fmt.Errorf("session for tenant '%s' not found", tenantID)
 	}
 
-	sm.logger.Info().
-		Str("tenant_id", tenantID).
-		Msg("Stopping WhatsApp session")
-
 	client.Disconnect()
+	sm.logger.Info().Str("tenant_id", tenantID).Msg("WhatsApp session stopped")
 
 	delete(sm.clients, tenantID)
 	delete(sm.handlers, tenantID)
 
-	sm.logger.Info().
-		Str("tenant_id", tenantID).
-		Msg("WhatsApp session stopped")
-
+	sm.logger.Info().Str("tenant_id", tenantID).Msg("Session cleaned up")
 	return nil
 }
 
@@ -167,18 +179,16 @@ func (sm *SessionManager) StopAll(ctx context.Context) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.logger.Info().Int("count", len(sm.clients)).Msg("Stopping all WhatsApp sessions")
-
+	var firstErr error
 	for tenantID := range sm.clients {
-		if err := sm.stopSessionLocked(ctx, tenantID); err != nil {
-			sm.logger.Error().
+		if err := sm.stopSessionLocked(ctx, tenantID); err != nil && firstErr == nil {
+			firstErr = err
+			sm.logger.Error().Err(err).
 				Str("tenant_id", tenantID).
-				Err(err).
-				Msg("Failed to stop session")
+				Msg("Error stopping session")
 		}
 	}
-
-	return nil
+	return firstErr
 }
 
 // GetClient returns the WhatsApp client for a tenant
@@ -190,32 +200,22 @@ func (sm *SessionManager) GetClient(tenantID string) (*whatsmeow.Client, error) 
 	if !exists {
 		return nil, fmt.Errorf("session for tenant '%s' not found", tenantID)
 	}
-
 	return client, nil
 }
 
-// handleEvent handles WhatsApp events
-func (eh *EventHandler) handleEvent(evt interface{}) {
-	switch v := evt.(type) {
-	case *events.QR:
-		eh.handleQRCode(v)
+// handleEvent routes WhatsApp events to the appropriate handler
+func (eh *EventHandler) handleEvent(rawEvt interface{}) {
+	switch evt := rawEvt.(type) {
 	case *events.Connected:
-		eh.handleConnected(v)
+		eh.handleConnected(evt)
 	case *events.Disconnected:
-		eh.handleDisconnected(v)
+		eh.handleDisconnected(evt)
 	case *events.Message:
-		eh.logger.Info().
-			Str("chat", v.Info.Chat.String()).
-			Str("sender", v.Info.Sender.String()).
-			Bool("is_from_me", v.Info.IsFromMe).
-			Msg("Received WhatsApp message event")
-		// Dispatch async to avoid blocking whatsmeow's event processing loop.
-		// Long-running operations (e.g., LLM calls via Python API) can take 90+ seconds,
-		// which triggers whatsmeow's "Node handling took" warning if handled synchronously.
-		go eh.handleMessage(v)
+		eh.handleMessage(evt)
+	case *events.QR:
+		eh.handleQRCode(evt)
 	default:
-		// Log other events at debug level for diagnostics
-		eh.logger.Debug().Type("event_type", evt).Msg("Unhandled WhatsApp event")
+		eh.logger.Debug().Msg("Unhandled WhatsApp event")
 	}
 }
 
