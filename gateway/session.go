@@ -211,7 +211,7 @@ func (eh *EventHandler) handleEvent(rawEvt interface{}) {
 	case *events.Disconnected:
 		eh.handleDisconnected(evt)
 	case *events.Message:
-		eh.handleMessage(evt)
+		go eh.handleMessage(evt)
 	case *events.QR:
 		eh.handleQRCode(evt)
 	default:
