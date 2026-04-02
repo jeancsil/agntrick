@@ -396,3 +396,119 @@ async def whatsapp_webhook(
     except Exception as e:
         tenant_logger.error("Failed to process WhatsApp message for tenant %s: %s", tenant_id, str(e))
         raise HTTPException(status_code=500, detail="Internal error processing message")
+
+
+@channels_router.post("/whatsapp/audio")
+async def whatsapp_audio_webhook(
+    request: Request, registry: WhatsAppRegistry = Depends(get_whatsapp_registry)
+) -> dict[str, str]:
+    """Receive audio message from Go gateway, transcribe and process with agent.
+
+    Args:
+        request: The FastAPI request containing audio data as multipart form.
+        registry: WhatsApp registry instance.
+
+    Returns:
+        Agent response with tenant_id.
+
+    Raises:
+        HTTPException: If authentication fails or processing fails.
+    """
+    logger = logging.getLogger(__name__)
+
+    # Check API key
+    api_key = request.headers.get("X-API-Key")
+    config = get_config()
+    if not api_key or api_key not in config.auth.api_keys:
+        logger.warning("Invalid API key attempted for WhatsApp audio webhook")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    # Parse multipart form
+    from typing import Any
+
+    form = await request.form()
+    audio_file_raw = form.get("audio")
+    tenant_id_raw = form.get("tenant_id", "")
+    phone_raw = form.get("phone", "")
+    mime_type_raw = form.get("mime_type", "audio/ogg")
+
+    if not audio_file_raw:
+        raise HTTPException(status_code=400, detail="Missing audio file")
+
+    # Handle file - could be UploadFile from FastAPI or similar from test client
+    audio_file: Any = audio_file_raw
+
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="Missing phone in request")
+
+    # Convert form values to strings
+    phone = str(phone_raw) if phone_raw else ""
+    tenant_id: str | None = str(tenant_id_raw) if tenant_id_raw else None
+    mime_type = str(mime_type_raw) if mime_type_raw else "audio/ogg"
+
+    # Look up tenant
+    resolved_tenant_id = registry.lookup_by_phone(phone)
+    if tenant_id:
+        if resolved_tenant_id != tenant_id:
+            raise HTTPException(status_code=400, detail="Phone number does not match tenant_id")
+    else:
+        tenant_id = resolved_tenant_id
+
+    if not tenant_id:
+        raise HTTPException(status_code=404, detail="No tenant found for phone number")
+
+    tenant_logger = TenantLogAdapter(logger, tenant_id)
+    tenant_logger.info("Received WhatsApp audio message")
+
+    # Save audio to temp file and process
+    import hashlib
+    import tempfile
+
+    audio_bytes = await audio_file.read()
+    audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+
+    # Check cache first
+    from agntrick.services.audio_transcription_cache import AudioTranscriptionCache
+
+    cache = AudioTranscriptionCache()
+    cached = cache.get(audio_hash, tenant_id)
+
+    if cached:
+        tenant_logger.info("Using cached transcription for audio hash %s", audio_hash[:8])
+        transcribed_text = cached["transcription"]
+    else:
+        # Save to temp file for transcription
+        ext_map = {"audio/ogg": ".ogg", "audio/opus": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a"}
+        ext = ext_map.get(mime_type, ".ogg")
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        try:
+            from agntrick.services.audio_transcriber import AudioTranscriber
+
+            transcriber = AudioTranscriber()
+            transcribed_text = await transcriber.transcribe_audio(tmp_path, mime_type)
+            if transcribed_text.startswith("Error:"):
+                tenant_logger.error("Transcription failed: %s", transcribed_text)
+                raise HTTPException(status_code=500, detail=transcribed_text)
+            # Cache the transcription
+            cache.set(
+                audio_hash=audio_hash,
+                transcription=transcribed_text,
+                mime_type=mime_type,
+                tenant_id=tenant_id,
+            )
+            tenant_logger.info("Transcribed audio (%d bytes)", len(audio_bytes))
+        finally:
+            import os
+
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    # Return transcription directly — no agent processing.
+    # This endpoint exists so users who can't listen to audio can read what was said.
+    tenant_logger.info("Transcription complete for tenant %s (%d chars)", tenant_id, len(transcribed_text))
+    return {"response": transcribed_text, "tenant_id": tenant_id}
