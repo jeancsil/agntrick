@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from agntrick.config import get_config
 from agntrick.logging_config import TenantLogAdapter
+from agntrick.mcp import MCPProvider
 from agntrick.registry import AgentRegistry
 from agntrick.whatsapp import WhatsAppRegistry
 
@@ -360,35 +361,44 @@ async def whatsapp_webhook(
         raise HTTPException(status_code=403, detail="Phone number not in allowed contacts")
 
     # Run the tenant's configured agent
+    agent_name = tenant_config.default_agent
     try:
         AgentRegistry.discover_agents()
-        agent_cls = AgentRegistry.get(tenant_config.default_agent)
+        agent_cls = AgentRegistry.get(agent_name)
 
         if not agent_cls:
-            tenant_logger.error("Agent '%s' not found for tenant %s", tenant_config.default_agent, tenant_id)
+            tenant_logger.error("Agent '%s' not found for tenant %s", agent_name, tenant_id)
             raise HTTPException(status_code=500, detail="Agent not found")
 
-        # Create and run agent
+        # Look up MCP servers and tool categories registered for this agent
+        allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
+        tool_categories = AgentRegistry.get_tool_categories(agent_name)
         config = get_config()
 
-        # Prepare agent constructor arguments
-        constructor_args = {
-            "model_name": config.llm.model,
-            "temperature": config.llm.temperature,
-            "thread_id": "whatsapp_webhook",
-        }
-
-        # Add checkpointer if available (but not for WhatsApp messages)
-        if hasattr(agent_cls, "__init__"):
-            import inspect
-
-            signature = inspect.signature(agent_cls.__init__)
-            if "checkpointer" in signature.parameters:
-                constructor_args["checkpointer"] = None  # No checkpointing for WhatsApp messages
-
-        # Create and run agent
-        agent = agent_cls(**constructor_args)
-        result = await agent.run(message)
+        if allowed_mcp:
+            # Connect to MCP servers and inject tools (same pattern as CLI)
+            provider = MCPProvider(server_names=allowed_mcp)
+            async with provider.tool_session() as mcp_tools:
+                agent = agent_cls(  # type: ignore[call-arg]
+                    initial_mcp_tools=mcp_tools,
+                    _agent_name=agent_name,
+                    tool_categories=tool_categories,
+                    model_name=config.llm.model,
+                    temperature=config.llm.temperature,
+                    thread_id="whatsapp_webhook",
+                    checkpointer=None,
+                )
+                result = await agent.run(message)
+        else:
+            agent = agent_cls(  # type: ignore[call-arg]
+                _agent_name=agent_name,
+                tool_categories=tool_categories,
+                model_name=config.llm.model,
+                temperature=config.llm.temperature,
+                thread_id="whatsapp_webhook",
+                checkpointer=None,
+            )
+            result = await agent.run(message)
 
         tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
         return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}

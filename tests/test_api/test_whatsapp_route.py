@@ -1,5 +1,7 @@
 """Tests for WhatsApp QR code and status endpoints."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
 
 
@@ -121,3 +123,82 @@ class TestWhatsAppStatusEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
+
+
+class TestWhatsAppMCPInjection:
+    """Tests that the WhatsApp webhook injects MCP tools into agents."""
+
+    @patch("agntrick.api.routes.whatsapp.MCPProvider")
+    @patch("agntrick.api.routes.whatsapp.AgentRegistry")
+    @patch("agntrick.api.routes.whatsapp.get_config")
+    def test_webhook_injects_mcp_tools_into_agent(
+        self,
+        mock_config: MagicMock,
+        mock_registry_cls: MagicMock,
+        mock_mcp_cls: MagicMock,
+    ) -> None:
+        """WhatsApp webhook should pass MCP tools and tool_categories to agent."""
+        from agntrick.api.routes.whatsapp import get_whatsapp_registry
+        from agntrick.api.server import create_app
+
+        # Set up config mock with API key, LLM settings, and a tenant
+        mock_tenant = MagicMock()
+        mock_tenant.id = "test-tenant"
+        mock_tenant.default_agent = "developer"
+        mock_tenant.allowed_contacts = None  # Allow all contacts
+
+        mock_config.return_value = MagicMock(
+            auth=MagicMock(api_keys={"test-key": "test-tenant"}),
+            llm=MagicMock(model="gpt-4", temperature=0.7),
+            whatsapp=MagicMock(tenants=[mock_tenant]),
+        )
+
+        # Set up WhatsApp registry mock via dependency override
+        mock_registry_instance = MagicMock()
+        mock_registry_instance.lookup_by_phone.return_value = "test-tenant"
+
+        # Set up agent registry
+        mock_registry_cls.discover_agents = MagicMock()
+
+        # Create a mock agent instance that will be returned by the constructor
+        mock_agent_instance = AsyncMock()
+        mock_agent_instance.run = AsyncMock(return_value="Hello from agent")
+
+        # Create a mock agent class that tracks constructor kwargs
+        mock_agent_cls = MagicMock()
+        constructor_calls: list[dict[str, object]] = []
+
+        def capture_constructor(**kwargs: object) -> MagicMock:
+            constructor_calls.append(kwargs)
+            return mock_agent_instance
+
+        mock_agent_cls.side_effect = capture_constructor
+        mock_registry_cls.get.return_value = mock_agent_cls
+        mock_registry_cls.get_mcp_servers.return_value = ["toolbox"]
+        mock_registry_cls.get_tool_categories.return_value = ["web", "hackernews"]
+
+        # Set up MCP provider mock
+        fake_tool = MagicMock(name="web_search")
+        mock_provider_instance = MagicMock()
+        mock_provider_instance.tool_session.return_value.__aenter__ = AsyncMock(return_value=[fake_tool])
+        mock_provider_instance.tool_session.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_mcp_cls.return_value = mock_provider_instance
+
+        app = create_app()
+        app.dependency_overrides[get_whatsapp_registry] = lambda: mock_registry_instance
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/channels/whatsapp/message",
+            json={"from": "+1234567890", "message": "hello", "tenant_id": "test-tenant"},
+            headers={"X-API-Key": "test-key"},
+        )
+
+        assert response.status_code == 200
+        # Verify MCPProvider was created with the agent's registered servers
+        mock_mcp_cls.assert_called_once_with(server_names=["toolbox"])
+        # Verify agent constructor received MCP tools and tool_categories
+        assert len(constructor_calls) == 1
+        args = constructor_calls[0]
+        assert args.get("initial_mcp_tools") == [fake_tool]
+        assert args.get("tool_categories") == ["web", "hackernews"]
