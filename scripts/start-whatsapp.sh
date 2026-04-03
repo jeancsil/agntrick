@@ -49,6 +49,7 @@ start() {
     echo "Starting API on ${HOST}:${PORT}..."
     nohup "$PROJECT_DIR/.venv/bin/agntrick" serve --host "$HOST" --port "$PORT" >> "$API_LOG" 2>&1 &
     API_PID=$!
+    disown $API_PID
     echo "API started (PID: $API_PID)"
 
     # Wait for API health
@@ -61,6 +62,7 @@ start() {
     echo "Starting gateway..."
     nohup "$PROJECT_DIR/gateway/agntrick-gateway" >> "$GATEWAY_LOG" 2>&1 &
     GW_PID=$!
+    disown $GW_PID
     echo "Gateway started (PID: $GW_PID)"
 
     save_pids
