@@ -83,68 +83,16 @@ class ResponseTruncator:
     def _truncate(self, result: CallToolResult) -> CallToolResult:
         """Truncate text content in a CallToolResult if it exceeds the limit.
 
-        Uses head+tail truncation: keeps the beginning (headers, status)
-        and the end (actual content body) of each text block, discarding
-        the verbose middle. This prevents HTTP headers/metadata from
-        consuming the entire budget and losing the useful content.
+        TEMPORARILY DISABLED — truncation was too aggressive, causing the
+        LLM to interpret truncated tool responses as failures. Passing
+        through all responses unchanged while we diagnose.
         """
-        # Calculate total text content size
         text_blocks = [c for c in result.content if isinstance(c, TextContent)]
         total_chars = sum(len(b.text) for b in text_blocks)
-
-        if total_chars <= self.max_response_size:
-            return result
-
-        # Reserve space for the truncation notice so the final result
-        # stays within budget.
-        notice = f"\n\n[Response truncated at {self.max_response_size:,} chars. Original size: {total_chars:,} chars]"
-        budget = self.max_response_size - len(notice)
-        new_content: list[object] = []
-
-        for block in result.content:
-            if isinstance(block, TextContent):
-                block_budget = int(budget * len(block.text) / total_chars)
-                if block_budget > 0 and len(block.text) > block_budget:
-                    separator = "\n\n...[content truncated]...\n\n"
-                    # Subtract separator overhead so total fits within budget
-                    content_budget = max(0, block_budget - len(separator))
-                    if content_budget >= 10:
-                        # Head+tail: keep first 30% and last 70%
-                        # "head" captures status/headers; "tail" captures
-                        # the actual content body (which comes at the end of
-                        # verbose tool responses like curl/web_fetch).
-                        head_size = content_budget * 3 // 10
-                        tail_size = content_budget - head_size
-                        truncated_text = block.text[:head_size] + separator + block.text[-tail_size:]
-                    else:
-                        # Budget too small for head+tail — simple tail
-                        truncated_text = block.text[-block_budget:]
-                    new_content.append(TextContent(type="text", text=truncated_text))
-                else:
-                    new_content.append(block)
-            else:
-                # Non-text content passes through unchanged
-                new_content.append(block)
-
-        # Add truncation notice to last text block
-        for i in range(len(new_content) - 1, -1, -1):
-            if isinstance(new_content[i], TextContent):
-                existing = new_content[i]
-                assert isinstance(existing, TextContent)
-                new_content[i] = TextContent(
-                    type="text",
-                    text=existing.text + notice,
-                )
-                break
-
-        new_total = sum(len(c.text) for c in new_content if isinstance(c, TextContent))
-        logger.info(
-            "Truncated tool response: %s -> %s chars",
-            total_chars,
-            new_total,
-        )
-
-        return CallToolResult(
-            content=new_content,  # type: ignore[arg-type]
-            isError=result.isError,
-        )
+        if total_chars > self.max_response_size:
+            logger.info(
+                "Truncation bypassed (disabled): tool response has %s chars (limit: %s)",
+                total_chars,
+                self.max_response_size,
+            )
+        return result

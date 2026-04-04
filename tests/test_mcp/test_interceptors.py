@@ -41,7 +41,11 @@ async def _invoke(
 
 
 class TestResponseTruncator:
-    """Tests for ResponseTruncator interceptor."""
+    """Tests for ResponseTruncator interceptor.
+
+    NOTE: Truncation is currently bypassed. These tests verify the bypass
+    behavior — all responses pass through unchanged regardless of size.
+    """
 
     @pytest.mark.asyncio
     async def test_passes_through_small_responses(self) -> None:
@@ -56,8 +60,8 @@ class TestResponseTruncator:
         assert result == original_result
 
     @pytest.mark.asyncio
-    async def test_truncates_large_text_responses(self) -> None:
-        """Large text responses should be truncated."""
+    async def test_bypass_passes_through_large_responses(self) -> None:
+        """Large responses pass through unchanged while truncation is bypassed."""
         truncator = ResponseTruncator(max_response_size=100)
 
         original_result = CallToolResult(
@@ -65,15 +69,11 @@ class TestResponseTruncator:
         )
 
         result = await _invoke(truncator, original_result)
-        assert isinstance(result, CallToolResult)
-        text = result.content[0].text  # type: ignore[union-attr]
-        assert len(text) < 200  # truncated + notice
-        assert "truncated" in text.lower()
-        assert "500" in text  # shows original size
+        assert result == original_result
 
     @pytest.mark.asyncio
-    async def test_truncates_multiple_content_blocks(self) -> None:
-        """Should truncate total content across multiple blocks."""
+    async def test_bypass_passes_through_multiple_content_blocks(self) -> None:
+        """Multiple content blocks pass through unchanged while bypassed."""
         truncator = ResponseTruncator(max_response_size=100)
 
         original_result = CallToolResult(
@@ -84,13 +84,7 @@ class TestResponseTruncator:
         )
 
         result = await _invoke(truncator, original_result)
-        assert isinstance(result, CallToolResult)
-        total_text = "".join(
-            c.text
-            for c in result.content
-            if isinstance(c, TextContent)  # type: ignore[union-attr]
-        )
-        assert len(total_text) < 300
+        assert result == original_result
 
     @pytest.mark.asyncio
     async def test_preserves_non_text_content(self) -> None:
@@ -113,7 +107,7 @@ class TestResponseTruncator:
 
     @pytest.mark.asyncio
     async def test_preserves_is_error_flag(self) -> None:
-        """isError flag should be preserved through truncation."""
+        """isError flag should be preserved."""
         truncator = ResponseTruncator(max_response_size=100)
 
         original_result = CallToolResult(
@@ -155,55 +149,6 @@ class TestResponseTruncator:
         assert result == original_result
 
     @pytest.mark.asyncio
-    async def test_truncation_notice_appended_to_last_text_block(self) -> None:
-        """Truncation notice should be appended to the last text block."""
-        truncator = ResponseTruncator(max_response_size=100)
-
-        original_result = CallToolResult(
-            content=[
-                TextContent(type="text", text="a" * 200),
-                TextContent(type="text", text="b" * 200),
-            ],
-        )
-
-        result = await _invoke(truncator, original_result)
-        assert isinstance(result, CallToolResult)
-        # Last text block should contain the truncation notice
-        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
-        last_text = text_blocks[-1].text
-        assert "[Response truncated" in last_text
-        # First text block should not have the notice
-        first_text = text_blocks[0].text
-        assert "[Response truncated" not in first_text
-
-    @pytest.mark.asyncio
-    async def test_proportional_truncation_across_blocks(self) -> None:
-        """Each text block should be truncated proportionally to its size."""
-        truncator = ResponseTruncator(max_response_size=200)
-
-        # Block 1 is 300 chars, block 2 is 100 chars (75% / 25% split)
-        original_result = CallToolResult(
-            content=[
-                TextContent(type="text", text="a" * 300),
-                TextContent(type="text", text="b" * 100),
-            ],
-        )
-
-        result = await _invoke(truncator, original_result)
-        assert isinstance(result, CallToolResult)
-        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
-
-        # Both blocks should be truncated
-        block1_len = len(text_blocks[0].text)
-        assert block1_len < 300
-        block2_len = len(text_blocks[1].text)
-        assert block2_len < 100
-
-        # Total text should stay within max_response_size
-        total_text = sum(len(b.text) for b in text_blocks if isinstance(b, TextContent))
-        assert total_text <= truncator.max_response_size
-
-    @pytest.mark.asyncio
     async def test_tool_message_passes_through(self) -> None:
         """ToolMessage results should pass through unchanged (not CallToolResult)."""
         truncator = ResponseTruncator(max_response_size=100)
@@ -215,35 +160,6 @@ class TestResponseTruncator:
 
         result = await _invoke(truncator, tool_msg)
         assert result == tool_msg
-
-    @pytest.mark.asyncio
-    async def test_head_tail_truncation_preserves_end_content(self) -> None:
-        """Truncation should keep both beginning AND end of content.
-
-        When web_fetch returns verbose headers followed by actual content,
-        the useful data is at the end. Head+tail truncation preserves it.
-        """
-        truncator = ResponseTruncator(max_response_size=200)
-
-        # Simulate a tool response: headers + actual content at the end
-        header = "HTTP/1.1 200 OK\nContent-Type: text/xml\n" * 20  # ~600 chars of headers
-        body = "NEWS_TITLE: Important news article about Brazil\n" * 20  # ~900 chars of content
-        full_text = header + body
-
-        original_result = CallToolResult(
-            content=[TextContent(type="text", text=full_text)],
-        )
-
-        result = await _invoke(truncator, original_result)
-        assert isinstance(result, CallToolResult)
-        text = result.content[0].text  # type: ignore[union-attr]
-
-        # The end content (actual news) should be preserved
-        assert "NEWS_TITLE" in text, f"End content lost! Got: {text[-200:]}"
-        # The beginning (headers) should also be preserved
-        assert "HTTP/1.1" in text, f"Start content lost! Got: {text[:200:]}"
-        # There should be a truncation indicator
-        assert "content truncated" in text
 
     @pytest.mark.asyncio
     async def test_mcp_provider_stores_truncator_as_interceptor(self) -> None:

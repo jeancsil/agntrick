@@ -31,31 +31,11 @@ def _truncate_messages(
 ) -> list[BaseMessage]:
     """Truncate long messages to keep total content within limits.
 
-    Preserves the first message (usually system) and last message (the query),
-    truncating middle messages (tool results, etc.) if needed.
-    Only truncates HumanMessage and AIMessage types — ToolMessage and
-    other types with required fields are left intact.
+    TEMPORARILY DISABLED — pass through all messages unchanged while
+    diagnosing truncation issues that cause the LLM to misinterpret
+    tool responses as failures.
     """
-    if not messages:
-        return messages
-
-    total = sum(len(str(m.content)) for m in messages)
-    if total <= max_chars:
-        return messages
-
-    # Truncate individual messages from oldest to newest (skip first and last)
-    result = list(messages)
-    for i in range(1, len(result) - 1):
-        msg = result[i]
-        if not isinstance(msg, (HumanMessage, AIMessage)):
-            # ToolMessage and other types have required fields — don't reconstruct
-            continue
-        content_str = str(msg.content)
-        if len(content_str) > 3000:
-            truncated = content_str[:3000] + "\n...[truncated]"
-            result[i] = msg.__class__(content=truncated)
-
-    return result
+    return messages
 
 
 def _safe_invoke_messages(
