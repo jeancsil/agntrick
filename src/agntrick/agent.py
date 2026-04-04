@@ -330,14 +330,19 @@ class AgentBase(Agent):
             )
             return str(result["messages"][-1].content)
         except BaseException as e:
-            # Unwrap ExceptionGroup/TaskGroup to log the actual root cause
-            if hasattr(e, "exceptions") and e.exceptions:
-                sub_errors = [f"{type(sub).__name__}: {sub}" for sub in e.exceptions]
-                logger.error(
-                    "Agent run failed with ExceptionGroup for agent '%s': %s",
-                    self._agent_name,
-                    sub_errors,
-                )
+            # Recursively unwrap nested ExceptionGroups to find the root cause
+            def _unwrap(exc: BaseException, depth: int = 0) -> str:
+                if hasattr(exc, "exceptions") and exc.exceptions:
+                    inner = [_unwrap(sub, depth + 1) for sub in exc.exceptions]
+                    prefix = "  " * depth
+                    return f"{prefix}{type(exc).__name__}:\n" + "\n".join(inner)
+                return f"{'  ' * depth}{type(exc).__name__}: {exc}"
+
+            logger.error(
+                "Agent run failed for agent '%s':\n%s",
+                self._agent_name,
+                _unwrap(e),
+            )
             raise
 
     async def run_with_memory(
