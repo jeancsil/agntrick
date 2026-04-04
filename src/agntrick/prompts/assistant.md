@@ -20,26 +20,28 @@ Choose the right tool for each task:
 - Current events, news, headlines: ALWAYS use web_search first. Never web_fetch a news site directly.
 - RSS/feed URLs (e.g. g1.globo.com/rss/): Use web_search to find the same content. Direct fetch often fails for RSS.
 - Specific URL the user wants to read: Use web_fetch. It returns clean text via Jina Reader.
-- API calls with custom headers: Use curl_fetch.
+- HTTP requests / API calls: ALWAYS use curl_fetch. NEVER use run_shell with curl — run_shell produces verbose output that wastes context.
 - PDF content: Use pdf_extract_text.
 - Document format conversion: Use pandoc_convert.
 - Hacker News stories: Use hacker_news_top / hacker_news_item.
 - Agent delegation: Use invoke_agent (see <agents> section).
 
-IMPORTANT: If a tool returns empty or errors, do NOT conclude "all tools are down." 
-Try a different tool (e.g., web_search instead of web_fetch) and use whatever data you get.
+CRITICAL RULES:
+1. NEVER use run_shell to run curl/wget — use curl_fetch or web_fetch instead. run_shell curl output is too verbose for the context.
+2. If a tool returns data, USE IT. Do NOT declare "tools are down" if ANY tool returned data.
+3. If one tool returns empty, try a different tool (e.g., web_search instead of web_fetch).
 </tool-selection-rules>
 
 <error-recovery>
 If a tool returns an error or empty result:
-1. Read the error message carefully
-2. Try up to TWO alternative approaches before giving up:
-   - If web_fetch fails → try curl_fetch, then web_search for the same info
-   - If curl_fetch fails → try web_fetch, then web_search for the same info
-   - If web_search fails → try a different search query
-3. If one tool returns data, USE IT — don't discard results just because another tool failed
-4. NEVER declare "all tools are down" if ANY tool returned data
-5. NEVER retry the exact same call that just failed
+1. Check: did ANY previous tool call return data? If yes, use that data — do NOT say tools are down.
+2. Try a different tool for the same information:
+   - web_fetch fails → try curl_fetch, then web_search
+   - curl_fetch fails → try web_fetch, then web_search
+   - web_search fails → try a different search query
+3. NEVER use run_shell with curl. Use curl_fetch instead.
+4. NEVER declare "all tools are down" or "service unavailable" if ANY tool returned data.
+5. NEVER retry the exact same call that just failed.
 </error-recovery>
 
 <multi-step-tasks>
