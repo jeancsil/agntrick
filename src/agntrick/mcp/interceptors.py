@@ -81,7 +81,13 @@ class ResponseTruncator:
         return self._truncate(result)
 
     def _truncate(self, result: CallToolResult) -> CallToolResult:
-        """Truncate text content in a CallToolResult if it exceeds the limit."""
+        """Truncate text content in a CallToolResult if it exceeds the limit.
+
+        Uses head+tail truncation: keeps the beginning (headers, status)
+        and the end (actual content body) of each text block, discarding
+        the verbose middle. This prevents HTTP headers/metadata from
+        consuming the entire budget and losing the useful content.
+        """
         # Calculate total text content size
         text_blocks = [c for c in result.content if isinstance(c, TextContent)]
         total_chars = sum(len(b.text) for b in text_blocks)
@@ -89,7 +95,6 @@ class ResponseTruncator:
         if total_chars <= self.max_response_size:
             return result
 
-        # Truncate: distribute budget across text blocks proportionally.
         # Reserve space for the truncation notice so the final result
         # stays within budget.
         notice = f"\n\n[Response truncated at {self.max_response_size:,} chars. Original size: {total_chars:,} chars]"
@@ -98,10 +103,22 @@ class ResponseTruncator:
 
         for block in result.content:
             if isinstance(block, TextContent):
-                # Proportional share of budget
                 block_budget = int(budget * len(block.text) / total_chars)
                 if block_budget > 0 and len(block.text) > block_budget:
-                    truncated_text = block.text[:block_budget]
+                    separator = "\n\n...[content truncated]...\n\n"
+                    # Subtract separator overhead so total fits within budget
+                    content_budget = max(0, block_budget - len(separator))
+                    if content_budget >= 10:
+                        # Head+tail: keep first 30% and last 70%
+                        # "head" captures status/headers; "tail" captures
+                        # the actual content body (which comes at the end of
+                        # verbose tool responses like curl/web_fetch).
+                        head_size = content_budget * 3 // 10
+                        tail_size = content_budget - head_size
+                        truncated_text = block.text[:head_size] + separator + block.text[-tail_size:]
+                    else:
+                        # Budget too small for head+tail — simple tail
+                        truncated_text = block.text[-block_budget:]
                     new_content.append(TextContent(type="text", text=truncated_text))
                 else:
                     new_content.append(block)

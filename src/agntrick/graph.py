@@ -78,17 +78,18 @@ def _safe_invoke_messages(
             HumanMessage(content="Please respond."),
         ]
 
-    # Filter out any SystemMessages from the input — we provide our own
-    non_system = [m for m in messages if not isinstance(m, SystemMessage)]
+    # Keep only HumanMessage/AIMessage — GLM API rejects ToolMessage,
+    # SystemMessage, and other types in chat completions.
+    safe = [m for m in messages if isinstance(m, (HumanMessage, AIMessage))]
 
-    if not non_system:
-        # All messages were system messages — add a minimal human prompt
+    if not safe:
+        # No valid user/assistant messages — add a minimal human prompt
         return [
             SystemMessage(content=system_prompt),
             HumanMessage(content="Please respond."),
         ]
 
-    return [SystemMessage(content=system_prompt), *non_system]
+    return [SystemMessage(content=system_prompt), *safe]
 
 
 ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the user's message:
