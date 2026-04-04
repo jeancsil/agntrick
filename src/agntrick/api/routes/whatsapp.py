@@ -394,7 +394,7 @@ async def whatsapp_webhook(
         thread_id = f"whatsapp:{tenant_id}:{phone}"
         tenant_manager = _get_tenant_manager()
         tenant_db = tenant_manager.get_database(tenant_id)
-        checkpointer = tenant_db.get_checkpointer(is_async=True)
+        checkpointer = tenant_db.get_checkpointer(is_async=False)
         tenant_logger.info("Using persistent memory for thread: %s", thread_id)
 
         # Agent constructor args (shared between MCP and non-MCP paths)

@@ -209,7 +209,7 @@ class AgentBase(Agent):
         from agntrick.storage.database import Database
 
         db = Database(Path(db_path))
-        kwargs["checkpointer"] = db.get_checkpointer(is_async=True)
+        kwargs["checkpointer"] = db.get_checkpointer(is_async=False)
         return cls(**kwargs)
 
     async def _load_mcp_tools(self) -> List[Any]:
