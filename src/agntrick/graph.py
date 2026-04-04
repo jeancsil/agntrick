@@ -143,6 +143,9 @@ def _parse_router_response(content: str) -> dict[str, Any]:
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
     last_message = state["messages"][-1]
+    query_preview = str(last_message.content)[:200]
+    logger.info("[router] input: %s", query_preview)
+
     # Only send the last message to the router — it just needs the query
     response = await model.ainvoke(
         [
@@ -151,10 +154,16 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         ],
     )
     parsed = _parse_router_response(response.content)
-    logger.info("Router classified intent=%s", parsed.get("intent"))
+    intent = parsed.get("intent", "chat")
+    tool_plan = parsed.get("tool_plan")
+    logger.info(
+        "[router] output: intent=%s, plan=%s",
+        intent,
+        str(tool_plan)[:200] if tool_plan else "None",
+    )
     return {
-        "intent": parsed.get("intent", "chat"),
-        "tool_plan": parsed.get("tool_plan"),
+        "intent": intent,
+        "tool_plan": tool_plan,
     }
 
 
@@ -193,12 +202,42 @@ async def executor_node(
             config={"configurable": {"thread_id": "executor"}},
         )
     except Exception as e:
-        logger.warning("Executor sub-agent failed: %s", e)
+        logger.warning("[executor] sub-agent failed: %s", e)
         return {
             "messages": [
                 AIMessage(content="I encountered an error while processing your request. Please try again in a moment.")
             ]
         }
+
+    # Log the full sub-agent trace for debugging.
+    # This shows every tool call and response, not just the final message.
+    sub_msgs = result.get("messages", [])
+    logger.info("[executor] sub-agent produced %d messages", len(sub_msgs))
+    for i, msg in enumerate(sub_msgs):
+        msg_type = type(msg).__name__
+        content = str(msg.content)
+        preview = content[:300] if len(content) > 300 else content
+        # Log tool calls (AIMessage with tool_calls) and tool responses (ToolMessage)
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            tools_called = [tc.get("name", "?") for tc in msg.tool_calls]
+            logger.info("[executor] msg[%d] %s tool_calls=%s", i, msg_type, tools_called)
+        elif msg_type == "ToolMessage":
+            logger.info(
+                "[executor] msg[%d] %s name=%s len=%d preview=%s",
+                i,
+                msg_type,
+                getattr(msg, "name", "?"),
+                len(content),
+                preview[:150],
+            )
+        else:
+            logger.info(
+                "[executor] msg[%d] %s len=%d preview=%s",
+                i,
+                msg_type,
+                len(content),
+                preview[:150],
+            )
 
     if progress_callback:
         await progress_callback("Formatting response...")
@@ -235,6 +274,12 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     # tool_use / research / delegate intent — format executor output
     last_msg = state["messages"][-1]
     content = str(last_msg.content)
+    logger.info(
+        "[responder] intent=%s, executor output len=%d preview=%s",
+        state.get("intent"),
+        len(content),
+        content[:200],
+    )
     if len(content) > _MAX_MESSAGE_CHARS:
         content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
 
@@ -252,7 +297,13 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
             "messages": [],
         }
 
-    return {"final_response": str(response.content), "messages": [response]}
+    final = str(response.content)
+    logger.info(
+        "[responder] final_response len=%d preview=%s",
+        len(final),
+        final[:300],
+    )
+    return {"final_response": final, "messages": [response]}
 
 
 def route_decision(state: AgentState) -> str:
