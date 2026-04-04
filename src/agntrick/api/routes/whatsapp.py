@@ -16,6 +16,7 @@ from agntrick.config import get_config
 from agntrick.logging_config import TenantLogAdapter
 from agntrick.mcp import MCPProvider
 from agntrick.registry import AgentRegistry
+from agntrick.storage.tenant_manager import TenantManager
 from agntrick.whatsapp import WhatsAppRegistry
 
 router = APIRouter()
@@ -31,6 +32,20 @@ def get_whatsapp_registry() -> WhatsAppRegistry:
         config = get_config()
         _whatsapp_registry = WhatsAppRegistry(config.whatsapp.tenants)
     return _whatsapp_registry
+
+
+# Global tenant manager for persistent memory
+_tenant_manager: TenantManager | None = None
+
+
+def _get_tenant_manager() -> TenantManager:
+    """Get or create the TenantManager for persistent agent memory."""
+    global _tenant_manager
+    if _tenant_manager is None:
+        config = get_config()
+        base = config.storage.base_path
+        _tenant_manager = TenantManager(base_path=base)
+    return _tenant_manager
 
 
 # In-memory storage for QR codes and connection status
@@ -375,31 +390,40 @@ async def whatsapp_webhook(
         tool_categories = AgentRegistry.get_tool_categories(agent_name)
         config = get_config()
 
+        # Build thread_id and checkpointer for persistent memory
+        thread_id = f"whatsapp:{tenant_id}:{phone}"
+        tenant_manager = _get_tenant_manager()
+        tenant_db = tenant_manager.get_database(tenant_id)
+        checkpointer = tenant_db.get_checkpointer(is_async=True)
+        tenant_logger.info("Using persistent memory for thread: %s", thread_id)
+
+        # Agent constructor args (shared between MCP and non-MCP paths)
+        async def _send_progress(msg: str) -> None:
+            """Log progress messages. Can be extended to send via Go gateway."""
+            tenant_logger.debug("Progress: %s", msg)
+
+        agent_kwargs: dict[str, Any] = dict(
+            _agent_name=agent_name,
+            tool_categories=tool_categories,
+            model_name=config.llm.model,
+            temperature=config.llm.temperature,
+            thread_id=thread_id,
+            checkpointer=checkpointer,
+            progress_callback=_send_progress,
+        )
+
         if allowed_mcp:
             # Connect to MCP servers and inject tools (same pattern as CLI)
             provider = MCPProvider(server_names=allowed_mcp)
             async with provider.tool_session() as mcp_tools:
-                agent = agent_cls(  # type: ignore[call-arg]
-                    initial_mcp_tools=mcp_tools,
-                    _agent_name=agent_name,
-                    tool_categories=tool_categories,
-                    model_name=config.llm.model,
-                    temperature=config.llm.temperature,
-                    thread_id="whatsapp_webhook",
-                    checkpointer=None,
-                )
+                agent = agent_cls(initial_mcp_tools=mcp_tools, **agent_kwargs)  # type: ignore[call-arg]
                 result = await agent.run(message)
         else:
-            agent = agent_cls(  # type: ignore[call-arg]
-                _agent_name=agent_name,
-                tool_categories=tool_categories,
-                model_name=config.llm.model,
-                temperature=config.llm.temperature,
-                thread_id="whatsapp_webhook",
-                checkpointer=None,
-            )
+            agent = agent_cls(**agent_kwargs)  # type: ignore[call-arg]
             result = await agent.run(message)
 
+        # Tool errors are returned as strings prefixed with "Tool error:"
+        # Return them as successful responses so the user gets feedback on WhatsApp.
         tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
         return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
 

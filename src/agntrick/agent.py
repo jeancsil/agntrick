@@ -65,6 +65,7 @@ class AgentBase(Agent):
         tool_categories: List[str] | None = None,
         toolbox_url: str | None = None,
         _agent_name: str | None = None,
+        progress_callback: Any | None = None,
         **kwargs: Any,
     ):
         """Initialize the agent.
@@ -106,6 +107,7 @@ class AgentBase(Agent):
         self._tool_manifest: ToolManifest | None = None
         # Get agent name from: parameter > config > default
         self._agent_name = _agent_name or config.agents.default_agent_name
+        self._progress_callback = progress_callback
 
     @property
     @abstractmethod
@@ -273,12 +275,37 @@ class AgentBase(Agent):
             system_prompt = self._get_system_prompt()
 
             self._tools.extend(await self._load_mcp_tools())
-            self._graph = create_agent(
+            self._graph = self._create_graph(
                 model=self.model,
                 tools=self._tools,
                 system_prompt=system_prompt,
                 checkpointer=self._checkpointer or InMemorySaver(),
             )
+
+    def _create_graph(
+        self,
+        model: Any,
+        tools: list[Any],
+        system_prompt: str,
+        checkpointer: Any,
+    ) -> Any:
+        """Create the agent graph. Override in subclasses for custom graphs.
+
+        Args:
+            model: LLM model instance.
+            tools: List of available tools.
+            system_prompt: System prompt string.
+            checkpointer: Checkpointer for persistent memory.
+
+        Returns:
+            A compiled graph with ainvoke().
+        """
+        return create_agent(
+            model=model,
+            tools=tools,
+            system_prompt=system_prompt,
+            checkpointer=checkpointer,
+        )
 
     def _normalize_messages(self, input_data: Union[str, List[BaseMessage]]) -> List[BaseMessage]:
         """Normalize input data to a list of BaseMessage.
@@ -328,6 +355,9 @@ class AgentBase(Agent):
                 {"messages": self._normalize_messages(input_data)},
                 config=config or self._default_config(),
             )
+            # Prefer final_response from custom graphs (e.g. Responder node)
+            if result.get("final_response"):
+                return str(result["final_response"])
             return str(result["messages"][-1].content)
         except BaseException as e:
             # Check if this is purely a tool execution error wrapped in ExceptionGroups.

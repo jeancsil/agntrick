@@ -8,6 +8,7 @@ LLM provider (not hardcoded to a specific model).
 from typing import Any, Sequence
 
 from agntrick.agent import AgentBase
+from agntrick.graph import create_assistant_graph
 from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
 from agntrick.tools import AgentInvocationTool
@@ -40,3 +41,19 @@ class AssistantAgent(AgentBase):
     def local_tools(self) -> Sequence[Any]:
         """Return local tools including agent invocation."""
         return [AgentInvocationTool().to_langchain_tool()]
+
+    def _create_graph(
+        self,
+        model: Any,
+        tools: list[Any],
+        system_prompt: str,
+        checkpointer: Any,
+    ) -> Any:
+        """Use the 3-node StateGraph instead of the default ReAct agent."""
+        return create_assistant_graph(
+            model=model,
+            tools=tools,
+            system_prompt=system_prompt,
+            checkpointer=checkpointer,
+            progress_callback=self._progress_callback,
+        )
