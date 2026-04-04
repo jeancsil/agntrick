@@ -186,8 +186,13 @@ class AgentBase(Agent):
     ) -> "AgentBase":
         """Create an agent with persistent SQLite-backed memory.
 
-        This factory method creates an agent with a SqliteSaver checkpointer
+        This factory method creates an agent with a sync SqliteSaver checkpointer
         for persistent conversation history across restarts.
+
+        WARNING: This uses the SYNC SqliteSaver, which is only works with
+        synchronous LangGraph agents. For async agents (the default),
+        use ``with_async_persistent_memory`` instead, which supports
+        async methods like ``aget_tuple`` and ``ainvoke``.
 
         Args:
             db_path: Path to SQLite database for checkpoint storage.
@@ -200,6 +205,7 @@ class AgentBase(Agent):
             ```python
             from agntrick import AgentBase
 
+            # Sync usage only (e.g., CLI)
             agent = MyAgent.with_persistent_memory(
                 db_path="~/conversations.db",
                 model_name="gpt-4",
@@ -209,8 +215,41 @@ class AgentBase(Agent):
         from agntrick.storage.database import Database
 
         db = Database(Path(db_path))
-        kwargs["checkpointer"] = db.get_checkpointer(is_async=False)
+        kwargs["checkpointer"] = db.get_checkpointer()
         return cls(**kwargs)
+
+    @classmethod
+    async def with_async_persistent_memory(
+        cls,
+        db_path: str | Path,
+        **kwargs: Any,
+    ) -> "AgentBase":
+        """Create an agent with async persistent SQLite-backed memory.
+
+        Use this for async agents that need checkpoint support
+        (like the WhatsApp webhook handlers). Uses AsyncSqliteSaver
+        which supports async methods.
+
+        Args:
+            db_path: Path to SQLite database for checkpoint storage.
+            **kwargs: Additional arguments passed to the agent's __init__.
+
+        Returns:
+            An agent instance with AsyncSqliteSaver checkpointer.
+
+        Example:
+            ```python
+            agent = await MyAgent.with_async_persistent_memory(
+                db_path="~/conversations.db",
+            )
+            ```
+        """
+        from agntrick.storage.database import Database
+
+        db = Database(Path(db_path))
+        async with await db.get_async_checkpointer() as checkpointer:
+            kwargs["checkpointer"] = checkpointer
+            return cls(**kwargs)
 
     async def _load_mcp_tools(self) -> List[Any]:
         """Load MCP tools from the provider.

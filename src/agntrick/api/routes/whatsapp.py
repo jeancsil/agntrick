@@ -394,38 +394,42 @@ async def whatsapp_webhook(
         thread_id = f"whatsapp:{tenant_id}:{phone}"
         tenant_manager = _get_tenant_manager()
         tenant_db = tenant_manager.get_database(tenant_id)
-        checkpointer = tenant_db.get_checkpointer(is_async=False)
         tenant_logger.info("Using persistent memory for thread: %s", thread_id)
 
-        # Agent constructor args (shared between MCP and non-MCP paths)
-        async def _send_progress(msg: str) -> None:
-            """Log progress messages. Can be extended to send via Go gateway."""
-            tenant_logger.debug("Progress: %s", msg)
+        # Get the database path to create a proper AsyncSqliteSaver
+        # (from_conn_string is an async context manager that yields the saver)
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        agent_kwargs: dict[str, Any] = dict(
-            _agent_name=agent_name,
-            tool_categories=tool_categories,
-            model_name=config.llm.model,
-            temperature=config.llm.temperature,
-            thread_id=thread_id,
-            checkpointer=checkpointer,
-            progress_callback=_send_progress,
-        )
+        async with AsyncSqliteSaver.from_conn_string(str(tenant_db._db_path)) as checkpointer:
+            # Agent constructor args (shared between MCP and non-MCP paths)
+            async def _send_progress(msg: str) -> None:
+                """Log progress messages. Can be extended to send via Go gateway."""
+                tenant_logger.debug("Progress: %s", msg)
 
-        if allowed_mcp:
-            # Connect to MCP servers and inject tools (same pattern as CLI)
-            provider = MCPProvider(server_names=allowed_mcp)
-            async with provider.tool_session() as mcp_tools:
-                agent = agent_cls(initial_mcp_tools=mcp_tools, **agent_kwargs)  # type: ignore[call-arg]
+            agent_kwargs: dict[str, Any] = dict(
+                _agent_name=agent_name,
+                tool_categories=tool_categories,
+                model_name=config.llm.model,
+                temperature=config.llm.temperature,
+                thread_id=thread_id,
+                checkpointer=checkpointer,
+                progress_callback=_send_progress,
+            )
+
+            if allowed_mcp:
+                # Connect to MCP servers and inject tools (same pattern as CLI)
+                provider = MCPProvider(server_names=allowed_mcp)
+                async with provider.tool_session() as mcp_tools:
+                    agent = agent_cls(initial_mcp_tools=mcp_tools, **agent_kwargs)  # type: ignore[call-arg]
+                    result = await agent.run(message)
+            else:
+                agent = agent_cls(**agent_kwargs)  # type: ignore[call-arg]
                 result = await agent.run(message)
-        else:
-            agent = agent_cls(**agent_kwargs)  # type: ignore[call-arg]
-            result = await agent.run(message)
 
-        # Tool errors are returned as strings prefixed with "Tool error:"
-        # Return them as successful responses so the user gets feedback on WhatsApp.
-        tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
-        return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
+            # Tool errors are returned as strings prefixed with "Tool error:"
+            # Return them as successful responses so the user gets feedback on WhatsApp.
+            tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
+            return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
 
     except Exception as e:
         # Recursively unwrap nested ExceptionGroups to find the root cause

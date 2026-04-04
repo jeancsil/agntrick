@@ -76,21 +76,37 @@ class Database:
     def get_checkpointer(self, is_async: bool = False) -> Any:
         """Get a LangGraph checkpointer using this database.
 
+        WARNING: For async usage, call get_async_checkpointer() instead.
+        The sync SqliteSaver does not support async methods needed
+        by LangGraph's async runtime. AsyncSqliteSaver requires
+        using its async context manager (AsyncSqliteSaver.from_conn_string).
+
         Args:
-            is_async: If True, returns an AsyncSqliteSaver. Otherwise SqliteSaver.
+            is_async: Deprecated. Use get_async_checkpointer() for async agents.
 
         Returns:
-            A LangGraph checkpointer instance.
+            A sync SqliteSaver (only works with sync LangGraph agents).
         """
-        if is_async:
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        from langgraph.checkpoint.sqlite import SqliteSaver
 
-            # AsyncSqliteSaver handles its own connection management
-            return AsyncSqliteSaver.from_conn_string(str(self._db_path))
-        else:
-            from langgraph.checkpoint.sqlite import SqliteSaver
+        return SqliteSaver(self.connection)
 
-            return SqliteSaver(self.connection)
+    async def get_async_checkpointer(self) -> Any:
+        """Get an async-compatible LangGraph checkpointer.
+
+        Returns an async context manager yielding AsyncSqliteSaver.
+        Use as: ``async with db.get_async_checkpointer() as cp:``
+
+        Example:
+            ```python
+            db = Database(Path("checkpoints.db"))
+            async with await db.get_async_checkpointer() as checkpointer:
+                agent = MyAgent(checkpointer=checkpointer, ...)
+            ```
+        """
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        return AsyncSqliteSaver.from_conn_string(str(self._db_path))
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Initialize the database schema."""
