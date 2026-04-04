@@ -404,7 +404,12 @@ async def whatsapp_webhook(
         return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
 
     except Exception as e:
-        tenant_logger.error("Failed to process WhatsApp message for tenant %s: %s", tenant_id, str(e))
+        # Extract sub-exceptions from ExceptionGroup/TaskGroup for real diagnostics
+        error_msg = str(e)
+        if hasattr(e, "exceptions") and e.exceptions:
+            sub_errors = [f"{type(sub).__name__}: {sub}" for sub in e.exceptions]
+            error_msg = f"{error_msg} — sub-exceptions: {sub_errors}"
+        tenant_logger.error("Failed to process WhatsApp message for tenant %s: %s", tenant_id, error_msg)
         raise HTTPException(status_code=500, detail="Internal error processing message")
 
 

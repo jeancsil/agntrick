@@ -122,10 +122,15 @@ class MCPProvider:
                     logging.warning(f"MCP server '{name}' unavailable (timeout): {err}")
                 except Exception as e:
                     failed_servers.append(name)
+                    # Extract sub-exceptions from ExceptionGroup for diagnostics
+                    error_detail = str(e)
+                    if hasattr(e, "exceptions") and e.exceptions:
+                        sub_errors = [f"{type(sub).__name__}: {sub}" for sub in e.exceptions]
+                        error_detail = f"{error_detail} — sub-exceptions: {sub_errors}"
                     if fail_fast:
                         logging.debug(f"MCP connection failed for '{name}'", exc_info=True)
                         raise MCPConnectionError(name, e) from e
-                    logging.warning(f"MCP server '{name}' unavailable: {e}")
+                    logging.warning(f"MCP server '{name}' unavailable: {error_detail}")
 
             # Log degraded mode if any servers failed
             if failed_servers:

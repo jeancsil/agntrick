@@ -72,24 +72,27 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 	typingCtx, cancelTyping := context.WithCancel(context.Background())
 	defer cancelTyping()
 
+	// Send initial composing presence synchronously to ensure it's sent before
+	// the API call starts (the goroutine might not run in time on fast failures).
+	if err := eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+		logger.Warn().Err(err).Msg("Failed to send initial typing indicator")
+	} else {
+		logger.Info().Msg("Typing indicator started")
+	}
+
+	// Background goroutine refreshes the typing indicator every 3 seconds.
 	go func() {
-		logger.Debug().Msg("Typing indicator loop started")
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
-
-		// Send initial composing presence immediately
-		if err := eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
-			logger.Debug().Err(err).Msg("Failed to send composing presence")
-		}
 
 		for {
 			select {
 			case <-ticker.C:
 				if err := eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
-					logger.Debug().Err(err).Msg("Failed to send composing presence (tick)")
+					logger.Warn().Err(err).Msg("Failed to refresh typing indicator")
 				}
 			case <-typingCtx.Done():
-				logger.Debug().Msg("Typing indicator loop stopped")
+				logger.Info().Msg("Typing indicator stopped")
 				return
 			}
 		}
@@ -143,7 +146,7 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 			Dur("elapsed", elapsed).
 			Msg("Failed to forward message to Python API")
 		if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
-			logger.Debug().Err(err).Msg("Failed to clear typing indicator")
+			logger.Warn().Err(err).Msg("Failed to clear typing indicator after error")
 		}
 		return
 	}
@@ -155,7 +158,7 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 
 	// Clear typing indicator
 	if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
-		logger.Debug().Err(err).Msg("Failed to clear typing indicator (completion)")
+		logger.Warn().Err(err).Msg("Failed to clear typing indicator (completion)")
 	}
 
 	logger.Info().

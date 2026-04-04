@@ -323,11 +323,22 @@ class AgentBase(Agent):
         if self._graph is None:
             raise RuntimeError("Agent graph failed to initialize.")
 
-        result = await self._graph.ainvoke(
-            {"messages": self._normalize_messages(input_data)},
-            config=config or self._default_config(),
-        )
-        return str(result["messages"][-1].content)
+        try:
+            result = await self._graph.ainvoke(
+                {"messages": self._normalize_messages(input_data)},
+                config=config or self._default_config(),
+            )
+            return str(result["messages"][-1].content)
+        except BaseException as e:
+            # Unwrap ExceptionGroup/TaskGroup to log the actual root cause
+            if hasattr(e, "exceptions") and e.exceptions:
+                sub_errors = [f"{type(sub).__name__}: {sub}" for sub in e.exceptions]
+                logger.error(
+                    "Agent run failed with ExceptionGroup for agent '%s': %s",
+                    self._agent_name,
+                    sub_errors,
+                )
+            raise
 
     async def run_with_memory(
         self,
