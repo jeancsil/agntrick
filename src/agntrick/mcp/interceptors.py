@@ -89,9 +89,11 @@ class ResponseTruncator:
         if total_chars <= self.max_response_size:
             return result
 
-        # Truncate: distribute budget across text blocks proportionally
-        original_total = total_chars
-        budget = self.max_response_size
+        # Truncate: distribute budget across text blocks proportionally.
+        # Reserve space for the truncation notice so the final result
+        # stays within budget.
+        notice = f"\n\n[Response truncated at {self.max_response_size:,} chars. Original size: {total_chars:,} chars]"
+        budget = self.max_response_size - len(notice)
         new_content: list[object] = []
 
         for block in result.content:
@@ -108,9 +110,6 @@ class ResponseTruncator:
                 new_content.append(block)
 
         # Add truncation notice to last text block
-        notice = (
-            f"\n\n[Response truncated at {self.max_response_size:,} chars. Original size: {original_total:,} chars]"
-        )
         for i in range(len(new_content) - 1, -1, -1):
             if isinstance(new_content[i], TextContent):
                 existing = new_content[i]
@@ -124,7 +123,7 @@ class ResponseTruncator:
         new_total = sum(len(c.text) for c in new_content if isinstance(c, TextContent))
         logger.info(
             "Truncated tool response: %s -> %s chars",
-            original_total,
+            total_chars,
             new_total,
         )
 
