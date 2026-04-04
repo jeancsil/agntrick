@@ -18,14 +18,14 @@ import (
 
 // SessionManager manages multiple WhatsApp tenant sessions
 type SessionManager struct {
-	config      *Config
-	storeDir    string
-	clients     map[string]*whatsmeow.Client
-	handlers    map[string]*EventHandler
-	containers  map[string]*sqlstore.Container // per-tenant session storage
-	mu          sync.RWMutex
-	logger      zerolog.Logger
-	httpClient  *HTTPClient
+	config     *Config
+	storeDir   string
+	clients    map[string]*whatsmeow.Client
+	handlers   map[string]*EventHandler
+	containers map[string]*sqlstore.Container // per-tenant session storage
+	mu         sync.RWMutex
+	logger     zerolog.Logger
+	httpClient *HTTPClient
 }
 
 // EventHandler handles WhatsApp events for a specific tenant
@@ -118,7 +118,7 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 			Str("tenant_id", tenantID).
 			Msg("Reusing existing device session")
 	} else {
-			deviceStore = container.NewDevice()
+		deviceStore = container.NewDevice()
 		sm.logger.Info().
 			Str("tenant_id", tenantID).
 			Msg("Created new device session")
@@ -211,7 +211,7 @@ func (eh *EventHandler) handleEvent(rawEvt interface{}) {
 	case *events.Disconnected:
 		eh.handleDisconnected(evt)
 	case *events.Message:
-		eh.handleMessage(evt)
+		go eh.handleMessage(evt)
 	case *events.QR:
 		eh.handleQRCode(evt)
 	default:

@@ -1,10 +1,12 @@
 """MCP provider: injectable MCP client and session-scoped tools for agents."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, cast
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.interceptors import ToolCallInterceptor
 from langchain_mcp_adapters.sessions import (
     Connection,
     SSEConnection,
@@ -15,6 +17,9 @@ from langchain_mcp_adapters.sessions import (
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from agntrick.mcp.config import get_mcp_servers_config
+from agntrick.mcp.interceptors import ResponseTruncator
+
+logger = logging.getLogger(__name__)
 
 
 class MCPConnectionError(Exception):
@@ -30,6 +35,11 @@ class MCPProvider:
     """
     Reusable MCP client. Use get_tools() for programmatic use, or tool_session()
     for CLI/short-lived runs so connections are closed when context exits.
+
+    By default, a ``ResponseTruncator`` interceptor is attached to all tool
+    sessions so that oversized MCP responses are capped before reaching the
+    LLM context window. Additional interceptors can be passed via the
+    ``tool_interceptors`` parameter.
     """
 
     def __init__(
@@ -40,6 +50,7 @@ class MCPProvider:
         ]
         | None = None,
         server_names: Optional[List[str]] = None,
+        tool_interceptors: Optional[List[ToolCallInterceptor]] = None,
     ):
         if servers_config is not None:
             self._config = dict(servers_config)
@@ -55,7 +66,17 @@ class MCPProvider:
                 raise ValueError(f"Unknown MCP server(s): {unknown}. Available servers: {available}")
             self._config = {k: self._config[k] for k in server_names}
 
-        self._client = MultiServerMCPClient(self._config)
+        # Build interceptor chain: ResponseTruncator is always prepended as
+        # defense-in-depth, followed by any user-supplied interceptors.
+        self._tool_interceptors: List[ToolCallInterceptor] = [
+            ResponseTruncator(),
+            *(tool_interceptors or []),
+        ]
+
+        self._client = MultiServerMCPClient(
+            self._config,
+            tool_interceptors=self._tool_interceptors,
+        )
         self._tools_cache: Optional[List[Any]] = None
 
     @property
@@ -122,10 +143,15 @@ class MCPProvider:
                     logging.warning(f"MCP server '{name}' unavailable (timeout): {err}")
                 except Exception as e:
                     failed_servers.append(name)
+                    # Extract sub-exceptions from ExceptionGroup for diagnostics
+                    error_detail = str(e)
+                    if hasattr(e, "exceptions") and e.exceptions:
+                        sub_errors = [f"{type(sub).__name__}: {sub}" for sub in e.exceptions]
+                        error_detail = f"{error_detail} — sub-exceptions: {sub_errors}"
                     if fail_fast:
                         logging.debug(f"MCP connection failed for '{name}'", exc_info=True)
                         raise MCPConnectionError(name, e) from e
-                    logging.warning(f"MCP server '{name}' unavailable: {e}")
+                    logging.warning(f"MCP server '{name}' unavailable: {error_detail}")
 
             # Log degraded mode if any servers failed
             if failed_servers:

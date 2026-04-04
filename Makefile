@@ -1,4 +1,4 @@
-.PHONY: help install run test clean format check docker-build docker-clean build build-clean release
+.PHONY: help install run test clean format check docker-build docker-clean build build-clean release gateway-build gateway-test
 .DEFAULT_GOAL := help
 
 # Use `uv` for python environment management
@@ -92,3 +92,23 @@ build-clean: ## Remove build artifacts
 release: ## Release agntrick package (usage: make release VERSION=1.0.0-alpha)
 	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION is required (e.g., VERSION=1.0.0-alpha)"; exit 1; fi
 	@./scripts/release.sh $(VERSION)
+
+## -- Gateway Commands --
+
+gateway-build: ## Build Go gateway binary
+	@cd gateway && go build -o agntrick-gateway .
+	@echo "✓ Gateway binary: gateway/agntrick-gateway"
+
+gateway-test: ## Run Go gateway tests
+	@cd gateway && go test ./... -v
+
+## -- DO Deploy --
+
+deploy-do: ## Full deploy on Digital Ocean (run on droplet: build + restart + toolbox)
+	@./scripts/deploy-do.sh deploy
+
+deploy-do-stop: ## Stop all services on Digital Ocean
+	@./scripts/deploy-do.sh stop
+
+deploy-do-logs: ## Tail logs on Digital Ocean (optional: gateway, api)
+	@./scripts/deploy-do.sh logs $(filter-out $@,$(MAKECMDGOALS))

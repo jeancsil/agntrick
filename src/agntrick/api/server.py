@@ -22,6 +22,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     config = get_config()
     setup_logging(config)
     logger.info("Starting agntrick API server on %s:%s", config.api.host, config.api.port)
+    from agntrick.llm.providers import detect_provider, get_default_model
+
+    provider = detect_provider()
+    model = get_default_model()
+    logger.info("LLM: provider=%s model=%s", provider, model)
 
     from agntrick.storage.tenant_manager import TenantManager
 
