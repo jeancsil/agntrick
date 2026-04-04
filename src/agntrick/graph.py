@@ -144,7 +144,7 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     """Classify intent and decide strategy. Single fast LLM call."""
     last_message = state["messages"][-1]
     query_preview = str(last_message.content)[:200]
-    logger.info("[router] input: %s", query_preview)
+    logger.info(f"[router] input: {query_preview}")
 
     # Only send the last message to the router — it just needs the query
     response = await model.ainvoke(
@@ -156,11 +156,7 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     parsed = _parse_router_response(response.content)
     intent = parsed.get("intent", "chat")
     tool_plan = parsed.get("tool_plan")
-    logger.info(
-        "[router] output: intent=%s, plan=%s",
-        intent,
-        str(tool_plan)[:200] if tool_plan else "None",
-    )
+    logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
     return {
         "intent": intent,
         "tool_plan": tool_plan,
@@ -202,7 +198,7 @@ async def executor_node(
             config={"configurable": {"thread_id": "executor"}},
         )
     except Exception as e:
-        logger.warning("[executor] sub-agent failed: %s", e)
+        logger.warning(f"[executor] sub-agent failed: {e}")
         return {
             "messages": [
                 AIMessage(content="I encountered an error while processing your request. Please try again in a moment.")
@@ -210,34 +206,20 @@ async def executor_node(
         }
 
     # Log the full sub-agent trace for debugging.
-    # This shows every tool call and response, not just the final message.
     sub_msgs = result.get("messages", [])
-    logger.info("[executor] sub-agent produced %d messages", len(sub_msgs))
+    logger.info(f"[executor] sub-agent produced {len(sub_msgs)} messages")
     for i, msg in enumerate(sub_msgs):
         msg_type = type(msg).__name__
         content = str(msg.content)
-        preview = content[:300] if len(content) > 300 else content
-        # Log tool calls (AIMessage with tool_calls) and tool responses (ToolMessage)
+        preview = content[:150]
         if hasattr(msg, "tool_calls") and msg.tool_calls:
             tools_called = [tc.get("name", "?") for tc in msg.tool_calls]
-            logger.info("[executor] msg[%d] %s tool_calls=%s", i, msg_type, tools_called)
+            logger.info(f"[executor] msg[{i}] {msg_type} tool_calls={tools_called}")
         elif msg_type == "ToolMessage":
-            logger.info(
-                "[executor] msg[%d] %s name=%s len=%d preview=%s",
-                i,
-                msg_type,
-                getattr(msg, "name", "?"),
-                len(content),
-                preview[:150],
-            )
+            tool_name = getattr(msg, "name", "?")
+            logger.info(f"[executor] msg[{i}] {msg_type} name={tool_name} len={len(content)} preview={preview}")
         else:
-            logger.info(
-                "[executor] msg[%d] %s len=%d preview=%s",
-                i,
-                msg_type,
-                len(content),
-                preview[:150],
-            )
+            logger.info(f"[executor] msg[{i}] {msg_type} len={len(content)} preview={preview}")
 
     if progress_callback:
         await progress_callback("Formatting response...")
@@ -262,7 +244,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         try:
             response = await model.ainvoke(safe_msgs)
         except Exception as e:
-            logger.warning("Responder LLM call failed for chat: %s", e)
+            logger.warning(f"Responder LLM call failed for chat: {e}")
             # Fallback: return the last message content directly
             last = state["messages"][-1] if state["messages"] else None
             return {
@@ -274,12 +256,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     # tool_use / research / delegate intent — format executor output
     last_msg = state["messages"][-1]
     content = str(last_msg.content)
-    logger.info(
-        "[responder] intent=%s, executor output len=%d preview=%s",
-        state.get("intent"),
-        len(content),
-        content[:200],
-    )
+    logger.info(f"[responder] intent={state.get('intent')}, executor output len={len(content)} preview={content[:200]}")
     if len(content) > _MAX_MESSAGE_CHARS:
         content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
 
@@ -290,7 +267,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     try:
         response = await model.ainvoke(safe_msgs)
     except Exception as e:
-        logger.warning("Responder LLM call failed for tool_use: %s", e)
+        logger.warning(f"Responder LLM call failed for tool_use: {e}")
         # Fallback: return raw content, truncated for WhatsApp
         return {
             "final_response": content[:4096],

@@ -81,12 +81,7 @@ class ResponseTruncator:
         # Log ALL tool responses (not just oversized) for observability
         text_blocks = [c for c in result.content if isinstance(c, TextContent)]
         total_chars = sum(len(b.text) for b in text_blocks)
-        logger.info(
-            "Tool '%s' response: %s chars, isError=%s",
-            request.name,
-            total_chars,
-            result.isError,
-        )
+        logger.info(f"Tool '{request.name}' response: {total_chars} chars, isError={result.isError}")
 
         return self._truncate(result)
 
