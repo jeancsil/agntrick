@@ -21,6 +21,31 @@ logger = logging.getLogger(__name__)
 # Type for progress callback
 ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 
+# Maximum chars of message content to send to the LLM to avoid 400 errors
+_MAX_MESSAGE_CHARS = 15_000
+
+
+def _truncate_messages(messages: list[BaseMessage], max_chars: int = _MAX_MESSAGE_CHARS) -> list[BaseMessage]:
+    """Truncate long messages to keep total content within limits.
+
+    Preserves the first message (usually system) and last message (the query),
+    truncating middle messages (tool results, etc.) if needed.
+    """
+    total = sum(len(str(m.content)) for m in messages)
+    if total <= max_chars:
+        return messages
+
+    # Truncate individual messages from oldest to newest (skip first and last)
+    result = list(messages)
+    for i in range(1, len(result) - 1):
+        content_str = str(result[i].content)
+        if len(content_str) > 3000:
+            truncated = content_str[:3000] + "\n...[truncated]"
+            result[i] = result[i].__class__(content=truncated)
+
+    return result
+
+
 ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the user's message:
 
 - "chat": General conversation, greetings, opinions, jokes — no tools needed
@@ -84,6 +109,7 @@ def _parse_router_response(content: str) -> dict[str, Any]:
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
     last_message = state["messages"][-1]
+    # Only send the last message to the router — it just needs the query
     response = await model.ainvoke(
         [
             SystemMessage(content=ROUTER_PROMPT),
@@ -128,7 +154,7 @@ async def executor_node(
         await progress_callback("Searching for information...")
 
     result = await sub_agent.ainvoke(
-        {"messages": state["messages"]},  # type: ignore[arg-type]
+        {"messages": _truncate_messages(state["messages"])},  # type: ignore[arg-type]
         config={"configurable": {"thread_id": "executor"}},
     )
 
@@ -141,19 +167,23 @@ async def executor_node(
 async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Format the final response for WhatsApp."""
     if state.get("intent") == "chat":
+        msgs = _truncate_messages(state["messages"])
         response = await model.ainvoke(
             [
                 SystemMessage(content=RESPONDER_PROMPT),
-                *state["messages"],
+                *msgs,
             ],
         )
         return {"final_response": str(response.content), "messages": [response]}
 
     last_msg = state["messages"][-1]
+    content = str(last_msg.content)
+    if len(content) > _MAX_MESSAGE_CHARS:
+        content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
     response = await model.ainvoke(
         [
             SystemMessage(content=RESPONDER_PROMPT),
-            SystemMessage(content=f"Format this response for WhatsApp:\n\n{last_msg.content}"),
+            SystemMessage(content=f"Format this response for WhatsApp:\n\n{content}"),
         ],
     )
     return {"final_response": str(response.content), "messages": [response]}

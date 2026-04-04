@@ -123,7 +123,7 @@ class ResponseTruncator:
 
         new_total = sum(len(c.text) for c in new_content if isinstance(c, TextContent))
         logger.info(
-            "Truncated tool response: %d -> %d chars",
+            "Truncated tool response: %s -> %s chars",
             original_total,
             new_total,
         )
