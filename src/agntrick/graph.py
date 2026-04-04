@@ -195,8 +195,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
     response = await model.ainvoke(
         [
-            SystemMessage(content=RESPONDER_PROMPT),
-            SystemMessage(content=f"Format this response for WhatsApp:\n\n{content}"),
+            SystemMessage(content=f"{RESPONDER_PROMPT}\n\nFormat this response for WhatsApp:\n\n{content}"),
         ],
     )
     return {"final_response": str(response.content), "messages": [response]}
