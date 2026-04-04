@@ -46,9 +46,21 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 
 	// Extract message text
 	messageText := extractMessageText(msg)
+	var audioData []byte
+	var audioMimeType string
+
 	if messageText == "" {
-		logger.Warn().Msg("Message has no text content to process")
-		return
+		// Try audio message extraction
+		var audioErr error
+		audioData, audioMimeType, audioErr = extractAudioMessage(eh, msg)
+		if audioErr != nil {
+			logger.Warn().Err(audioErr).Msg("Failed to extract audio message")
+			return
+		}
+		if len(audioData) == 0 {
+			logger.Warn().Msg("Message has no text or audio content to process")
+			return
+		}
 	}
 
 	// Use chat JID for sending responses (like the old code used chat_jid for self-messages)
@@ -60,30 +72,72 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 	typingCtx, cancelTyping := context.WithCancel(context.Background())
 	defer cancelTyping()
 
+	// Send initial composing presence synchronously to ensure it's sent before
+	// the API call starts (the goroutine might not run in time on fast failures).
+	if err := eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+		logger.Warn().Err(err).Msg("Failed to send initial typing indicator")
+	} else {
+		logger.Info().Msg("Typing indicator started")
+	}
+
+	// Background goroutine refreshes the typing indicator every 3 seconds.
 	go func() {
-		logger.Debug().Msg("Typing indicator loop started")
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
-
-		// Send initial composing presence immediately
-		_ = eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
 
 		for {
 			select {
 			case <-ticker.C:
-				_ = eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+				if err := eh.session.SendChatPresence(typingCtx, targetJID, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+					logger.Warn().Err(err).Msg("Failed to refresh typing indicator")
+				}
 			case <-typingCtx.Done():
-				logger.Debug().Msg("Typing indicator loop stopped")
+				logger.Info().Msg("Typing indicator stopped")
+				return
+			}
+		}
+	}()
+
+	// Send progress messages at 30s, 70s, 120s while waiting for the LLM response.
+	progressCtx, cancelProgress := context.WithCancel(context.Background())
+	defer cancelProgress()
+
+	go func() {
+		messages := []struct {
+			delay   time.Duration
+			message string
+		}{
+			{30 * time.Second, "⏳ Still thinking..."},
+			{70 * time.Second, "⏳ Almost there, processing your request..."},
+			{120 * time.Second, "⏳ This is taking a bit longer than usual, hang tight..."},
+		}
+
+		for _, m := range messages {
+			select {
+			case <-time.After(m.delay):
+				if err := sendResponseToWhatsApp(eh, m.message, targetJID); err != nil {
+					logger.Debug().Err(err).Msg("Failed to send progress message")
+				} else {
+					logger.Info().Str("progress", m.message).Msg("Sent progress message")
+				}
+			case <-progressCtx.Done():
 				return
 			}
 		}
 	}()
 
 	// Forward to Python API with progress logging
-	response, err := forwardToPythonAPI(eh, messageText, logger)
+	var response string
+	var err error
+	if len(audioData) > 0 {
+		response, err = forwardAudioToPythonAPI(eh, audioData, audioMimeType, logger)
+	} else {
+		response, err = forwardToPythonAPI(eh, messageText, logger)
+	}
 
-	// Stop typing indicator loop
+	// Stop typing indicator loop and progress messages
 	cancelTyping()
+	cancelProgress()
 
 	elapsed := time.Since(startTime)
 
@@ -91,7 +145,9 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 		logger.Error().Err(err).
 			Dur("elapsed", elapsed).
 			Msg("Failed to forward message to Python API")
-		_ = eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
+		if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
+			logger.Warn().Err(err).Msg("Failed to clear typing indicator after error")
+		}
 		return
 	}
 
@@ -101,7 +157,9 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 	}
 
 	// Clear typing indicator
-	_ = eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
+		logger.Warn().Err(err).Msg("Failed to clear typing indicator (completion)")
+	}
 
 	logger.Info().
 		Dur("elapsed", time.Since(startTime)).
@@ -220,6 +278,36 @@ func extractMessageText(msg *events.Message) string {
 	return ""
 }
 
+// extractAudioMessage detects and extracts audio data from a message.
+// whatsmeow handles decryption automatically via the Download method.
+// Returns audio bytes, MIME type, and any error.
+// If the message has no audio, returns nil bytes with no error.
+func extractAudioMessage(eh *EventHandler, msg *events.Message) (audioData []byte, mimeType string, err error) {
+	if msg.Message == nil {
+		return nil, "", nil
+	}
+
+	audioMsg := msg.Message.GetAudioMessage()
+	if audioMsg == nil {
+		return nil, "", nil
+	}
+
+	// Get MIME type
+	mimeType = audioMsg.GetMimetype()
+	if mimeType == "" {
+		mimeType = "audio/ogg" // WhatsApp default for voice messages
+	}
+
+	// Download audio data (whatsmeow handles decryption)
+	ctx := context.Background()
+	audioData, err = eh.session.Download(ctx, audioMsg)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to download audio: %w", err)
+	}
+
+	return audioData, mimeType, nil
+}
+
 // forwardToPythonAPI forwards the message to the Python API and logs progress during the LLM wait.
 // Spawns a background goroutine that logs status every 15 seconds until the API responds.
 func forwardToPythonAPI(eh *EventHandler, messageText string, logger zerolog.Logger) (string, error) {
@@ -248,6 +336,36 @@ func forwardToPythonAPI(eh *EventHandler, messageText string, logger zerolog.Log
 	logger.Info().
 		Dur("elapsed", time.Since(startTime)).
 		Msg("LLM response received")
+
+	return response, nil
+}
+
+// forwardAudioToPythonAPI forwards audio data to the Python API for transcription.
+func forwardAudioToPythonAPI(eh *EventHandler, audioData []byte, mimeType string, logger zerolog.Logger) (string, error) {
+	tenant, err := eh.manager.config.GetTenantByID(eh.tenantID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant config: %w", err)
+	}
+
+	progressCtx, cancelProgress := context.WithCancel(context.Background())
+	defer cancelProgress()
+
+	startTime := time.Now()
+	go logLLMProgress(progressCtx, logger, startTime)
+
+	logger.Info().Msg("Forwarding audio message to Python API (waiting for transcription and LLM response)")
+
+	response, err := eh.manager.httpClient.ForwardAudioMessage(eh.tenantID, tenant.Phone, audioData, mimeType)
+
+	cancelProgress()
+
+	if err != nil {
+		return "", err
+	}
+
+	logger.Info().
+		Dur("elapsed", time.Since(startTime)).
+		Msg("Audio message processed")
 
 	return response, nil
 }

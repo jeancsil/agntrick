@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/rs/zerolog"
@@ -96,6 +97,66 @@ func (c *HTTPClient) ForwardMessage(tenantID string, phone string, messageText s
 		req.Header.Set("X-API-Key", c.apiKey)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var apiResp apiResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("failed to parse API response: %w", err)
+	}
+
+	if apiResp.Response == "" {
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	return apiResp.Response, nil
+}
+
+// ForwardAudioMessage sends audio data to the Python API for transcription and agent processing.
+func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioData []byte, mimeType string) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/channels/whatsapp/audio", c.baseURL)
+
+	// Build multipart form
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// Add audio file
+	part, err := writer.CreateFormFile("audio", "voice_message.ogg")
+	if err != nil {
+		return "", fmt.Errorf("failed to create multipart form: %w", err)
+	}
+	if _, err := part.Write(audioData); err != nil {
+		return "", fmt.Errorf("failed to write audio data: %w", err)
+	}
+
+	// Add metadata fields
+	_ = writer.WriteField("tenant_id", tenantID)
+	_ = writer.WriteField("phone", phone)
+	_ = writer.WriteField("mime_type", mimeType)
+	writer.Close()
+
+	req, err := http.NewRequest("POST", url, &buf)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

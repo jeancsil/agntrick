@@ -186,7 +186,14 @@ class ToolManifestClient:
             timeout: HTTP request timeout in seconds.
             circuit_breaker_config: Optional circuit breaker configuration.
         """
-        self.toolbox_url = toolbox_url.rstrip("/")
+        # Strip transport-specific paths (/sse, /messages) to get the base URL.
+        # The toolbox_url config often includes the MCP transport path (e.g., http://host:8080/sse)
+        # but the manifest REST API lives at the base URL (/api/manifest).
+        base_url = toolbox_url.rstrip("/")
+        for suffix in ("/sse", "/messages"):
+            if base_url.endswith(suffix):
+                base_url = base_url[: -len(suffix)]
+        self.toolbox_url = base_url.rstrip("/")
         self.ttl = ttl or self.DEFAULT_TTL
         self.timeout = timeout or self.DEFAULT_TIMEOUT
         self._cache: CachedManifest | None = None

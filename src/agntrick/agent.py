@@ -323,11 +323,68 @@ class AgentBase(Agent):
         if self._graph is None:
             raise RuntimeError("Agent graph failed to initialize.")
 
-        result = await self._graph.ainvoke(
-            {"messages": self._normalize_messages(input_data)},
-            config=config or self._default_config(),
-        )
-        return str(result["messages"][-1].content)
+        try:
+            result = await self._graph.ainvoke(
+                {"messages": self._normalize_messages(input_data)},
+                config=config or self._default_config(),
+            )
+            return str(result["messages"][-1].content)
+        except BaseException as e:
+            # Check if this is purely a tool execution error wrapped in ExceptionGroups.
+            # Tool errors should be non-fatal — return the error so the caller can retry.
+            tool_errors = self._extract_tool_errors(e)
+            if tool_errors:
+                error_summary = "; ".join(tool_errors)
+                logger.warning(
+                    "Tool execution failed for agent '%s': %s",
+                    self._agent_name,
+                    error_summary,
+                )
+                return f"Tool error: {error_summary}"
+
+            # Non-tool errors — log full trace and re-raise
+            def _unwrap(exc: BaseException, depth: int = 0) -> str:
+                if hasattr(exc, "exceptions") and exc.exceptions:
+                    inner = [_unwrap(sub, depth + 1) for sub in exc.exceptions]
+                    prefix = "  " * depth
+                    return f"{prefix}{type(exc).__name__}:\n" + "\n".join(inner)
+                return f"{'  ' * depth}{type(exc).__name__}: {exc}"
+
+            logger.error(
+                "Agent run failed for agent '%s':\n%s",
+                self._agent_name,
+                _unwrap(e),
+            )
+            raise
+
+    @staticmethod
+    def _extract_tool_errors(exc: BaseException) -> list[str]:
+        """Recursively extract ToolException messages from nested ExceptionGroups.
+
+        Returns an empty list if any non-tool exception is found (meaning the
+        error is not purely a tool failure).
+        """
+        from langchain_core.exceptions import OutputParserException
+
+        tool_errors: list[str] = []
+        queue: list[BaseException] = [exc]
+
+        while queue:
+            current = queue.pop(0)
+            # ExceptionGroup / BaseExceptionGroup — recurse into sub-exceptions
+            if hasattr(current, "exceptions") and current.exceptions:
+                queue.extend(current.exceptions)
+            # Tool execution error — collect it
+            elif "ToolException" in type(current).__name__ or "tool" in type(current).__name__.lower():
+                tool_errors.append(str(current))
+            # OutputParser errors are also recoverable (model produced bad format)
+            elif isinstance(current, OutputParserException):
+                tool_errors.append(str(current))
+            # Anything else means this isn't a pure tool failure
+            else:
+                return []
+
+        return tool_errors
 
     async def run_with_memory(
         self,
