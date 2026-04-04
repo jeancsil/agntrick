@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan.
 
-**Goal:** Transform the WhatsApp assistant from a single-shot ReAct agent into a stateful, routing-aware conversational agent with memory, smart tool usage, and multi-turn interaction.
+**Goal:** Transform the WhatsApp assistant from a single-shot ReAct agent into a stateful, routing-aware conversational agent with memory, smart tool usage, and multi-turn interaction. You must know that before a big refactor of this software, I used to have memory in SQLITE, you msut find code related to that before writting from scractch. At that time, I chose to save by agent the conversation, now , you are free to design the best option, taking into consideration different type of users will use it.
 
 **Architecture:** Three-layer enhancement over the existing AgentBase: (1) SQLite-backed conversation memory via LangGraph checkpoints, (2) a 3-node StateGraph (Router → Executor → Responder) replacing the single ReAct node, (3) rewritten system prompts and tool descriptions optimized for the agent-computer interface.
 
@@ -92,6 +92,7 @@ User message → [Router] → [Executor] → [Responder] → Response
                   |           |
                   |           +→ Can loop back (multi-step)
                   +→ May skip Executor (simple chat)
+                  +→ May delegate to specialist agent (invoke_agent)
 ```
 
 ### State Schema
@@ -120,13 +121,22 @@ You are a query router for a WhatsApp assistant. Classify the user's message:
 
 - "chat": General conversation, greetings, opinions, jokes — no tools needed
 - "tool_use": Simple factual query that needs one or two tool calls (weather, definition, single search)
+- "delegate": Task clearly matches a specialist agent's domain (code analysis, video transcripts, PR review)
 - "research": Complex multi-step query that needs multiple tool calls (news roundup, comparison, analysis)
 
-Respond with JSON: {"intent": "...", "tool_plan": "...", "skip_tools": false}
+Respond with JSON: {"intent": "...", "tool_plan": "...", "delegate_to": null, "skip_tools": false}
 
 For "tool_use", tool_plan should specify which single tool to use.
+For "delegate", set delegate_to to the agent name and tool_plan to the delegation prompt.
 For "research", tool_plan should outline the sequence of tool calls.
 For "chat", tool_plan should be null and skip_tools should be true.
+
+Delegation rules:
+- Code analysis, debugging, file operations → delegate to "developer"
+- YouTube links or video questions → delegate to "youtube"
+- PR review requests → delegate to "github-pr-reviewer"
+- News queries → handle directly with web_search (don't delegate to news agent)
+- Learning/tutorial requests → handle directly or delegate to "learning"
 ```
 
 **Why this matters:** Research showed Anthropic invests more in tool selection than prompt engineering. The router ensures the model doesn't flail between 19 tools — it gets a focused plan.
@@ -164,6 +174,16 @@ Router → (intent=chat, skip_tools=true) → Responder
 ```
 
 This saves tokens and latency for simple conversational messages like "good morning" or "thanks".
+
+### Edge: Delegation Path
+
+When the router classifies intent as "delegate", the Executor uses the existing `invoke_agent` tool:
+
+```
+Router → (intent=delegate, delegate_to="developer") → Executor (calls invoke_agent) → Responder
+```
+
+The Router sets `delegate_to` and `tool_plan` (the delegation prompt), so the Executor knows exactly which agent to invoke and what to ask. No trial-and-error — the Router has already classified the intent.
 
 ### Key files:
 - Create: `src/agntrick/graph.py` — StateGraph definition, nodes, edges
@@ -302,17 +322,47 @@ WhatsApp has a 65,536 character limit per message. The Responder node ensures re
 
 ---
 
+## Multi-Agent Delegation (Existing Feature)
+
+The assistant already has multi-agent delegation via `invoke_agent` tool. The Router node enhances this:
+
+**Current delegation flow:**
+```
+User: "Analyze my auth module"
+  → Assistant decides to invoke developer agent
+  → invoke_agent({"agent_name": "developer", "prompt": "..."})
+  → Fresh developer agent runs, returns result
+  → Assistant presents result to user
+```
+
+**How the Router improves delegation:**
+1. The Router classifies intent → detects it's a code task
+2. Instead of the LLM fumbling with `invoke_agent` JSON, the Router suggests the right agent and prompt
+3. The Executor follows the plan — direct delegation, no trial-and-error
+
+**Delegatable agents:**
+| Agent | Specialty | Tools |
+|-------|-----------|-------|
+| developer | Code exploration, file ops, technical analysis | toolbox (search, shell) |
+| learning | Educational tutorials, step-by-step guides | toolbox |
+| news | Current events, breaking stories | toolbox (web, HN) |
+| youtube | Video transcript extraction and analysis | toolbox |
+| committer | Git commit message generation | local only |
+| github-pr-reviewer | GitHub PR review with inline comments | local only |
+
+**Key insight from research:** Anthropic's orchestrator-workers pattern — "the orchestrator dynamically determines which workers to invoke" — is exactly what the Router node does. The existing `invoke_agent` tool is the worker dispatch mechanism. The Router just makes it smarter.
+
+---
+
 ## What We're NOT Building (YAGNI)
 
-1. **Multi-agent supervisor** — A single agent with routing is sufficient for personal use. Adding a supervisor with worker agents would add complexity without proportional benefit.
+1. **Vector store / RAG** — Conversation memory via checkpointer is sufficient. Cross-conversation search would need embeddings, but that's a future enhancement.
 
-2. **Vector store / RAG** — Conversation memory via checkpointer is sufficient. Cross-conversation search would need embeddings, but that's a future enhancement.
+2. **Safety classifier** — Anthropic uses a separate model to classify tool calls for safety. For a personal assistant, this is unnecessary overhead.
 
-3. **Safety classifier** — Anthropic uses a separate model to classify tool calls for safety. For a personal assistant, this is unnecessary overhead.
+3. **Agent-to-agent protocol** — The ATA/ACP protocols are for multi-vendor agent communication. We have one orchestrator with specialist delegates via `invoke_agent`.
 
-4. **Agent-to-agent protocol** — The ATA/ACP protocols are for multi-vendor agent communication. We have one agent with one set of tools.
-
-5. **Template messages** — WhatsApp's 24-hour window means free-form messages are fine during active conversations. Template messages for re-engagement are a separate concern.
+4. **Template messages** — WhatsApp's 24-hour window means free-form messages are fine during active conversations. Template messages for re-engagement are a separate concern.
 
 ---
 
