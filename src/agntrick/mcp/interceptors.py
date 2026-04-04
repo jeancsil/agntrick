@@ -78,6 +78,16 @@ class ResponseTruncator:
         if not isinstance(result, CallToolResult):
             return result
 
+        # Log ALL tool responses (not just oversized) for observability
+        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
+        total_chars = sum(len(b.text) for b in text_blocks)
+        logger.info(
+            "Tool '%s' response: %s chars, isError=%s",
+            request.name,
+            total_chars,
+            result.isError,
+        )
+
         return self._truncate(result)
 
     def _truncate(self, result: CallToolResult) -> CallToolResult:
@@ -87,12 +97,4 @@ class ResponseTruncator:
         LLM to interpret truncated tool responses as failures. Passing
         through all responses unchanged while we diagnose.
         """
-        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
-        total_chars = sum(len(b.text) for b in text_blocks)
-        if total_chars > self.max_response_size:
-            logger.info(
-                "Truncation bypassed (disabled): tool response has %s chars (limit: %s)",
-                total_chars,
-                self.max_response_size,
-            )
         return result

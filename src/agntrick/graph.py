@@ -86,11 +86,19 @@ For "tool_use": tool_plan should specify which single tool to use
 For "research": tool_plan should outline the sequence of tool calls
 For "delegate": set delegate_to to the agent name, tool_plan to the delegation prompt
 
+Tool selection rules (CRITICAL — follow these strictly):
+- News, current events, headlines → ALWAYS use web_search FIRST. Do NOT use web_fetch for news/RSS URLs.
+- Specific URL content the user wants to read → use web_fetch
+- RSS/feed URLs → use web_search to find the same content (direct fetch often fails)
+- API calls with custom headers → use curl_fetch
+- YouTube links → "youtube" agent
+- General web queries → web_search
+
 Delegation rules:
 - Code analysis, debugging, file operations → "developer"
 - YouTube links or video questions → "youtube"
 - PR review requests → "github-pr-reviewer"
-- News queries → handle directly with web_search
+- News queries → handle directly with web_search (do NOT delegate)
 - Learning/tutorial requests → handle directly or delegate to "learning"
 """
 
