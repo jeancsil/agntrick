@@ -30,18 +30,26 @@ def _truncate_messages(messages: list[BaseMessage], max_chars: int = _MAX_MESSAG
 
     Preserves the first message (usually system) and last message (the query),
     truncating middle messages (tool results, etc.) if needed.
+    Only truncates HumanMessage and AIMessage types — ToolMessage and
+    other types with required fields are left intact.
     """
     total = sum(len(str(m.content)) for m in messages)
     if total <= max_chars:
         return messages
 
+    from langchain_core.messages import AIMessage, HumanMessage
+
     # Truncate individual messages from oldest to newest (skip first and last)
     result = list(messages)
     for i in range(1, len(result) - 1):
-        content_str = str(result[i].content)
+        msg = result[i]
+        if not isinstance(msg, (HumanMessage, AIMessage)):
+            # ToolMessage and other types have required fields — don't reconstruct
+            continue
+        content_str = str(msg.content)
         if len(content_str) > 3000:
             truncated = content_str[:3000] + "\n...[truncated]"
-            result[i] = result[i].__class__(content=truncated)
+            result[i] = msg.__class__(content=truncated)
 
     return result
 
@@ -161,7 +169,12 @@ async def executor_node(
     if progress_callback:
         await progress_callback("Formatting response...")
 
-    return {"messages": result["messages"]}
+    # Only return the final assistant message from the sub-agent.
+    # Tool call/response messages are sub-agent internals that should
+    # not leak into the main graph's state (they lack matching tool_call_ids
+    # in the main graph, causing KeyError in add_messages).
+    final_msg = result["messages"][-1]
+    return {"messages": [final_msg]}
 
 
 async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
