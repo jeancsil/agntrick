@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agntrick.graph import (
     AgentState,
@@ -254,6 +254,54 @@ class TestExecutorMiddleware:
             assert any(isinstance(m, ToolCallLimitMiddleware) for m in middleware_list), (
                 f"Expected ToolCallLimitMiddleware in middleware list, got: {middleware_list}"
             )
+
+
+class TestExecutorMessageIsolation:
+    """Tests that executor receives only the last user message, not full history."""
+
+    @pytest.mark.asyncio
+    async def test_executor_receives_only_last_message(self) -> None:
+        """Executor should send only the last HumanMessage, not full history."""
+        from unittest.mock import patch
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_create.return_value = MagicMock()
+            mock_create.return_value.ainvoke = AsyncMock(
+                return_value={"messages": [MagicMock(content="done")]}
+            )
+
+            from agntrick.graph import executor_node
+
+            # Simulate accumulated history with previous failures
+            state: AgentState = {
+                "messages": [
+                    HumanMessage(content="What's the weather?"),
+                    AIMessage(content="All tools are down"),
+                    HumanMessage(content="What are the top news in g1.globo.com?"),
+                ],
+                "intent": "tool_use",
+                "tool_plan": "web_search",
+                "progress": [],
+                "final_response": None,
+            }
+            config = MagicMock()
+
+            await executor_node(
+                state,
+                config,
+                model=AsyncMock(),
+                tools=[],
+                system_prompt="test",
+            )
+
+            # Verify only last HumanMessage was sent to sub-agent
+            invoke_args = mock_create.return_value.ainvoke.call_args
+            messages = invoke_args[0][0]["messages"] if invoke_args else []
+            human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
+            assert len(human_msgs) == 1, (
+                f"Expected exactly 1 HumanMessage, got {len(human_msgs)}: {[m.content for m in human_msgs]}"
+            )
+            assert human_msgs[0].content == "What are the top news in g1.globo.com?"
 
 
 class TestCreateAssistantGraph:

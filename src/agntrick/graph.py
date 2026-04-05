@@ -30,12 +30,23 @@ def _truncate_messages(
     messages: list[BaseMessage],
     max_chars: int = _MAX_MESSAGE_CHARS,
 ) -> list[BaseMessage]:
-    """Truncate long messages to keep total content within limits.
+    """Isolate the last user message for the executor sub-agent.
 
-    TEMPORARILY DISABLED — pass through all messages unchanged while
-    diagnosing truncation issues that cause the LLM to misinterpret
-    tool responses as failures.
+    Sending accumulated history (previous failed attempts) causes the
+    sub-agent to repeat failures.  Instead, only send the last HumanMessage
+    so the sub-agent starts fresh.
+
+    For the responder node (chat intent), pass through all messages since
+    it needs conversation context.
     """
+    if not messages:
+        return messages
+
+    # Find the last HumanMessage — this is the current query
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            return [msg]
+
     return messages
 
 
