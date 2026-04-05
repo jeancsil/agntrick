@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Union
+from typing import Any, Union
 
 from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Default maximum response size in characters (~5K tokens).
 # Enough for useful content without bloating the LLM context window.
-DEFAULT_MAX_RESPONSE_SIZE = 20_000
+DEFAULT_MAX_RESPONSE_SIZE = 5_000
 
 # The result type from the handler chain.  We only intercept
 # ``CallToolResult`` (the raw MCP response).  ``ToolMessage`` and
@@ -86,10 +86,41 @@ class ResponseTruncator:
         return self._truncate(result)
 
     def _truncate(self, result: CallToolResult) -> CallToolResult:
-        """Truncate text content in a CallToolResult if it exceeds the limit.
+        """Truncate text content with smart boundary detection.
 
-        TEMPORARILY DISABLED — truncation was too aggressive, causing the
-        LLM to interpret truncated tool responses as failures. Passing
-        through all responses unchanged while we diagnose.
+        Finds the last paragraph break (``\\n\\n``), sentence end (``. ``),
+        or newline before the limit. Falls back to hard cut at limit.
         """
-        return result
+        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
+        total_chars = sum(len(b.text) for b in text_blocks)
+
+        if total_chars <= self.max_response_size:
+            return result
+
+        new_content: list[Any] = []
+        for block in result.content:
+            if not isinstance(block, TextContent):
+                new_content.append(block)
+                continue
+
+            if len(block.text) <= self.max_response_size:
+                new_content.append(block)
+                continue
+
+            truncated = block.text[: self.max_response_size]
+            # Find a clean boundary in the second half of the allowed text
+            boundary = max(
+                truncated.rfind("\n\n"),
+                truncated.rfind(". "),
+                truncated.rfind("\n"),
+            )
+            if boundary > self.max_response_size // 2:
+                truncated = truncated[: boundary + 1]
+
+            truncated += f"\n\n[...truncated from {len(block.text):,} chars]"
+            new_content.append(TextContent(type="text", text=truncated))
+
+        return CallToolResult(
+            content=new_content,
+            isError=result.isError,
+        )
