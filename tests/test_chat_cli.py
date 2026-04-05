@@ -4,8 +4,12 @@ import subprocess
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import typer
+from typer.testing import CliRunner
 
 from agntrick.config import AgntrickConfig, WhatsAppTenantConfig
+
+runner = CliRunner()
 
 
 class TestMCPServerManager:
@@ -430,3 +434,151 @@ class TestSendChatMessage:
 
         # Verify error message contains status code
         assert "401" in str(exc_info.value)
+
+
+class TestChatCommand:
+    """Tests for chat_command Typer command."""
+
+    def test_chat_command_prints_response(self) -> None:
+        """chat_command should print the response and exit with code 0."""
+        from agntrick.chat_cli import chat_command
+
+        # Create test app
+        app = typer.Typer()
+        app.command()(chat_command)
+
+        # Mock dependencies
+        with patch("agntrick.chat_cli.MCPServerManager") as mock_mcp_class:
+            mock_mcp_instance = MagicMock()
+            mock_mcp_class.return_value = mock_mcp_instance
+
+            with patch(
+                "agntrick.chat_cli.send_chat_message",
+                return_value={"response": "Hello!", "tenant_id": "test"},
+            ):
+                with patch(
+                    "agntrick.chat_cli.find_test_tenant",
+                    return_value=WhatsAppTenantConfig(
+                        id="test",
+                        phone="+1555000000",
+                        default_agent="assistant",
+                        allowed_contacts=["+1555000000"],
+                    ),
+                ):
+                    result = runner.invoke(app, ["Hello, test!"])
+
+        # Verify exit code and output
+        assert result.exit_code == 0
+        assert "Hello!" in result.output
+
+        # Verify MCP manager was started and stopped
+        mock_mcp_instance.start.assert_called_once()
+        mock_mcp_instance.stop.assert_called_once()
+
+    def test_chat_command_with_verbose(self) -> None:
+        """chat_command should configure debug logging with --verbose flag."""
+        from agntrick.chat_cli import chat_command
+
+        # Create test app
+        app = typer.Typer()
+        app.command()(chat_command)
+
+        # Mock dependencies
+        with patch("agntrick.chat_cli.MCPServerManager") as mock_mcp_class:
+            mock_mcp_instance = MagicMock()
+            mock_mcp_class.return_value = mock_mcp_instance
+
+            with patch(
+                "agntrick.chat_cli.send_chat_message",
+                return_value={"response": "Response", "tenant_id": "test"},
+            ):
+                with patch(
+                    "agntrick.chat_cli.find_test_tenant",
+                    return_value=WhatsAppTenantConfig(
+                        id="test",
+                        phone="+1555000000",
+                        default_agent="assistant",
+                        allowed_contacts=["+1555000000"],
+                    ),
+                ):
+                    with patch("agntrick.chat_cli.configure_chat_logging") as mock_log:
+                        result = runner.invoke(app, ["Hello", "--verbose"])
+
+        # Verify exit code
+        assert result.exit_code == 0
+
+        # Verify logging was configured with DEBUG level
+        mock_log.assert_called_once_with("DEBUG")
+
+    def test_chat_command_with_agent_override(self) -> None:
+        """chat_command should pass agent_name to send_chat_message when --agent is used."""
+        from agntrick.chat_cli import chat_command
+
+        # Create test app
+        app = typer.Typer()
+        app.command()(chat_command)
+
+        # Mock dependencies
+        with patch("agntrick.chat_cli.MCPServerManager") as mock_mcp_class:
+            mock_mcp_instance = MagicMock()
+            mock_mcp_class.return_value = mock_mcp_instance
+
+            with patch(
+                "agntrick.chat_cli.send_chat_message",
+                return_value={"response": "Chef response", "tenant_id": "test"},
+            ) as mock_send:
+                with patch(
+                    "agntrick.chat_cli.find_test_tenant",
+                    return_value=WhatsAppTenantConfig(
+                        id="test",
+                        phone="+1555000000",
+                        default_agent="assistant",
+                        allowed_contacts=["+1555000000"],
+                    ),
+                ):
+                    result = runner.invoke(app, ["Recipe please", "--agent", "chef"])
+
+        # Verify exit code
+        assert result.exit_code == 0
+
+        # Verify send_chat_message was called with agent_name="chef"
+        mock_send.assert_called_once()
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs.get("agent_name") == "chef"
+
+    def test_chat_command_handles_error(self) -> None:
+        """chat_command should print error in red and exit with code 1 on error."""
+        from agntrick.chat_cli import chat_command
+
+        # Create test app
+        app = typer.Typer()
+        app.command()(chat_command)
+
+        # Mock dependencies
+        with patch("agntrick.chat_cli.MCPServerManager") as mock_mcp_class:
+            mock_mcp_instance = MagicMock()
+            mock_mcp_class.return_value = mock_mcp_instance
+
+            with patch(
+                "agntrick.chat_cli.send_chat_message",
+                side_effect=RuntimeError("Test error occurred"),
+            ):
+                with patch(
+                    "agntrick.chat_cli.find_test_tenant",
+                    return_value=WhatsAppTenantConfig(
+                        id="test",
+                        phone="+1555000000",
+                        default_agent="assistant",
+                        allowed_contacts=["+1555000000"],
+                    ),
+                ):
+                    result = runner.invoke(app, ["Hello"])
+
+        # Verify exit code is 1
+        assert result.exit_code == 1
+
+        # Verify error message is in output
+        assert "Test error occurred" in result.output
+
+        # Verify MCP manager was still stopped (in finally block)
+        mock_mcp_instance.stop.assert_called_once()

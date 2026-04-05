@@ -8,6 +8,7 @@ from typing import Any, Callable, Type
 import typer
 from rich.console import Console
 
+from agntrick.chat_cli import chat_command
 from agntrick.config import get_config
 from agntrick.mcp import MCPConnectionError, MCPProvider
 from agntrick.registry import AgentRegistry
@@ -293,6 +294,10 @@ AgentRegistry.discover_agents()
 # Create dynamic commands for each agent (excluding whatsapp-messenger which has a custom command)
 for _name in AgentRegistry.list_agents():
     app.command(name=_name)(create_agent_command(_name))
+
+
+# Register the chat command
+app.command(name="chat")(chat_command)
 
 
 @app.command(name="serve")

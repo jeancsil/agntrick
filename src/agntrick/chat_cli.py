@@ -4,11 +4,16 @@ import atexit
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
+
+import typer
+from rich.console import Console
 
 from agntrick.config import AgntrickConfig, WhatsAppTenantConfig, get_config
 
 logger = logging.getLogger(__name__)
+console = Console()
 
 # Module-level constants
 TEST_TENANT_ID = "test"
@@ -16,6 +21,21 @@ TEST_TENANT_PHONE = "+1555000000"
 TEST_API_KEY = "test-secret"
 DEFAULT_TOOLBOX_PORT = 8080
 MCP_STARTUP_TIMEOUT = 15
+
+
+def configure_chat_logging(level: str) -> None:
+    """Configure logging for the chat CLI.
+
+    Args:
+        level: Logging level (e.g., 'WARNING', 'DEBUG').
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="[%X]",
+        handlers=[logging.StreamHandler()],
+        force=True,
+    )
 
 
 def send_chat_message(
@@ -201,3 +221,55 @@ def find_test_tenant(config: AgntrickConfig | None = None) -> WhatsAppTenantConf
         default_agent="assistant",
         allowed_contacts=[TEST_TENANT_PHONE],
     )
+
+
+def chat_command(
+    message: str = typer.Argument(..., help="Message to send to the agent."),
+    thread_id: str | None = typer.Option(None, "--thread-id", "-t", help="Thread ID to continue."),
+    agent_name: str | None = typer.Option(None, "--agent", "-a", help="Agent name (default: from tenant config)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show debug output."),
+) -> None:
+    """Send a test message through the WhatsApp pipeline locally."""
+    # Configure logging based on verbose flag
+    configure_chat_logging("DEBUG" if verbose else "WARNING")
+
+    # Track start time
+    start_time = time.time()
+
+    # Create MCP server manager
+    mcp_manager = MCPServerManager()
+
+    try:
+        # Start MCP servers
+        mcp_manager.start()
+
+        # Find test tenant for display
+        tenant = find_test_tenant()
+
+        # Print agent and thread info
+        display_agent = agent_name or tenant.default_agent
+        console.print(f"[bold cyan]Agent:[/bold cyan] {display_agent}")
+        console.print(f"[bold cyan]Thread:[/bold cyan] {thread_id or 'auto-generated'}")
+        console.print()
+
+        # Send the message
+        result = send_chat_message(message=message, agent_name=agent_name)
+
+        # Print the response
+        console.print()
+        console.print("[bold green]Response:[/bold green]")
+        console.print(result.get("response", "No response"))
+
+        # Print elapsed time
+        elapsed = time.time() - start_time
+        console.print()
+        console.print(f"[dim][Completed in {elapsed:.1f}s][/dim]")
+
+    except Exception as e:
+        # Print error in red
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    finally:
+        # Always stop MCP manager
+        mcp_manager.stop()
