@@ -217,7 +217,8 @@ class TestRouterNode:
 class TestExecutorMiddleware:
     """Tests for executor sub-agent middleware configuration."""
 
-    def test_executor_uses_tool_call_limit(self) -> None:
+    @pytest.mark.asyncio
+    async def test_executor_uses_tool_call_limit(self) -> None:
         """Executor should create sub-agent with ToolCallLimitMiddleware."""
         from unittest.mock import patch
 
@@ -225,11 +226,8 @@ class TestExecutorMiddleware:
 
         with patch("agntrick.graph.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
-            mock_create.return_value.ainvoke = AsyncMock(
-                return_value={"messages": [MagicMock(content="done")]}
-            )
+            mock_create.return_value.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
 
-            # Re-import to get the patched version
             from agntrick.graph import executor_node
 
             state: AgentState = {
@@ -241,24 +239,21 @@ class TestExecutorMiddleware:
             }
             config = MagicMock()
 
-            import asyncio
-
             mock_model = AsyncMock()
-            asyncio.get_event_loop().run_until_complete(
-                executor_node(
-                    state,
-                    config,
-                    model=mock_model,
-                    tools=[],
-                    system_prompt="test",
-                )
+            await executor_node(
+                state,
+                config,
+                model=mock_model,
+                tools=[],
+                system_prompt="test",
             )
 
             # Verify middleware was passed
             call_kwargs = mock_create.call_args[1] if mock_create.call_args else {}
             middleware_list = call_kwargs.get("middleware", [])
-            assert any(isinstance(m, ToolCallLimitMiddleware) for m in middleware_list), \
+            assert any(isinstance(m, ToolCallLimitMiddleware) for m in middleware_list), (
                 f"Expected ToolCallLimitMiddleware in middleware list, got: {middleware_list}"
+            )
 
 
 class TestCreateAssistantGraph:
