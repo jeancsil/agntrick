@@ -101,6 +101,11 @@ Tool selection rules (CRITICAL):
 - YouTube links → delegate to "youtube"
 - Code questions → delegate to "developer"
 
+URL handling rules (CRITICAL):
+- "news from a site" or "top news in X" → web_search (search for that site's news)
+- "read this URL" or "open this link" → web_fetch (fetch the specific URL)
+- If user mentions a site name/URL but asks for NEWS → web_search, NOT web_fetch
+
 For "tool_use": tool_plan = exact tool name, e.g. "web_search"
 For "research": tool_plan = numbered steps, e.g. "1. web_search for topic\\n2. web_fetch top result"
 For "delegate": tool_plan = agent name + prompt
@@ -108,6 +113,7 @@ For "chat": tool_plan = null, skip_tools = true
 
 Examples:
 "What's happening in Brazil?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
+"What are the top news in g1.globo.com?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
 "Read this article: https://..." → {"intent": "tool_use", "tool_plan": "web_fetch", "skip_tools": false}
 "Compare React vs Vue" → {"intent": "research", \
 "tool_plan": "1. web_search React vs Vue 2026\\n2. web_fetch comparison article", \
