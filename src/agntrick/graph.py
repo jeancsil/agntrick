@@ -76,31 +76,31 @@ def _safe_invoke_messages(
 ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the user's message:
 
 - "chat": General conversation, greetings, opinions, jokes — no tools needed
-- "tool_use": Simple factual query that needs one or two tool calls
-- "research": Complex multi-step query that needs multiple tool calls
+- "tool_use": Simple factual query that needs one tool call
+- "research": Complex multi-step query that needs 2-5 tool calls
 - "delegate": Task clearly matches a specialist agent's domain
 
 Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": null, "skip_tools": false}
 
-For "chat": tool_plan=null, skip_tools=true
-For "tool_use": tool_plan should specify which single tool to use
-For "research": tool_plan should outline the sequence of tool calls
-For "delegate": set delegate_to to the agent name, tool_plan to the delegation prompt
+Tool selection rules (CRITICAL):
+- News, current events, headlines → web_search
+- Specific URL to read → web_fetch
+- API calls → curl_fetch
+- YouTube links → delegate to "youtube"
+- Code questions → delegate to "developer"
 
-Tool selection rules (CRITICAL — follow these strictly):
-- News, current events, headlines → ALWAYS use web_search FIRST. Do NOT use web_fetch for news/RSS URLs.
-- Specific URL content the user wants to read → use web_fetch
-- RSS/feed URLs → use web_search to find the same content (direct fetch often fails)
-- API calls with custom headers → use curl_fetch
-- YouTube links → "youtube" agent
-- General web queries → web_search
+For "tool_use": tool_plan = exact tool name, e.g. "web_search"
+For "research": tool_plan = numbered steps, e.g. "1. web_search for topic\\n2. web_fetch top result"
+For "delegate": tool_plan = agent name + prompt
+For "chat": tool_plan = null, skip_tools = true
 
-Delegation rules:
-- Code analysis, debugging, file operations → "developer"
-- YouTube links or video questions → "youtube"
-- PR review requests → "github-pr-reviewer"
-- News queries → handle directly with web_search (do NOT delegate)
-- Learning/tutorial requests → handle directly or delegate to "learning"
+Examples:
+"What's happening in Brazil?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
+"Read this article: https://..." → {"intent": "tool_use", "tool_plan": "web_fetch", "skip_tools": false}
+"Compare React vs Vue" → {"intent": "research", \
+"tool_plan": "1. web_search React vs Vue 2026\\n2. web_fetch comparison article", \
+"skip_tools": false}
+"Good morning" → {"intent": "chat", "tool_plan": null, "skip_tools": true}
 """
 
 RESPONDER_PROMPT = """You are formatting a response for WhatsApp. Take the assistant's response and:
