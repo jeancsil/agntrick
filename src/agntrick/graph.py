@@ -6,6 +6,7 @@ Router → Executor → Responder with conditional skip for simple chat.
 import json
 import logging
 import re
+import uuid
 from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
@@ -287,7 +288,7 @@ Do NOT use any other tools. Just invoke the agent and return its result.
     try:
         result = await sub_agent.ainvoke(
             {"messages": _truncate_messages(state["messages"])},  # type: ignore[arg-type]
-            config={"configurable": {"thread_id": "executor"}},
+            config={"configurable": {"thread_id": f"executor-{uuid.uuid4().hex}"}},
         )
     except Exception as e:
         logger.warning(f"[executor] sub-agent failed: {e}")
