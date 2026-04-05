@@ -266,9 +266,7 @@ class TestExecutorMessageIsolation:
 
         with patch("agntrick.graph.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
-            mock_create.return_value.ainvoke = AsyncMock(
-                return_value={"messages": [MagicMock(content="done")]}
-            )
+            mock_create.return_value.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
 
             from agntrick.graph import executor_node
 
