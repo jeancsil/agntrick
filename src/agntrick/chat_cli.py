@@ -1,0 +1,129 @@
+"""Chat CLI module with MCP subprocess management and tenant utilities."""
+
+import atexit
+import logging
+import os
+import subprocess
+from pathlib import Path
+
+from agntrick.config import AgntrickConfig, WhatsAppTenantConfig, get_config
+
+logger = logging.getLogger(__name__)
+
+# Module-level constants
+TEST_TENANT_ID = "test"
+TEST_TENANT_PHONE = "+1555000000"
+TEST_API_KEY = "test-secret"
+DEFAULT_TOOLBOX_PORT = 8080
+MCP_STARTUP_TIMEOUT = 15
+
+
+class MCPServerManager:
+    """Manages MCP toolkit subprocess lifecycle.
+
+    This class handles starting and stopping the agentic_toolkit MCP server
+    as a subprocess. It reads the toolkit path from the AGNTRICK_TOOLKIT_PATH
+    environment variable and manages the process lifecycle including cleanup
+    on exit.
+    """
+
+    def __init__(self) -> None:
+        """Initialize MCPServerManager with no running process."""
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def start(self) -> None:
+        """Start the MCP toolkit subprocess if configured.
+
+        Reads AGNTRICK_TOOLKIT_PATH from environment. If set and path exists,
+        starts 'uv run python -m agentic_toolkit' as a subprocess with
+        start_new_session=True. Registers stop() with atexit for cleanup.
+
+        If path is not set, logs info and returns.
+        If path doesn't exist, logs warning and returns.
+        """
+        toolkit_path = os.getenv("AGNTRICK_TOOLKIT_PATH")
+
+        if not toolkit_path:
+            logger.info("AGNTRICK_TOOLKIT_PATH not set, skipping MCP toolkit startup")
+            return
+
+        if not Path(toolkit_path).exists():
+            logger.warning(
+                "AGNTRICK_TOOLKIT_PATH '%s' does not exist, skipping MCP toolkit startup",
+                toolkit_path,
+            )
+            return
+
+        logger.info("Starting MCP toolkit from %s", toolkit_path)
+
+        # Start the subprocess with a new process group
+        self.process = subprocess.Popen(
+            ["uv", "run", "python", "-m", "agentic_toolkit"],
+            start_new_session=True,
+        )
+
+        logger.info("MCP toolkit started with PID %d", self.process.pid)
+
+        # Register cleanup handler
+        atexit.register(self.stop)
+
+    def stop(self) -> None:
+        """Stop the MCP toolkit subprocess.
+
+        Safely terminates the subprocess with a 5-second timeout.
+        Falls back to kill() on timeout.
+        Falls back to os.killpg on OSError (e.g., process already terminated).
+
+        Safe to call when process is None (no-op).
+        """
+        if self.process is None:
+            return
+
+        try:
+            self.process.terminate()
+            self.process.wait(timeout=5)
+            logger.info("MCP toolkit stopped gracefully")
+        except subprocess.TimeoutExpired:
+            logger.warning("MCP toolkit did not terminate gracefully, force killing")
+            self.process.kill()
+            self.process.wait(timeout=5)
+        except OSError:
+            # Process may have already terminated
+            # Use process group kill as fallback
+            if self.process.pid:
+                try:
+                    os.killpg(os.getpgid(self.process.pid), 9)  # SIGKILL
+                    logger.info("MCP toolkit killed via process group")
+                except (ProcessLookupError, OSError) as e:
+                    logger.debug("Process group kill failed (process likely gone): %s", e)
+
+        self.process = None
+
+
+def find_test_tenant(config: AgntrickConfig | None = None) -> WhatsAppTenantConfig:
+    """Find the test tenant from configuration.
+
+    Searches config.whatsapp.tenants for a tenant with id == "test".
+    Returns a default WhatsAppTenantConfig if not found.
+
+    Args:
+        config: Configuration to search. If None, calls get_config().
+
+    Returns:
+        The test tenant configuration, either from config or a default.
+    """
+    if config is None:
+        config = get_config()
+
+    # Search for test tenant
+    for tenant in config.whatsapp.tenants:
+        if tenant.id == TEST_TENANT_ID:
+            return tenant
+
+    # Return default test tenant
+    return WhatsAppTenantConfig(
+        id=TEST_TENANT_ID,
+        phone=TEST_TENANT_PHONE,
+        default_agent="assistant",
+        allowed_contacts=[TEST_TENANT_PHONE],
+    )
