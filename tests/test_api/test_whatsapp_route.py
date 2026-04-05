@@ -202,3 +202,74 @@ class TestWhatsAppMCPInjection:
         args = constructor_calls[0]
         assert args.get("initial_mcp_tools") == [fake_tool]
         assert args.get("tool_categories") == ["web", "hackernews"]
+
+
+class TestWhatsAppMemoryPersistence:
+    """Tests that the WhatsApp webhook uses persistent memory."""
+
+    @patch("agntrick.api.routes.whatsapp.MCPProvider")
+    @patch("agntrick.api.routes.whatsapp.AgentRegistry")
+    @patch("agntrick.api.routes.whatsapp.get_config")
+    def test_webhook_passes_checkpointer_and_thread_id(
+        self,
+        mock_config: MagicMock,
+        mock_registry_cls: MagicMock,
+        mock_mcp_cls: MagicMock,
+    ) -> None:
+        """Webhook should pass a checkpointer and scoped thread_id to the agent."""
+        from agntrick.api.routes.whatsapp import get_whatsapp_registry
+        from agntrick.api.server import create_app
+
+        mock_tenant = MagicMock()
+        mock_tenant.id = "tenant-1"
+        mock_tenant.default_agent = "assistant"
+        mock_tenant.allowed_contacts = None
+
+        mock_config.return_value = MagicMock(
+            auth=MagicMock(api_keys={"key": "val"}),
+            llm=MagicMock(model="gpt-4", temperature=0.7),
+            whatsapp=MagicMock(tenants=[mock_tenant]),
+            storage=MagicMock(base_path=None),
+        )
+
+        mock_registry_instance = MagicMock()
+        mock_registry_instance.lookup_by_phone.return_value = "tenant-1"
+
+        mock_registry_cls.discover_agents = MagicMock()
+
+        mock_agent_instance = AsyncMock()
+        mock_agent_instance.run = AsyncMock(return_value="Got it")
+
+        mock_agent_cls = MagicMock()
+        constructor_calls: list[dict[str, object]] = []
+
+        def capture_constructor(**kwargs: object) -> MagicMock:
+            constructor_calls.append(kwargs)
+            return mock_agent_instance
+
+        mock_agent_cls.side_effect = capture_constructor
+        mock_registry_cls.get.return_value = mock_agent_cls
+        mock_registry_cls.get_mcp_servers.return_value = []
+        mock_registry_cls.get_tool_categories.return_value = ["web"]
+
+        mock_mcp_cls.return_value = MagicMock()
+
+        app = create_app()
+        app.dependency_overrides[get_whatsapp_registry] = lambda: mock_registry_instance
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/channels/whatsapp/message",
+            json={"from": "+5511999999999", "message": "hello", "tenant_id": "tenant-1"},
+            headers={"X-API-Key": "key"},
+        )
+
+        assert response.status_code == 200
+        assert len(constructor_calls) == 1
+        args = constructor_calls[0]
+
+        # Verify thread_id is scoped per tenant + phone
+        assert args["thread_id"] == "whatsapp:tenant-1:+5511999999999"
+
+        # Verify checkpointer is not None (it's an AsyncSqliteSaver)
+        assert args["checkpointer"] is not None

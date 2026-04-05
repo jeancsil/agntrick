@@ -290,3 +290,88 @@ def test_e2e_whatsapp_pipeline_missing_fields_returns_400(authed_client: TestCli
 
     assert response.status_code == 400
     assert "Missing 'from' or 'message'" in response.json()["detail"]
+
+
+class TestSmarterAssistantIntegration:
+    """Integration tests for the smarter WhatsApp assistant graph."""
+
+    @pytest.mark.asyncio
+    async def test_full_graph_flow_with_chat_intent(self) -> None:
+        """Chat messages skip executor, go directly to responder."""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+
+        # Router returns chat intent
+        router_response = AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+        # Responder returns formatted chat
+        responder_response = AIMessage(content="Good morning! How can I help?")
+
+        mock_model.ainvoke = AsyncMock(side_effect=[router_response, responder_response])
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are helpful.",
+        )
+
+        result = await graph.ainvoke(
+            {
+                "messages": [HumanMessage(content="good morning")],
+                "intent": "",
+                "tool_plan": None,
+                "progress": [],
+                "final_response": None,
+            },
+            config={"configurable": {"thread_id": "test-chat"}},
+        )
+
+        assert result["final_response"] is not None
+        assert result["intent"] == "chat"
+
+    @pytest.mark.asyncio
+    async def test_full_graph_flow_with_tool_use_intent(self) -> None:
+        """Tool-use messages go through executor then responder."""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+
+        # Router returns tool_use intent
+        router_response = AIMessage(
+            content='{"intent": "tool_use", "tool_plan": "use web_search for weather", "skip_tools": false}'
+        )
+        # Sub-agent returns result
+        sub_agent_response = AIMessage(content="Weather in São Paulo: 28°C, sunny")
+        # Responder formats the result
+        responder_response = AIMessage(content="São Paulo: 28°C, sunny ☀️")
+
+        mock_model.ainvoke = AsyncMock(side_effect=[router_response, responder_response])
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are helpful.",
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create_agent:
+            mock_sub_graph = AsyncMock()
+            mock_sub_graph.ainvoke = AsyncMock(return_value={"messages": [sub_agent_response]})
+            mock_create_agent.return_value = mock_sub_graph
+
+            result = await graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content="What's the weather in São Paulo?")],
+                    "intent": "",
+                    "tool_plan": None,
+                    "progress": [],
+                    "final_response": None,
+                },
+                config={"configurable": {"thread_id": "test-tool"}},
+            )
+
+        assert result["intent"] == "tool_use"
+        assert result["final_response"] is not None
