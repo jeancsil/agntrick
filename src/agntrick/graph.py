@@ -275,11 +275,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         }
 
     final = str(response.content)
-    logger.info(
-        "[responder] final_response len=%d preview=%s",
-        len(final),
-        final[:300],
-    )
+    logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
     return {"final_response": final, "messages": [response]}
 
 
