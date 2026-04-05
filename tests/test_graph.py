@@ -21,8 +21,8 @@ class TestFilterTools:
         tool.name = name
         return tool
 
-    def test_tool_use_returns_web_and_agent_tools(self) -> None:
-        """tool_use intent should return web + document + agent tools."""
+    def test_tool_use_returns_web_and_document_tools(self) -> None:
+        """tool_use intent should return web + document tools (no invoke_agent)."""
         from agntrick.graph import _filter_tools
 
         all_tools = [
@@ -35,10 +35,10 @@ class TestFilterTools:
         ]
         result = _filter_tools(all_tools, "tool_use")
         names = {t.name for t in result}
-        assert names == {"web_search", "web_fetch", "curl_fetch", "invoke_agent"}
+        assert names == {"web_search", "web_fetch", "curl_fetch"}
 
     def test_research_adds_hackernews_tools(self) -> None:
-        """research intent should include hacker_news tools."""
+        """research intent should include hacker_news tools (no invoke_agent)."""
         from agntrick.graph import _filter_tools
 
         all_tools = [
@@ -50,7 +50,7 @@ class TestFilterTools:
         ]
         result = _filter_tools(all_tools, "research")
         names = {t.name for t in result}
-        assert names == {"web_search", "hacker_news_top", "hacker_news_item", "invoke_agent"}
+        assert names == {"web_search", "hacker_news_top", "hacker_news_item"}
 
     def test_delegate_returns_only_invoke_agent(self) -> None:
         """delegate intent should return only invoke_agent."""

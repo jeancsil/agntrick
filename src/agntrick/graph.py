@@ -169,7 +169,6 @@ _INTENT_TOOLS: dict[str, set[str]] = {
         "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
-        "invoke_agent",
     },
     "research": {
         "web_search",
@@ -179,7 +178,6 @@ _INTENT_TOOLS: dict[str, set[str]] = {
         "pandoc_convert",
         "hacker_news_top",
         "hacker_news_item",
-        "invoke_agent",
     },
     "delegate": {"invoke_agent"},
 }
