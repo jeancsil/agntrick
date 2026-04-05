@@ -269,3 +269,164 @@ class TestModuleConstants:
         from agntrick.chat_cli import MCP_STARTUP_TIMEOUT
 
         assert MCP_STARTUP_TIMEOUT == 15
+
+
+class TestSendChatMessage:
+    """Tests for send_chat_message function."""
+
+    def test_sends_message_with_correct_headers_and_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """send_chat_message should POST to webhook with correct headers and body."""
+        from unittest.mock import AsyncMock, patch
+
+        from agntrick.chat_cli import TEST_API_KEY, send_chat_message
+        from agntrick.config import AgntrickConfig, WhatsAppTenantConfig
+
+        # Create test config with API key and test tenant
+        config = AgntrickConfig()
+        config.auth.api_keys = {TEST_API_KEY: "test"}
+        test_tenant = WhatsAppTenantConfig(
+            id="test",
+            phone="+1555000000",
+            default_agent="assistant",
+            allowed_contacts=["+1555000000"],
+        )
+        config.whatsapp.tenants = [test_tenant]
+
+        # Mock agent
+        mock_agent_response = "Mock agent response: Hello from assistant!"
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_agent_response)
+        mock_agent_class = MagicMock(return_value=mock_agent)
+
+        # Patch AgentRegistry methods
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.discover_agents",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get",
+            lambda name: mock_agent_class if name == "assistant" else None,
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_mcp_servers",
+            lambda name: [],
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_tool_categories",
+            lambda name: [],
+        )
+
+        # Mock WhatsApp registry to return the test tenant
+        mock_registry = MagicMock()
+        mock_registry.lookup_by_phone.return_value = "test"
+
+        # Mock get_config in the whatsapp route to return our test config
+        with patch("agntrick.api.routes.whatsapp._whatsapp_registry", mock_registry):
+            with patch("agntrick.api.routes.whatsapp.get_config", return_value=config):
+                result = send_chat_message(message="Hello, test!", config=config)
+
+        # Verify response
+        assert result["response"] == mock_agent_response
+        assert result["tenant_id"] == "test"
+
+        # Verify agent was called with correct message
+        mock_agent.run.assert_called_once_with("Hello, test!")
+
+    def test_uses_custom_agent_when_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """send_chat_message should use the custom agent when agent_name is provided."""
+        from unittest.mock import AsyncMock, patch
+
+        from agntrick.chat_cli import TEST_API_KEY, send_chat_message
+        from agntrick.config import AgntrickConfig, WhatsAppTenantConfig
+
+        # Create test config with API key and test tenant
+        config = AgntrickConfig()
+        config.auth.api_keys = {TEST_API_KEY: "test"}
+        test_tenant = WhatsAppTenantConfig(
+            id="test",
+            phone="+1555000000",
+            default_agent="assistant",  # Default is assistant
+            allowed_contacts=["+1555000000"],
+        )
+        config.whatsapp.tenants = [test_tenant]
+
+        # Mock chef agent
+        mock_agent_response = "Mock chef response: Let's cook!"
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_agent_response)
+        mock_agent_class = MagicMock(return_value=mock_agent)
+
+        # Track which agent name was requested
+        requested_agents = []
+
+        def mock_get_agent(name):
+            requested_agents.append(name)
+            return mock_agent_class if name == "chef" else None
+
+        # Patch AgentRegistry methods
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.discover_agents",
+            lambda: None,
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get",
+            mock_get_agent,
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_mcp_servers",
+            lambda name: [],
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_tool_categories",
+            lambda name: [],
+        )
+
+        # Mock WhatsApp registry to return the test tenant
+        mock_registry = MagicMock()
+        mock_registry.lookup_by_phone.return_value = "test"
+
+        # Mock get_config in the whatsapp route to return our test config
+        with patch("agntrick.api.routes.whatsapp._whatsapp_registry", mock_registry):
+            with patch("agntrick.api.routes.whatsapp.get_config", return_value=config):
+                result = send_chat_message(message="Recipe please", config=config, agent_name="chef")
+
+        # Verify response
+        assert result["response"] == mock_agent_response
+        assert result["tenant_id"] == "test"
+
+        # Verify chef agent was requested
+        assert "chef" in requested_agents
+
+        # Verify agent was called with correct message
+        mock_agent.run.assert_called_once_with("Recipe please")
+
+    def test_raises_runtime_error_on_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """send_chat_message should raise RuntimeError when response is not 200."""
+        from unittest.mock import patch
+
+        from agntrick.chat_cli import send_chat_message
+        from agntrick.config import AgntrickConfig, WhatsAppTenantConfig
+
+        # Create test config with WRONG API key (auth will fail)
+        config = AgntrickConfig()
+        config.auth.api_keys = {"wrong-api-key": "test"}  # Not TEST_API_KEY
+        test_tenant = WhatsAppTenantConfig(
+            id="test",
+            phone="+1555000000",
+            default_agent="assistant",
+            allowed_contacts=["+1555000000"],
+        )
+        config.whatsapp.tenants = [test_tenant]
+
+        # Mock WhatsApp registry
+        mock_registry = MagicMock()
+        mock_registry.lookup_by_phone.return_value = "test"
+
+        # Mock get_config in the whatsapp route to return our test config
+        with patch("agntrick.api.routes.whatsapp._whatsapp_registry", mock_registry):
+            with patch("agntrick.api.routes.whatsapp.get_config", return_value=config):
+                with pytest.raises(RuntimeError) as exc_info:
+                    send_chat_message(message="Hello", config=config)
+
+        # Verify error message contains status code
+        assert "401" in str(exc_info.value)

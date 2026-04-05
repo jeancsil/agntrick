@@ -18,6 +18,80 @@ DEFAULT_TOOLBOX_PORT = 8080
 MCP_STARTUP_TIMEOUT = 15
 
 
+def send_chat_message(
+    message: str,
+    config: AgntrickConfig | None = None,
+    agent_name: str | None = None,
+    thread_id: str | None = None,
+) -> dict[str, str]:
+    """Send a test message through the WhatsApp webhook route via TestClient.
+
+    This function creates a TestClient that calls the real FastAPI route handler
+    for the WhatsApp webhook. It's primarily used for testing and CLI chat.
+
+    Args:
+        message: The message to send.
+        config: Configuration to use. If None, calls get_config().
+        agent_name: Optional agent name to use instead of the tenant's default.
+        thread_id: Optional thread ID (currently unused, reserved for future).
+
+    Returns:
+        A dict with 'response' and 'tenant_id' keys.
+
+    Raises:
+        RuntimeError: If the webhook returns a non-200 status code.
+    """
+    # Get config if not provided
+    if config is None:
+        config = get_config()
+
+    # Find the test tenant
+    tenant = find_test_tenant(config)
+
+    # Temporarily override default_agent if agent_name is provided
+    original_agent = tenant.default_agent
+    try:
+        if agent_name is not None:
+            tenant.default_agent = agent_name
+
+        # Import here to avoid circular imports
+        from fastapi.testclient import TestClient
+
+        from agntrick.api.server import create_app
+
+        # Create test client
+        app = create_app()
+        client = TestClient(app)
+
+        # Prepare request body
+        body: dict[str, str] = {
+            "from": tenant.phone,
+            "message": message,
+            "tenant_id": tenant.id,
+        }
+
+        # Send POST request with API key header
+        response = client.post(
+            "/api/v1/channels/whatsapp/message",
+            headers={"X-API-Key": TEST_API_KEY},
+            json=body,
+        )
+
+        # Check for errors
+        if response.status_code != 200:
+            detail = response.json().get("detail", "Unknown error")
+            raise RuntimeError(f"Webhook failed with status {response.status_code}: {detail}")
+
+        # Cast the response to the expected type
+        result: dict[str, str] = response.json()
+        return result
+
+    finally:
+        # Restore original agent
+        if agent_name is not None:
+            tenant.default_agent = original_agent
+
+
 class MCPServerManager:
     """Manages MCP toolkit subprocess lifecycle.
 
