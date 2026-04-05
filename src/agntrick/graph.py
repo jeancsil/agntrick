@@ -141,6 +141,51 @@ def _parse_router_response(content: str) -> dict[str, Any]:
         return {"intent": "chat", "tool_plan": None, "skip_tools": True}
 
 
+# Tool names allowed per intent. Reduces the 19-tool set to prevent
+# smaller models from getting confused by irrelevant tools.
+_INTENT_TOOLS: dict[str, set[str]] = {
+    "chat": set(),
+    "tool_use": {
+        "web_search",
+        "web_fetch",
+        "curl_fetch",
+        "pdf_extract_text",
+        "pandoc_convert",
+        "invoke_agent",
+    },
+    "research": {
+        "web_search",
+        "web_fetch",
+        "curl_fetch",
+        "pdf_extract_text",
+        "pandoc_convert",
+        "hacker_news_top",
+        "hacker_news_item",
+        "invoke_agent",
+    },
+    "delegate": {"invoke_agent"},
+}
+
+
+def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
+    """Filter tools based on intent to reduce model confusion.
+
+    Args:
+        tools: All available tools.
+        intent: Router's classified intent.
+
+    Returns:
+        Filtered list of tools matching the intent, or all tools if
+        the intent is unrecognized (safe default).
+    """
+    allowed = _INTENT_TOOLS.get(intent)
+    if allowed is None:
+        return list(tools)  # Unknown intent: pass all (safe default)
+    if not allowed:
+        return []  # chat: no tools
+    return [t for t in tools if getattr(t, "name", "") in allowed]
+
+
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
     last_message = state["messages"][-1]
@@ -178,14 +223,17 @@ async def executor_node(
         await progress_callback("Analyzing your request...")
 
     tool_plan = state.get("tool_plan")
+    intent = state.get("intent", "tool_use")
 
     guided_prompt = system_prompt
     if tool_plan:
         guided_prompt += f"\n\n## CURRENT TASK PLAN\n{tool_plan}"
 
+    filtered_tools = _filter_tools(tools, intent)
+
     sub_agent = create_agent(
         model=model,
-        tools=tools,
+        tools=filtered_tools,
         system_prompt=guided_prompt,
         checkpointer=InMemorySaver(),
         middleware=[ToolCallLimitMiddleware(run_limit=5, exit_behavior="continue")],

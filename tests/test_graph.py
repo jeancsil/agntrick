@@ -12,6 +12,76 @@ from agntrick.graph import (
 )
 
 
+class TestFilterTools:
+    """Tests for _filter_tools function."""
+
+    def _make_tool(self, name: str) -> MagicMock:
+        """Create a mock tool with a .name attribute."""
+        tool = MagicMock()
+        tool.name = name
+        return tool
+
+    def test_tool_use_returns_web_and_agent_tools(self) -> None:
+        """tool_use intent should return web + document + agent tools."""
+        from agntrick.graph import _filter_tools
+
+        all_tools = [
+            self._make_tool("web_search"),
+            self._make_tool("web_fetch"),
+            self._make_tool("curl_fetch"),
+            self._make_tool("run_shell"),
+            self._make_tool("ffmpeg_convert"),
+            self._make_tool("invoke_agent"),
+        ]
+        result = _filter_tools(all_tools, "tool_use")
+        names = {t.name for t in result}
+        assert names == {"web_search", "web_fetch", "curl_fetch", "invoke_agent"}
+
+    def test_research_adds_hackernews_tools(self) -> None:
+        """research intent should include hacker_news tools."""
+        from agntrick.graph import _filter_tools
+
+        all_tools = [
+            self._make_tool("web_search"),
+            self._make_tool("hacker_news_top"),
+            self._make_tool("hacker_news_item"),
+            self._make_tool("run_shell"),
+            self._make_tool("invoke_agent"),
+        ]
+        result = _filter_tools(all_tools, "research")
+        names = {t.name for t in result}
+        assert names == {"web_search", "hacker_news_top", "hacker_news_item", "invoke_agent"}
+
+    def test_delegate_returns_only_invoke_agent(self) -> None:
+        """delegate intent should return only invoke_agent."""
+        from agntrick.graph import _filter_tools
+
+        all_tools = [
+            self._make_tool("web_search"),
+            self._make_tool("invoke_agent"),
+            self._make_tool("run_shell"),
+        ]
+        result = _filter_tools(all_tools, "delegate")
+        names = {t.name for t in result}
+        assert names == {"invoke_agent"}
+
+    def test_chat_returns_no_tools(self) -> None:
+        """chat intent should return no tools."""
+        from agntrick.graph import _filter_tools
+
+        all_tools = [self._make_tool("web_search")]
+        result = _filter_tools(all_tools, "chat")
+        assert result == []
+
+    def test_unknown_intent_returns_all_tools(self) -> None:
+        """Unknown intent should fall back to returning all tools."""
+        from agntrick.graph import _filter_tools
+
+        all_tools = [self._make_tool("web_search"), self._make_tool("run_shell")]
+        result = _filter_tools(all_tools, "unknown_intent")
+        assert result == all_tools
+
+
 class TestAgentState:
     """Tests for AgentState TypedDict."""
 
