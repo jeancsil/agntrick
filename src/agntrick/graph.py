@@ -226,8 +226,39 @@ async def executor_node(
     intent = state.get("intent", "tool_use")
 
     guided_prompt = system_prompt
-    if tool_plan:
-        guided_prompt += f"\n\n## CURRENT TASK PLAN\n{tool_plan}"
+    if tool_plan and intent == "tool_use":
+        guided_prompt += f"""
+
+## MANDATORY INSTRUCTION
+The router determined this query needs: {tool_plan}
+
+You MUST follow this plan:
+1. Use EXACTLY the tool specified above as your FIRST tool call.
+2. If the first tool returns data, USE IT to answer. Do NOT call other tools.
+3. If the first tool returns an error, try ONE alternative tool.
+4. Do NOT call more than 2 tools total.
+"""
+    elif tool_plan and intent == "research":
+        guided_prompt += f"""
+
+## RESEARCH PLAN
+Follow this plan step by step:
+{tool_plan}
+
+After each tool call, evaluate the result before proceeding.
+Maximum 5 tool calls allowed.
+"""
+    elif tool_plan and intent == "delegate":
+        guided_prompt += f"""
+
+## DELEGATION
+Use the invoke_agent tool with these parameters:
+{tool_plan}
+
+Do NOT use any other tools. Just invoke the agent and return its result.
+"""
+    elif tool_plan:
+        guided_prompt += f"\n\n## TASK PLAN\n{tool_plan}"
 
     filtered_tools = _filter_tools(tools, intent)
 
