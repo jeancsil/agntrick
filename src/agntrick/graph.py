@@ -9,6 +9,7 @@ import re
 from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
+from langchain.agents.middleware.tool_call_limit import ToolCallLimitMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
@@ -187,6 +188,7 @@ async def executor_node(
         tools=tools,
         system_prompt=guided_prompt,
         checkpointer=InMemorySaver(),
+        middleware=[ToolCallLimitMiddleware(run_limit=5, exit_behavior="continue")],
     )
 
     if progress_callback:
