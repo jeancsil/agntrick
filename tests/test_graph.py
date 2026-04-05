@@ -316,3 +316,175 @@ class TestCreateAssistantGraph:
         )
         assert graph is not None
         assert hasattr(graph, "ainvoke")
+
+
+class TestGraphIntegration:
+    """Integration tests for the full 3-node graph with mock LLM.
+
+    Verifies that message isolation, tool filtering, and middleware
+    all work together through the real graph execution path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_skips_executor(self) -> None:
+        """Chat intent should go router → responder (skip executor)."""
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        # Router returns chat intent, responder formats response
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello! How can I help you?"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hello")]},
+            config={"configurable": {"thread_id": "test-chat-integration"}},
+        )
+
+        assert result.get("final_response") is not None
+
+    @pytest.mark.asyncio
+    async def test_tool_use_intent_routes_to_executor(self) -> None:
+        """Tool use intent should go router → executor → responder."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="São Paulo: 25°C, sunny ☀️"),
+            ]
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub_agent = MagicMock()
+            mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="The weather is 25°C.")]})
+            mock_create.return_value = mock_sub_agent
+
+            graph = create_assistant_graph(
+                model=mock_model,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+            )
+
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="What's the weather in São Paulo?")]},
+                config={"configurable": {"thread_id": "test-tool-use-integration"}},
+            )
+
+        mock_create.assert_called_once()
+        assert result.get("final_response") is not None
+
+    @pytest.mark.asyncio
+    async def test_executor_receives_single_message_despite_accumulated_history(self) -> None:
+        """Executor should only receive the last user message even with accumulated history."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="Formatted response"),
+            ]
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub_agent = MagicMock()
+            mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="News results here")]})
+            mock_create.return_value = mock_sub_agent
+
+            graph = create_assistant_graph(
+                model=mock_model,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+            )
+
+            # Simulate accumulated history from multiple WhatsApp messages
+            await graph.ainvoke(
+                {
+                    "messages": [
+                        HumanMessage(content="What's the weather?"),
+                        AIMessage(content="It's sunny."),
+                        HumanMessage(content="Tell me a joke"),
+                        AIMessage(content="Why did the chicken cross the road?"),
+                        HumanMessage(content="What are the top news in g1.globo.com?"),
+                    ]
+                },
+                config={"configurable": {"thread_id": "test-history-isolation"}},
+            )
+
+        # Verify sub-agent was invoked
+        mock_create.assert_called_once()
+        sub_invoke_args = mock_sub_agent.ainvoke.call_args
+        messages_sent = sub_invoke_args[0][0]["messages"]
+
+        # Only the last HumanMessage should have been sent
+        human_msgs = [m for m in messages_sent if isinstance(m, HumanMessage)]
+        assert len(human_msgs) == 1
+        assert human_msgs[0].content == "What are the top news in g1.globo.com?"
+
+    @pytest.mark.asyncio
+    async def test_tool_filtering_excludes_run_shell_for_tool_use(self) -> None:
+        """Tool filtering should exclude run_shell for tool_use intent."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="Response"),
+            ]
+        )
+
+        def _make_tool(name: str) -> MagicMock:
+            t = MagicMock()
+            t.name = name
+            return t
+
+        all_tools = [
+            _make_tool("web_search"),
+            _make_tool("web_fetch"),
+            _make_tool("run_shell"),
+            _make_tool("invoke_agent"),
+        ]
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub_agent = MagicMock()
+            mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Results")]})
+            mock_create.return_value = mock_sub_agent
+
+            graph = create_assistant_graph(
+                model=mock_model,
+                tools=all_tools,
+                system_prompt="You are a test assistant.",
+            )
+
+            await graph.ainvoke(
+                {"messages": [HumanMessage(content="Search for news")]},
+                config={"configurable": {"thread_id": "test-tool-filter"}},
+            )
+
+        # Verify tools passed to create_agent
+        call_kwargs = mock_create.call_args[1] if mock_create.call_args else {}
+        tools_passed = call_kwargs.get("tools", [])
+        tool_names = {getattr(t, "name", None) for t in tools_passed}
+
+        # run_shell should NOT be in the filtered tools
+        assert "run_shell" not in tool_names, f"run_shell should be filtered out, got: {tool_names}"
+        assert "web_search" in tool_names
+        assert "web_fetch" in tool_names
