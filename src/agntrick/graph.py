@@ -6,6 +6,7 @@ Router → Executor → Responder with conditional skip for simple chat.
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any, Callable, Coroutine, Sequence
 
@@ -28,6 +29,42 @@ _MAX_MESSAGE_CHARS = 15_000
 
 # Number of recent messages the router sees for context (follow-up understanding)
 _ROUTER_CONTEXT_WINDOW = 5
+
+# Intent-specific tool call limits to prevent tool usage spirals.
+_INTENT_TOOL_LIMITS: dict[str, int] = {
+    "tool_use": 2,  # 1 primary + 1 fallback
+    "research": 5,  # multi-step research
+    "delegate": 1,  # single agent invocation
+}
+_DEFAULT_TOOL_LIMIT = 3
+
+
+async def _log_llm_call(
+    model: Any,
+    messages: list,
+    *,
+    node: str,
+) -> Any:
+    """Wrap model.ainvoke() with timing and size logging."""
+    input_msgs = len(messages)
+    input_chars = sum(len(str(m.content)) for m in messages if hasattr(m, "content"))
+    logger.debug(
+        "[llm] node=%s input_msgs=%s input_chars=%d",
+        node,
+        input_msgs,
+        input_chars,
+    )
+    start = time.monotonic()
+    response = await model.ainvoke(messages)
+    elapsed = time.monotonic() - start
+    output_chars = len(str(response.content)) if hasattr(response, "content") else 0
+    logger.info(
+        "[llm] node=%s output_chars=%d elapsed=%.1fs",
+        node,
+        output_chars,
+        elapsed,
+    )
+    return response
 
 
 def _truncate_messages(
@@ -213,16 +250,15 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     last_message = state["messages"][-1]
     query_preview = str(last_message.content)[:200]
     logger.info(
-        "[router] input: %d messages in window, last: %s",
+        "[router] input: %s messages in window, last: %s",
         len(context_window),
         query_preview,
     )
 
-    response = await model.ainvoke(
-        [
-            SystemMessage(content=ROUTER_PROMPT),
-            *context_window,
-        ],
+    response = await _log_llm_call(
+        model,
+        [SystemMessage(content=ROUTER_PROMPT), *context_window],
+        node="router",
     )
     parsed = _parse_router_response(response.content)
     intent = parsed.get("intent", "chat")
@@ -254,14 +290,23 @@ async def executor_node(
     if tool_plan and intent == "tool_use":
         guided_prompt += f"""
 
-## MANDATORY INSTRUCTION
+## TOOL USE — CALL ONCE AND RESPOND
+
 The router determined this query needs: {tool_plan}
 
-You MUST follow this plan:
-1. Use EXACTLY the tool specified above as your FIRST tool call.
-2. If the first tool returns data, USE IT to answer. Do NOT call other tools.
-3. If the first tool returns an error, try ONE alternative tool.
-4. Do NOT call more than 2 tools total.
+EXECUTE EXACTLY THESE STEPS:
+1. Call the tool: {tool_plan}
+2. Read the tool's response
+3. Ask yourself: "Does this data answer the user's question?"
+   - YES → Respond to the user now. STOP.
+   - PARTIAL → You may try ONE more targeted tool to fill the gap, then respond
+   - ERROR/EMPTY → Try ONE alternative tool, then respond with whatever you have
+
+MANDATORY RULES:
+- Maximum 2 tool calls total
+- After each tool call, evaluate if you can answer the user's question — if yes, STOP
+- NEVER call more tools just to get "better" data — respond with what you have
+- NEVER say "unable to retrieve" if ANY tool returned data
 """
     elif tool_plan and intent == "research":
         guided_prompt += f"""
@@ -270,7 +315,9 @@ You MUST follow this plan:
 Follow this plan step by step:
 {tool_plan}
 
-After each tool call, evaluate the result before proceeding.
+After each tool call, evaluate:
+- Can I answer the user's question with this data? If YES, stop and respond.
+- Do I need more data? If YES, continue to the next step.
 Maximum 5 tool calls allowed.
 """
     elif tool_plan and intent == "delegate":
@@ -280,19 +327,29 @@ Maximum 5 tool calls allowed.
 Use the invoke_agent tool with these parameters:
 {tool_plan}
 
+IMPORTANT: Include ALL relevant context from the conversation in the "prompt" field.
+The delegated agent has no memory — it only sees what you put in the prompt.
+
 Do NOT use any other tools. Just invoke the agent and return its result.
 """
     elif tool_plan:
         guided_prompt += f"\n\n## TASK PLAN\n{tool_plan}"
 
     filtered_tools = _filter_tools(tools, intent)
+    tool_limit = _INTENT_TOOL_LIMITS.get(intent, _DEFAULT_TOOL_LIMIT)
+    logger.info(
+        "[executor] intent=%s tool_limit=%d filtered_tools=%s",
+        intent,
+        tool_limit,
+        [getattr(t, "name", "?") for t in filtered_tools],
+    )
 
     sub_agent = create_agent(
         model=model,
         tools=filtered_tools,
         system_prompt=guided_prompt,
         checkpointer=InMemorySaver(),
-        middleware=[ToolCallLimitMiddleware(run_limit=5, exit_behavior="continue")],
+        middleware=[ToolCallLimitMiddleware(run_limit=tool_limit, exit_behavior="continue")],
     )
 
     if progress_callback:
@@ -353,7 +410,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         )
         safe_msgs = _safe_invoke_messages(RESPONDER_PROMPT, msgs)
         try:
-            response = await model.ainvoke(safe_msgs)
+            response = await _log_llm_call(model, safe_msgs, node="responder-chat")
         except Exception as e:
             logger.warning(f"Responder LLM call failed for chat: {e}")
             # Fallback: return the last message content directly
@@ -376,7 +433,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         [HumanMessage(content=f"Format this response for WhatsApp:\n\n{content}")],
     )
     try:
-        response = await model.ainvoke(safe_msgs)
+        response = await _log_llm_call(model, safe_msgs, node="responder-tool")
     except Exception as e:
         logger.warning(f"Responder LLM call failed for tool_use: {e}")
         # Fallback: return raw content, truncated for WhatsApp
