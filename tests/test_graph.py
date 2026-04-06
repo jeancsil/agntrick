@@ -594,3 +594,75 @@ class TestGraphIntegration:
             f"Router should receive > 1 non-system message (context window), "
             f"got {len(non_system_msgs)}: {[type(m).__name__ for m in non_system_msgs]}"
         )
+
+
+class TestSanitizeToolArtifacts:
+    """Tests for _sanitize_ai_content stripping XML pseudo-tool-calls."""
+
+    def test_strips_web_search_tag(self) -> None:
+        from agntrick.graph import _sanitize_ai_content
+
+        raw = 'I will search for that.\n\n<web_search query="site:g1.globo.com top news headlines" />'
+        cleaned = _sanitize_ai_content(raw)
+        assert cleaned == "I will search for that."
+        assert "<web_search" not in cleaned
+
+    def test_strips_tool_call_block(self) -> None:
+        from agntrick.graph import _sanitize_ai_content
+
+        raw = 'Let me look that up.\n<tool_call name="web_search">query: news</tool_call'
+        cleaned = _sanitize_ai_content(raw)
+        assert "<tool_call" not in cleaned
+        assert "Let me look that up." in cleaned
+
+    def test_no_artifact_passes_through(self) -> None:
+        from agntrick.graph import _sanitize_ai_content
+
+        raw = "Here is your answer. The weather is sunny."
+        assert _sanitize_ai_content(raw) == raw
+
+    def test_strips_execute_tag(self) -> None:
+        from agntrick.graph import _sanitize_ai_content
+
+        raw = 'Searching now...\n<execute tool="web_fetch" url="https://example.com" />'
+        cleaned = _sanitize_ai_content(raw)
+        assert "<execute" not in cleaned
+        assert "Searching now..." in cleaned
+
+    @pytest.mark.asyncio
+    async def test_executor_sanitizes_artifact_from_sub_agent(self) -> None:
+        """Executor should strip XML tool artifacts from sub-agent AIMessage."""
+        from agntrick.graph import executor_node
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
+
+        sub_result_msg = AIMessage(content='I will search.\n\n<web_search query="test query" />')
+        mock_sub_agent = MagicMock()
+        mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [sub_result_msg]})
+
+        import agntrick.graph as graph_mod
+
+        original_create = graph_mod.create_agent
+        graph_mod.create_agent = MagicMock(return_value=mock_sub_agent)
+        try:
+            state: AgentState = {
+                "messages": [HumanMessage(content="search for test")],
+                "intent": "tool_use",
+                "tool_plan": "web_search",
+                "progress": [],
+                "final_response": None,
+            }
+            result = await executor_node(
+                state,
+                MagicMock(),
+                model=mock_model,
+                tools=[],
+                system_prompt="test",
+            )
+            returned_msg = result["messages"][0]
+            assert isinstance(returned_msg, AIMessage)
+            assert "<web_search" not in str(returned_msg.content)
+            assert "I will search." in str(returned_msg.content)
+        finally:
+            graph_mod.create_agent = original_create

@@ -38,6 +38,41 @@ _INTENT_TOOL_LIMITS: dict[str, int] = {
 }
 _DEFAULT_TOOL_LIMIT = 3
 
+# Regex to strip XML-style pseudo-tool-call artifacts that some models (e.g.
+# glm-4.7) emit as plain text instead of proper structured tool_calls.
+# Matches tags like <web_search query="..."/>, <tool_call name="foo">...</tool_call, etc.
+_TOOL_ARTIFACT_RE = re.compile(
+    r"\n*"
+    r"<(?:web_search|tool_call|invoke|execute|function_call)\b[^>]*"
+    r"(?:"
+    r"/>?"  # self-closing or bare open tag (no body)
+    r"|"
+    r">.*?"  # opening tag with body...
+    r"</(?:web_search|tool_call|invoke|execute|function_call)\b[^>]*>?"  # ...closing tag
+    r")",
+    re.DOTALL,
+)
+
+
+def _sanitize_ai_content(content: str) -> str:
+    """Strip XML-style tool call artifacts from AIMessage content.
+
+    Some LLMs (notably glm-4.7) emit pseudo-tool-calls as raw text like
+    ``<web_search query="..."/>`` instead of using the structured tool_call
+    API.  Left unchecked, these tags pollute the conversation history and get
+    fed back to the model on every turn, confusing it further.
+
+    Args:
+        content: Raw AIMessage content string.
+
+    Returns:
+        Cleaned content with tool artifacts removed.
+    """
+    cleaned = _TOOL_ARTIFACT_RE.sub("", content).strip()
+    if cleaned != content:
+        logger.info("[sanitize] stripped tool artifact from AIMessage (%d → %d chars)", len(content), len(cleaned))
+    return cleaned
+
 
 async def _log_llm_call(
     model: Any,
@@ -392,6 +427,19 @@ Do NOT use any other tools. Just invoke the agent and return its result.
     # not leak into the main graph's state (they lack matching tool_call_ids
     # in the main graph, causing KeyError in add_messages).
     final_msg = result["messages"][-1]
+
+    # Sanitize any XML-style tool artifacts the model may have emitted
+    # as text instead of structured tool_calls (e.g. <web_search query="..."/>).
+    if isinstance(final_msg, AIMessage) and isinstance(final_msg.content, str):
+        sanitized = _sanitize_ai_content(final_msg.content)
+        if sanitized != final_msg.content:
+            final_msg = AIMessage(
+                content=sanitized,
+                additional_kwargs=final_msg.additional_kwargs,
+                response_metadata=final_msg.response_metadata,
+                id=final_msg.id,
+            )
+
     return {"messages": [final_msg]}
 
 
