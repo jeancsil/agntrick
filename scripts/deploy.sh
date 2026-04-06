@@ -113,7 +113,8 @@ start_all() {
     disown $TOOLKIT_PID
 
     # Wait for toolbox to accept connections (SSE endpoint holds connection open,
-    # so just check that the port responds within 1s)
+    # so just check that the port responds within 1s — can take up to 20s)
+    echo "  (waiting for toolbox to start, up to ~20s...)"
     for i in $(seq 1 15); do
         curl -sf -m 1 "http://127.0.0.1:8080/sse" -o /dev/null 2>&1 && break || true
         sleep 1
