@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agntrick"
-version = "1.0.0a0"
+version = "1.0.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },

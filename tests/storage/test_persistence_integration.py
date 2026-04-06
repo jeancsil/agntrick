@@ -60,14 +60,14 @@ async def test_agent_persistence(db, db_path):
 
     with patch("langchain_openai.ChatOpenAI.ainvoke", side_effect=mock_ainvoke):
         # 1. First session: Introduce ourselves
-        async with db.get_checkpointer(is_async=True) as checkpointer1:
+        async with await db.get_async_checkpointer() as checkpointer1:
             agent1 = SimpleAgent(thread_id=thread_id, checkpointer=checkpointer1)
             response1 = await agent1.run("My name is Agntrick Test.")
             assert "Agntrick Test" in str(response1)
 
         # 2. Simulate "process restart"
         db2 = Database(db_path)
-        async with db2.get_checkpointer(is_async=True) as checkpointer2:
+        async with await db2.get_async_checkpointer() as checkpointer2:
             agent2 = SimpleAgent(thread_id=thread_id, checkpointer=checkpointer2)
 
             # 3. Second session: Ask who we are
@@ -81,7 +81,7 @@ async def test_agent_persistence(db, db_path):
 async def test_different_threads_isolation(db):
     """Test that different thread IDs have isolated memories."""
     with patch("langchain_openai.ChatOpenAI.ainvoke", side_effect=mock_ainvoke):
-        async with db.get_checkpointer(is_async=True) as checkpointer:
+        async with await db.get_async_checkpointer() as checkpointer:
             agent_a = SimpleAgent(thread_id="thread-a", checkpointer=checkpointer)
             await agent_a.run("My favorite color is Blue.")
 

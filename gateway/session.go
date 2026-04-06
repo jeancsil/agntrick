@@ -212,10 +212,18 @@ func (eh *EventHandler) handleEvent(rawEvt interface{}) {
 		eh.handleDisconnected(evt)
 	case *events.Message:
 		go eh.handleMessage(evt)
+	case *events.UndecryptableMessage:
+		eh.logger.Warn().
+			Str("sender", evt.Info.Sender.String()).
+			Str("chat", evt.Info.Chat.String()).
+			Bool("is_from_me", evt.Info.IsFromMe).
+			Bool("unavailable", evt.IsUnavailable).
+			Str("decrypt_fail_mode", string(evt.DecryptFailMode)).
+			Msg("Received undecryptable message — session keys may be stale, consider re-scanning QR")
 	case *events.QR:
 		eh.handleQRCode(evt)
 	default:
-		eh.logger.Debug().Msg("Unhandled WhatsApp event")
+		eh.logger.Debug().Type("event_type", evt).Msg("Unhandled WhatsApp event")
 	}
 }
 

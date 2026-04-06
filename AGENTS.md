@@ -1,469 +1,268 @@
-# AGENTS.md
+# Agntrick — Agent Framework
 
-**FOR LLM AGENTS DEVELOPING THIS FRAMEWORK.** This document defines strict rules for modifying the Agntrick codebase.
-
----
-
-## PURPOSE
-
-You are an LLM agent tasked with improving, fixing, or extending the **Agntrick** codebase. This document defines how you MUST approach this work.
+**FOR LLM AGENTS DEVELOPING THIS FRAMEWORK.** Read this before making any changes.
 
 ---
 
-## STRICT BEHAVIORAL RULES
+## Quick Verification
 
-### ALWAYS Rules
-
-1. **ALWAYS** run `make check` after making any code changes.
-2. **ALWAYS** run `make test` after making any code changes.
-3. **ALWAYS** fix all linting errors before indicating completion.
-4. **ALWAYS** fix all test failures before indicating completion.
-5. **ALWAYS** maintain or improve test coverage (current: 80%).
-6. **ALWAYS** follow existing code patterns in the codebase.
-7. **ALWAYS** add tests for new functionality.
-8. **ALWAYS** update docstrings if you change function behavior.
-9. **ALWAYS** use `uv` for package management - **NO EXCEPTIONS** (not pip, not poetry, not pipenv).
-10. **ALWAYS** prefer Docker for running the framework locally (see Docker section).
-11. **ALWAYS** run commands from the correct directory (see Working Directory).
-
-### NEVER Rules
-
-1. **NEVER** skip running `make check` and `make test`.
-2. **NEVER** commit changes unless explicitly requested by the user.
-3. **NEVER** push changes without user confirmation.
-4. **NEVER** introduce new dependencies without discussion.
-5. **NEVER** delete existing tests without replacement.
-6. **NEVER** change the public API without updating all affected code.
-7. **NEVER** use synchronous code where async is expected.
-8. **NEVER** raise exceptions from tools - return error strings instead.
-9. **NEVER** edit generated files (uv.lock, etc.) directly.
-10. **NEVER** ignore deprecation warnings - fix them.
-11. **NEVER** use pip, pipenv, poetry, or any package manager other than `uv`.
-12. **NEVER** install dependencies locally when Docker can be used instead.
-13. **NEVER** add deprecated or outdated libraries as dependencies. Always verify the library is actively maintained and doesn't produce deprecation warnings.
-
-### BEFORE Rules
-
-1. **BEFORE** making changes: Read and understand the existing code.
-2. **BEFORE** claiming done: Run `make check && make test`.
-3. **BEFORE** adding features: Check if similar functionality exists.
-4. **BEFORE** refactoring: Ensure tests cover the affected code.
-
-### AFTER Rules
-
-1. **AFTER** editing code: Run `make check` immediately.
-2. **AFTER** check passes: Run `make test`.
-3. **AFTER** tests pass: Summarize what was changed and why.
-
----
-
-## WORKING DIRECTORY
-
-The project root contains all source code, tests, and configuration files. Run all commands from the project root.
+After **every** code change, run from project root:
 
 ```bash
-# Run from project root:
-make check
-make test
-make format
-make install
+make check && make test
 ```
 
----
-
-## DEVELOPMENT WORKFLOW
-
-### Step 1: UNDERSTAND
-Before making changes:
-1. Read the relevant source files
-2. Read related test files
-3. Understand the existing patterns
-4. Check CLAUDE.md for architectural context
-
-### Step 2: IMPLEMENT
-Make your changes:
-1. Follow existing code style
-2. Add type hints (this project uses strict mypy)
-3. Add/update docstrings for public functions
-4. Keep functions focused and small
-
-### Step 3: VERIFY
-After changes:
-```bash
-make check    # Linting (mypy + ruff)
-make test     # Run all tests
-```
-
-### Step 4: FIX
-If checks or tests fail:
-1. Read the error message carefully
-2. Fix the issue
-3. Re-run the failing command
-4. Repeat until all pass
+Do not claim done until both pass. Fix all lint errors and test failures first.
 
 ---
 
-## UV IS MANDATORY
+## Working with agntrick-toolkit (MCP Toolbox)
 
-**This project uses `uv` exclusively.** No other package manager is allowed.
+Agntrick works best paired with **[agntrick-toolkit](https://github.com/jeancsil/agntrick-toolbox)** — a Docker-based MCP server providing 12+ curated CLI tools (pdf, pandoc, jq, ffmpeg, ripgrep, git, etc.).
 
-### Why uv?
-- Fast dependency resolution
-- Consistent lockfile (uv.lock)
-- Built-in virtual environment management
-- Replaces pip, pip-tools, poetry, pipenv
-
-### Required Commands
+**Setup is two steps:**
 
 ```bash
-# Install dependencies
-uv sync
+# 1. Start the toolkit (one command)
+cd /path/to/agntrick-toolbox && docker-compose up -d
 
-# Add a dependency
-uv add package-name
-
-# Add a dev dependency
-uv add --dev package-name
-
-# Run a command in the virtual environment
-uv run <command>
-
-# Update lockfile
-uv lock --upgrade-package package-name
+# 2. Tell agntrick where it is
+export AGNTRICK_TOOLKIT_PATH=/path/to/agntrick-toolbox
 ```
 
-### Forbidden Commands
+That's it. The `chat` CLI and `serve` command auto-discover the toolkit via `AGNTRICK_TOOLKIT_PATH` and start the MCP subprocess. The `assistant` agent registers `toolbox` as its MCP server and gets access to all toolkit tools automatically.
+
+**Verify it's working:**
 
 ```bash
-# NEVER use these:
-pip install package-name      # WRONG
-pipenv install package-name   # WRONG
-poetry add package-name       # WRONG
-pip install -r requirements.txt  # WRONG
+curl http://localhost:8080/health   # Should return "OK"
+agntrick chat "Summarize this PDF: ./report.pdf"
 ```
 
-If you need a dependency, use `uv add`. No exceptions.
+When `AGNTRICK_TOOLKIT_PATH` is unset or the path doesn't exist, agntrick still works — agents just won't have toolbox tools available.
 
 ---
 
-## DOCKER (PREFERRED)
-
-**Docker is the preferred way to run and test the framework.** Avoid installing dependencies locally.
-
-### Why Docker?
-- Consistent environment across all machines
-- No pollution of local Python environment
-- Easy cleanup and isolation
-- Matches production deployment
-
-### Docker Commands
+## Commands Reference
 
 ```bash
-# Build the Docker image
+make check          # mypy + ruff (linting)
+make test           # pytest with coverage
+make format         # auto-format with ruff
+make install        # install dependencies (uv sync)
+make clean          # remove caches and artifacts
+
+# CLI
+agntrick list                              # list registered agents
+agntrick info developer                    # show agent details
+agntrick developer -i "input"              # run agent directly
+agntrick chat "hello"                      # local chat via test pipeline
+agntrick chat "hello" -a assistant         # chat with specific agent
+agntrick chat "hello" -v                   # verbose (debug logging)
+agntrick serve                             # start FastAPI server (WhatsApp)
+
+# Docker
 make docker-build
-
-# Run agents in Docker
-bin/agent.sh developer -i "Explain the project structure"
-bin/agent.sh chef -i "I have eggs and cheese"
-bin/agent.sh list
-
-# Run tests in Docker
 docker compose run --rm app make test
+bin/agent.sh developer -i "input"
 
-# View logs (same location as local)
-tail -f agntrick/logs/agent.log
+# Go gateway
+cd gateway && go test ./...
+cd gateway && go fmt ./...
+cd gateway && go vet ./...
+make gateway-build
+make gateway-test
 ```
-
-### Docker Benefits
-- No rebuild needed when changing Python code (mounted volumes)
-- Environment variables loaded from `.env`
-- Logs accessible from host machine
-- Uses `uv` just like local development
 
 ---
 
-## CODE STANDARDS
+## Package Manager
 
-### Type Hints
+**Use `uv` exclusively.** Never use pip, poetry, pipenv, or pip-tools.
 
-This project uses strict mypy. All functions MUST have type hints:
-
-```python
-# GOOD
-async def run(self, input_data: str, config: dict[str, Any] | None = None) -> str:
-    ...
-
-# BAD
-async def run(self, input_data, config=None):
-    ...
+```bash
+uv add package-name           # add dependency
+uv add --dev package-name     # add dev dependency
+uv sync                       # install all dependencies
+uv run <command>              # run in venv
 ```
 
-### Docstrings
+---
 
-Use Google-style docstrings:
+## Project Structure
 
-```python
-def process_data(data: list[str]) -> dict[str, int]:
-    """Process a list of strings and return counts.
+```
+src/agntrick/
+├── agent.py              # AgentBase — shared base class for all agents
+├── graph.py              # 3-node StateGraph (Router → Executor → Responder)
+├── chat_cli.py           # Local chat CLI with MCP subprocess management
+├── cli.py                # Typer CLI entry point (list, info, run, chat, serve)
+├── config.py             # YAML config loading + AgntrickConfig model
+├── constants.py          # BASE_DIR, LOGS_DIR, timeouts
+├── registry.py           # Agent discovery and @AgentRegistry.register decorator
+├── exceptions.py         # Custom exceptions
+├── logging_config.py     # Logging setup
+├── agents/               # Agent implementations
+│   ├── assistant.py      # Default generalist (orchestrates tools + agents)
+│   ├── developer.py      # Code exploration and development
+│   ├── committer.py      # Git commit automation
+│   ├── learning.py       # Educational content
+│   ├── news.py           # News aggregation
+│   ├── ollama.py         # Ollama-backed agent
+│   ├── youtube.py        # YouTube transcript extraction
+│   └── github_pr_reviewer.py  # PR review automation
+├── tools/                # Tool implementations
+│   ├── agent_invocation.py   # Invoke other agents from within an agent
+│   ├── manifest.py           # Tool manifest client with circuit breaker
+│   ├── codebase_explorer.py  # Code navigation (AST-based)
+│   ├── code_searcher.py      # ripgrep wrapper
+│   ├── syntax_validator.py   # Tree-sitter validation
+│   ├── git_command.py        # Git operations
+│   ├── youtube_transcript.py # YouTube transcript fetcher
+│   ├── youtube_cache.py      # Transcript cache
+│   └── example.py            # Tool template
+├── prompts/              # System prompts (loaded from .md files)
+│   ├── assistant.md
+│   ├── developer.md
+│   ├── committer.md
+│   ├── learning.md
+│   ├── news.md
+│   ├── ollama.md
+│   ├── youtube.md
+│   ├── github_pr_reviewer.md
+│   ├── generator.py       # Prompt generation utilities
+│   ├── loader.py          # Prompt loading from .md files
+│   └── templates/         # Jinja prompt templates
+├── api/                  # FastAPI multi-tenant server
+│   ├── server.py         # App factory (create_app)
+│   ├── routes/           # Route handlers (WhatsApp webhook, health)
+│   ├── middleware/        # Logging, error handling, auth
+│   ├── models/           # Pydantic request/response models
+│   └── database/         # DB connection and sessions
+├── whatsapp/             # WhatsApp integration
+│   ├── tenant_registry.py     # Phone-to-tenant registry
+│   ├── webhook.py             # WhatsApp webhook handlers
+│   └── session_manager.py     # Session management
+├── mcp/                  # MCP integration
+│   ├── config.py         # MCP server configurations
+│   └── provider.py       # MCP connection management
+├── services/             # Shared services
+│   ├── audio_transcriber.py      # Groq-based audio transcription
+│   └── audio_transcription_cache.py  # Transcription cache
+├── storage/              # Persistence layer
+│   ├── database.py       # SQLite database setup
+│   ├── models.py         # ORM models
+│   ├── scheduler.py      # Scheduled tasks
+│   ├── tenant_manager.py # Tenant CRUD
+│   └── repositories/     # Repository pattern implementations
+├── llm/                  # LLM provider abstraction
+│   ├── providers.py      # OpenAI, Anthropic, Ollama providers
+│   └── local_reasoning.py # Local model reasoning
+├── interfaces/           # Abstract base classes
+│   └── base.py           # Agent and Tool ABCs
+└── cron/                 # Scheduled tasks
 
-    Args:
-        data: A list of strings to process.
+gateway/                  # Go WhatsApp gateway
+├── main.go               # Entry point
+├── config.go             # YAML config parsing
+├── session.go            # WhatsApp session manager
+├── message.go            # Message handling + self-message detection
+├── http_client.go        # HTTP client for Python API
+├── qr.go                 # QR code generation
+└── go.mod
 
-    Returns:
-        A dictionary mapping each unique string to its count.
-
-    Raises:
-        ValueError: If data is empty.
-    """
+tests/                    # Test suite
+├── test_graph.py         # Graph routing/intent tests
+├── test_chat_cli.py      # Chat CLI + MCP manager tests
+├── test_agent_invocation.py
+├── test_api/             # API route tests
+├── test_mcp/             # MCP provider tests
+├── test_tools/           # Tool tests
+├── test_prompts/         # Prompt loading tests
+└── ...                   # Per-module test files
 ```
 
-### Error Handling in Tools
+---
 
-Tools MUST return error messages as strings, never raise exceptions:
+## Key Architecture Concepts
 
-```python
-# GOOD
-def invoke(self, input_str: str) -> str:
-    try:
-        result = do_something(input_str)
-        return result
-    except FileNotFoundError:
-        return f"Error: File '{input_str}' not found."
+### Intent Routing (graph.py)
 
-# BAD
-def invoke(self, input_str: str) -> str:
-    if not os.path.exists(input_str):
-        raise FileNotFoundError(f"File '{input_str}' not found")
-```
+The `assistant` agent uses a 3-node LangGraph `StateGraph`:
+- **Router** — classifies user intent (simple_chat, tool_use, research, delegate)
+- **Executor** — runs tools/sub-agents based on intent
+- **Responder** — formats the final response
 
-### Async Patterns
-
-Agent `run()` methods are async. Use `async def` and `await`:
-
-```python
-# GOOD
-async def run(self, input_data: str) -> str:
-    result = await some_async_operation()
-    return result
-
-# BAD
-async def run(self, input_data: str) -> str:
-    result = some_sync_operation()  # Blocks event loop
-    return result
-```
+Other agents use the default ReAct loop from `AgentBase`.
 
 ### Agent Registration
 
-Always use the decorator pattern:
-
 ```python
-@AgentRegistry.register("agent-name", mcp_servers=["server1"])
-class MyAgent(LangGraphMCPAgent):
-    ...
+@AgentRegistry.register("agent-name", mcp_servers=["toolbox"], tool_categories=["web"])
+class MyAgent(AgentBase):
+    @property
+    def system_prompt(self) -> str:
+        return load_prompt("agent-name")  # loads from prompts/agent-name.md
+
+    def local_tools(self) -> Sequence[Any]:
+        return [...]  # optional local tools
 ```
+
+### Tool Manifest
+
+`tools/manifest.py` discovers available tools from the toolbox MCP server with a circuit breaker for resilience. The `assistant` agent uses `tool_categories` to filter which toolbox tools it accesses.
+
+### MCP Server Manager
+
+`chat_cli.py:MCPServerManager` handles the agntrick-toolkit subprocess lifecycle. Set `AGNTRICK_TOOLKIT_PATH` to auto-start the toolkit when using `agntrick chat` or `agntrick serve`.
 
 ---
 
-## TESTING REQUIREMENTS
+## Code Standards
 
-### Test Location
-
-Tests are in `tests/`
-
-### Test Naming
-
-- Test files: `test_<module>.py`
-- Test functions: `test_<function>_<scenario>()`
-
-```python
-# GOOD
-def test_run_with_valid_input_returns_response():
-    ...
-
-def test_invoke_with_missing_file_returns_error():
-    ...
-
-# BAD
-def test_run():
-    ...
-
-def testErrorHandling():
-    ...
-```
-
-### Test Patterns
-
-Use `monkeypatch` for external dependencies:
-
-```python
-def test_web_search_returns_results(monkeypatch):
-    def mock_search(query: str) -> str:
-        return "Mocked results"
-
-    monkeypatch.setattr("module.web_search", mock_search)
-    tool = WebSearchTool()
-    result = tool.invoke("test query")
-    assert "Mocked results" in result
-```
-
-### Coverage Requirement
-
-Minimum coverage: 60% (fail under configured in pyproject.toml)
-Current coverage: 80%
-
-New code should include tests. Aim to maintain or improve coverage.
+- **Type hints required** — strict mypy. All functions must have type hints.
+- **Google-style docstrings** — for all public functions.
+- **Async everywhere** — agent `run()` methods are async. Never call blocking sync code in async context.
+- **Tools return error strings** — never raise exceptions from tools. Return `"Error: ..."` strings.
+- **Error handling** — use try/except in tools, return user-friendly error strings.
+- **Docker preferred** — avoid installing dependencies locally when Docker works.
 
 ---
 
-## PROJECT STRUCTURE
+## Testing
 
-```
-agntrick/
-├── gateway/                # Go WhatsApp gateway
-│   ├── config.go          # YAML config parsing
-│   ├── session.go        # WhatsApp session manager
-│   ├── message.go        # Message handling with self-message detection
-│   ├── http_client.go    # HTTP client for Python API communication
-│   ├── qr.go             # QR code generation
-│   └── go.mod            # Go module definition
-├── src/agntrick/
-│   ├── api/              # FastAPI server
-│   │   ├── main.py       # FastAPI application entry point
-│   │   ├── routes/       # API route handlers
-│   │   ├── middleware/   # Middleware (logging, error handling, auth)
-│   │   ├── models/       # Pydantic models for request/response
-│   │   └── database/     # Database connection and session management
-│   ├── whatsapp/         # WhatsApp integration
-│   │   ├── tenant_registry.py  # Phone-to-tenant registry
-│   │   ├── webhook.py    # WhatsApp webhook handlers
-│   │   └── session_manager.py  # Session management utilities
-│   ├── core/             # Agent implementations
-│   │   ├── langgraph_agent.py   # Base class - modify carefully
-│   │   ├── simple_agent.py
-│   │   ├── chef_agent.py
-│   │   ├── travel_agent.py
-│   │   ├── news_agent.py
-│   │   ├── developer_agent.py
-│   │   └── travel_coordinator_agent.py
-│   ├── interfaces/       # Abstract base classes
-│   │   └── base.py              # Agent and Tool ABCs
-│   ├── mcp/              # MCP integration
-│   │   ├── config.py            # Server configurations
-│   │   └── provider.py          # Connection management
-│   ├── tools/            # Tool implementations
-│   │   ├── codebase_explorer.py # Code navigation tools
-│   │   ├── code_searcher.py     # ripgrep wrapper
-│   │   ├── syntax_validator.py  # Tree-sitter validation
-│   │   ├── web_search.py
-│   │   └── example.py
-│   ├── constants.py      # BASE_DIR, LOGS_DIR, timeouts
-│   ├── registry.py       # Agent discovery and registration
-│   └── cli.py            # Typer CLI interface
-├── tests/                # Test suite
-│   ├── test_gateway/    # Go gateway tests
-│   └── test_api/        # API server tests
-├── docker-compose.yml    # Docker multi-container setup
-├── Dockerfile           # Multi-stage Docker build
-├── pyproject.toml       # Project config, dependencies
-└── uv.lock              # Lockfile (DO NOT EDIT DIRECTLY)
-```
-
-## GO TESTING
-
-When working on the Go gateway, use the following commands:
+Tests in `tests/`. Minimum coverage: 60%. Current: ~80%.
 
 ```bash
-cd gateway && go test ./...          # Run all Go tests
-cd gateway && go test -v ./...       # Verbose Go test output
-cd gateway && go fmt ./...           # Format Go code
-cd gateway && go vet ./...           # Lint Go code
+make test                       # run all tests
+uv run pytest tests/test_graph.py  # run specific file
 ```
 
-## COMMANDS REFERENCE
+**Naming:** `test_<module>.py` files, `test_<function>_<scenario>()` functions.
 
-```bash
-# From project root:
-make check          # Run mypy + ruff (linting)
-make test           # Run pytest with coverage
-make format         # Auto-format with ruff
-make install        # Install dependencies
-make clean          # Remove caches and artifacts
-
-# Run the CLI:
-agntrick list
-agntrick info developer
-agntrick developer -i "input"
-
-# Start FastAPI server (multi-tenant WhatsApp support):
-agntrick serve
-
-# Gateway-specific commands:
-make gateway-build   # Build Go gateway
-make gateway-test   # Test Go gateway
-```
+**Mocking:** Use `monkeypatch` for external dependencies. Use `TestClient` for API routes.
 
 ---
 
-## GIT HOOKS
-
-This project has a pre-push hook that runs `make check`.
-
-If the hook fails:
-1. Run `make -C .. check` to see errors
-2. Fix all errors
-3. Try pushing again
-
----
-
-## COMMANDS REFERENCE
-
-```bash
-# From project root:
-make check      # Run mypy + ruff (linting)
-make test       # Run pytest with coverage
-make format     # Auto-format with ruff
-make install    # Install dependencies
-make clean      # Remove caches and artifacts
-
-# Run the CLI:
-agntrick list
-agntrick info developer
-agntrick developer -i "input"
-
-# Start FastAPI server (multi-tenant WhatsApp support):
-agntrick serve
-```
-
----
-
-## COMMON TASKS
+## Common Tasks
 
 ### Adding a New Agent
 
-1. Create file in `src/agntrick/agents/my_agent.py`
-2. Subclass `AgentBase` (alias for `LangGraphMCPAgent`)
-3. Add `@AgentRegistry.register()` decorator
-4. Define `system_prompt` property
-5. Override `local_tools()` if needed
-6. Add tests in `tests/test_my_agent.py`
-7. Run `make check && make test`
+1. Create `src/agntrick/agents/my_agent.py`
+2. Subclass `AgentBase`, add `@AgentRegistry.register()` decorator
+3. Define `system_prompt` property (load from `prompts/my_agent.md`)
+4. Override `local_tools()` if needed
+5. Add tests in `tests/test_my_agent.py`
+6. Run `make check && make test`
 
 ### Adding a New Tool
 
-1. Create file in `src/agntrick/tools/my_tool.py`
+1. Create `src/agntrick/tools/my_tool.py`
 2. Subclass `Tool` from `interfaces.base`
 3. Implement `name`, `description`, `invoke()`
 4. Export from `tools/__init__.py`
 5. Add tests in `tests/test_my_tool.py`
 6. Run `make check && make test`
-
-### Adding a New MCP Server
-
-1. Add configuration in `mcp/config.py`
-2. Update `DEFAULT_MCP_SERVERS` dict
-3. Document API key requirements if any
-4. Test connection manually
-5. Update relevant agent registrations
 
 ### Fixing a Bug
 
@@ -471,66 +270,40 @@ agntrick serve
 2. Run `make test` to confirm failure
 3. Fix the code
 4. Run `make check && make test`
-5. Confirm test now passes
 
 ---
 
-## DEPENDENCIES
+## Behavioral Rules
 
-### Adding Dependencies
-
-```bash
-uv add package-name
-```
-
-### Adding Dev Dependencies
-
-```bash
-uv add --dev package-name
-```
-
-### Updating Dependencies
-
-```bash
-uv lock --upgrade-package package-name
-```
+- **Always** run `make check && make test` after changes
+- **Never** commit unless explicitly requested
+- **Never** push without confirmation
+- **Never** introduce dependencies without discussion
+- **Never** use pip/poetry/pipenv — only `uv`
+- **Before** adding features, check if similar functionality exists
+- **Before** refactoring, ensure tests cover affected code
 
 ---
 
-## FINAL CHECKLIST
+## Environment
 
-Before saying a task is complete:
+Copy `.env.example` to `.env` and fill in:
 
-- [ ] Code follows project style
-- [ ] Type hints are complete
-- [ ] Docstrings are updated
-- [ ] `make check` passes with no errors
-- [ ] `make test` passes with no failures
-- [ ] Coverage maintained or improved
-- [ ] No new warnings introduced
-- [ ] README.md is updated if public API or agents/tools changed
-
-## KEEPING README.md IN SYNC
-
-**README.md must stay in sync with framework changes.**
-
-Update README.md when you:
-- Add a new agent (add to Available Agents table)
-- Add a new tool (add to Available Tools table)
-- Add a new MCP server (add to Available MCP Servers table)
-- Change public API (update Architecture section if needed)
-- Modify agent capabilities (update agent descriptions)
-
-**Do NOT:**
-- Leave outdated information in README.md
-- Document features that no longer exist
-- Skip updating relevant sections
+- `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (required)
+- `OPENAI_BASE_URL` (optional — for OpenRouter, Ollama, LM Studio, z.ai)
+- `OPENAI_MODEL_NAME` / `ANTHROPIC_MODEL_NAME` (optional)
+- `AGNTRICK_TOOLKIT_PATH` (optional — path to agntrick-toolbox for MCP tools)
+- `GITHUB_TOKEN` (optional — for PR reviewer agent)
+- `GROQ_AUDIO_API_KEY` (optional — for audio transcription)
 
 ---
 
-## WHEN IN DOUBT
+## Git Hooks
 
-1. Read existing code for patterns
-2. Run `make check` early and often
-3. Ask the user for clarification
-4. Don't guess - verify
+Pre-push hook runs `make check`. If it fails, fix errors and try again.
+
+---
+
+## Keeping README.md in Sync
+
+Update README.md when you add/remove agents, tools, MCP servers, or change the public API.
