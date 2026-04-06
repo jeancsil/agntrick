@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Union
+from typing import Any, Union
 
 from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Default maximum response size in characters (~5K tokens).
 # Enough for useful content without bloating the LLM context window.
-DEFAULT_MAX_RESPONSE_SIZE = 20_000
+DEFAULT_MAX_RESPONSE_SIZE = 5_000
 
 # The result type from the handler chain.  We only intercept
 # ``CallToolResult`` (the raw MCP response).  ``ToolMessage`` and
@@ -78,57 +78,49 @@ class ResponseTruncator:
         if not isinstance(result, CallToolResult):
             return result
 
+        # Log ALL tool responses (not just oversized) for observability
+        text_blocks = [c for c in result.content if isinstance(c, TextContent)]
+        total_chars = sum(len(b.text) for b in text_blocks)
+        logger.info(f"Tool '{request.name}' response: {total_chars} chars, isError={result.isError}")
+
         return self._truncate(result)
 
     def _truncate(self, result: CallToolResult) -> CallToolResult:
-        """Truncate text content in a CallToolResult if it exceeds the limit."""
-        # Calculate total text content size
+        """Truncate text content with smart boundary detection.
+
+        Finds the last paragraph break (``\\n\\n``), sentence end (``. ``),
+        or newline before the limit. Falls back to hard cut at limit.
+        """
         text_blocks = [c for c in result.content if isinstance(c, TextContent)]
         total_chars = sum(len(b.text) for b in text_blocks)
 
         if total_chars <= self.max_response_size:
             return result
 
-        # Truncate: distribute budget across text blocks proportionally
-        original_total = total_chars
-        budget = self.max_response_size
-        new_content: list[object] = []
-
+        new_content: list[Any] = []
         for block in result.content:
-            if isinstance(block, TextContent):
-                # Proportional share of budget
-                block_budget = int(budget * len(block.text) / total_chars)
-                if block_budget > 0 and len(block.text) > block_budget:
-                    truncated_text = block.text[:block_budget]
-                    new_content.append(TextContent(type="text", text=truncated_text))
-                else:
-                    new_content.append(block)
-            else:
-                # Non-text content passes through unchanged
+            if not isinstance(block, TextContent):
                 new_content.append(block)
+                continue
 
-        # Add truncation notice to last text block
-        notice = (
-            f"\n\n[Response truncated at {self.max_response_size:,} chars. Original size: {original_total:,} chars]"
-        )
-        for i in range(len(new_content) - 1, -1, -1):
-            if isinstance(new_content[i], TextContent):
-                existing = new_content[i]
-                assert isinstance(existing, TextContent)
-                new_content[i] = TextContent(
-                    type="text",
-                    text=existing.text + notice,
-                )
-                break
+            if len(block.text) <= self.max_response_size:
+                new_content.append(block)
+                continue
 
-        new_total = sum(len(c.text) for c in new_content if isinstance(c, TextContent))
-        logger.info(
-            "Truncated tool response: %d -> %d chars",
-            original_total,
-            new_total,
-        )
+            truncated = block.text[: self.max_response_size]
+            # Find a clean boundary in the second half of the allowed text
+            boundary = max(
+                truncated.rfind("\n\n"),
+                truncated.rfind(". "),
+                truncated.rfind("\n"),
+            )
+            if boundary > self.max_response_size // 2:
+                truncated = truncated[: boundary + 1]
+
+            truncated += f"\n\n[...truncated from {len(block.text):,} chars]"
+            new_content.append(TextContent(type="text", text=truncated))
 
         return CallToolResult(
-            content=new_content,  # type: ignore[arg-type]
+            content=new_content,
             isError=result.isError,
         )

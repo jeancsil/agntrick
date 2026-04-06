@@ -12,12 +12,12 @@ In the WhatsApp integration, the `sender_id` (phone number) is used as the `thre
 
 Persistence is enabled by providing a `checkpointer` to the `AgentBase` class.
 
-### 1. Centralized Storage (`agntrick-storage`)
+### 1. Centralized Storage (`agntrick.storage`)
 
-The `agntrick-storage` package provides a centralized way to manage the SQLite database and checkpointers.
+The `agntrick.storage` module provides a centralized way to manage the SQLite database and checkpointers.
 
 ```python
-from agntrick_storage.database import Database
+from agntrick.storage.database import Database
 from agntrick.agent import AgentBase
 
 # Initialize database
@@ -37,11 +37,11 @@ When a user sends a message, their conversation history is loaded from the datab
 
 ## Development and Testing
 
-To test persistence locally, you can use the integration tests provided in `packages/agntrick-storage/tests/test_persistence_integration.py`.
+To test persistence locally, you can use the integration tests provided in `tests/storage/test_persistence_integration.py`.
 
 ### Requirements
 
-Persistence requires the `langgraph-checkpoint-sqlite` package, which is included in the `agntrick-storage` dependencies.
+Persistence requires the `langgraph-checkpoint-sqlite` package, which is included in the project dependencies.
 
 ```bash
 pip install langgraph-checkpoint-sqlite

@@ -33,14 +33,14 @@ Connect multiple WhatsApp numbers, deploy AI agents, and scale effortlessly.
 
 - **5-line agents**: Create custom agents with `@AgentRegistry.register` decorator
 - **MCP native**: Model Context Protocol servers for live data access
-- **Docker-first**: Isolated, consistent environments from dev to production
+- **Flexible deployment**: Docker or bare metal (ideal for resource-constrained servers)
 - **Type-safe**: Full type hints with strict mypy checking
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker
 
 ```bash
 # Clone the repository
@@ -54,7 +54,7 @@ docker compose up -d
 tail -f logs/whatsapp.log
 ```
 
-### Option 2: Local Development
+### Option 2: Bare Metal (Local Development)
 
 **Requirements:**
 - Go 1.21+
@@ -356,9 +356,11 @@ tail -f logs/whatsapp.log
 
 ---
 
-## 🐳 Docker Deployment
+## 🐳 Deployment Options
 
-### Build and Run
+### Option 1: Docker
+
+Best for development environments and teams wanting consistent, isolated deployments.
 
 ```bash
 # Build the image
@@ -374,12 +376,35 @@ docker compose logs -f
 docker compose down
 ```
 
-### Docker Benefits
+**Docker Benefits:**
 
 - **Memory efficient**: Limited to 512MB
 - **Health checks**: Built-in monitoring endpoints
 - **Isolated environment**: Consistent across deployments
 - **Multi-stage build**: Optimized Go gateway + Python API
+
+### Option 2: Bare Metal
+
+Best for low-memory VPS (recommended for production on resource-constrained servers like Digital Ocean droplets).
+
+```bash
+# Install dependencies
+uv sync
+make gateway-build
+
+# Start Python API
+agntrick serve
+
+# In another terminal, start Go gateway
+cd gateway && go run .
+```
+
+**Bare Metal Benefits:**
+
+- **Lower memory footprint**: No Docker overhead (~100-200MB saved)
+- **Direct process management**: Fine-grained control with systemd or supervisord
+- **Faster startup**: No container initialization
+- **Easier debugging**: Direct access to logs and processes
 
 ---
 
