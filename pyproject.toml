@@ -1,6 +1,6 @@
 [project]
 name = "agntrick"
-version = "1.0.0-alpha"
+version = "1.0.0-beta"
 description = "Agntrick: An AI agent framework for building AI-powered applications"
 readme = "README.md"
 license = "MIT"
