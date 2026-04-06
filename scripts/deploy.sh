@@ -112,12 +112,12 @@ start_all() {
     TOOLKIT_PID=$!
     disown $TOOLKIT_PID
 
-    # Wait for toolbox health
+    # Wait for toolbox SSE endpoint
     for i in $(seq 1 15); do
-        curl -sf "http://127.0.0.1:8080/health" > /dev/null 2>&1 && break
+        curl -sf "http://127.0.0.1:8080/sse" -o /dev/null 2>&1 && break
         sleep 1
     done
-    if curl -sf "http://127.0.0.1:8080/health" > /dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:8080/sse" -o /dev/null 2>&1; then
         echo "Toolbox ready (PID $TOOLKIT_PID)"
     else
         echo "WARNING: Toolbox not responding after 15s"
