@@ -52,9 +52,20 @@ save_pids() {
 
 stop_all() {
     read_pids
-    if is_running "${API_PID:-}";  then kill "$API_PID"  2>/dev/null && echo "Stopped API (PID $API_PID)";      fi
-    if is_running "${GW_PID:-}";   then kill "$GW_PID"   2>/dev/null && echo "Stopped Gateway (PID $GW_PID)";   fi
-    if is_running "${TOOLKIT_PID:-}"; then kill "$TOOLKIT_PID" 2>/dev/null && echo "Stopped Toolbox (PID $TOOLKIT_PID)"; fi
+
+    # Kill by PID file first
+    if is_running "${API_PID:-}";     then kill "$API_PID"      2>/dev/null && echo "Stopped API (PID $API_PID)";      fi
+    if is_running "${GW_PID:-}";      then kill "$GW_PID"       2>/dev/null && echo "Stopped Gateway (PID $GW_PID)";   fi
+    if is_running "${TOOLKIT_PID:-}"; then kill "$TOOLKIT_PID"  2>/dev/null && echo "Stopped Toolbox (PID $TOOLKIT_PID)"; fi
+
+    # Kill any orphaned processes (started outside this script)
+    pkill -f "agntrick-gateway"        2>/dev/null && echo "Stopped orphaned gateway"
+    pkill -f "agntrick serve"          2>/dev/null && echo "Stopped orphaned API"
+    pkill -f "toolbox-server"          2>/dev/null && echo "Stopped orphaned toolbox"
+
+    # Wait for ports to free up
+    sleep 1
+
     rm -f "$PID_FILE" "$TOOLKIT_PID_FILE"
 }
 
