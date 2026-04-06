@@ -1,5 +1,6 @@
 """Tests for the 3-node assistant StateGraph."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,6 +9,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from agntrick.graph import (
     AgentState,
     _parse_router_response,
+    executor_node,
     route_decision,
 )
 
@@ -486,8 +488,9 @@ class TestGraphIntegration:
 
         # run_shell should NOT be in the filtered tools
         assert "run_shell" not in tool_names, f"run_shell should be filtered out, got: {tool_names}"
+        # For tool_use, only the router-selected tool should be available
         assert "web_search" in tool_names
-        assert "web_fetch" in tool_names
+        assert "web_fetch" not in tool_names, f"Only the router-selected tool should be available, got: {tool_names}"
 
     @pytest.mark.asyncio
     async def test_chat_intent_receives_full_conversation_history(self) -> None:
@@ -664,5 +667,260 @@ class TestSanitizeToolArtifacts:
             assert isinstance(returned_msg, AIMessage)
             assert "<web_search" not in str(returned_msg.content)
             assert "I will search." in str(returned_msg.content)
+        finally:
+            graph_mod.create_agent = original_create
+
+
+class TestFlattenToolContent:
+    """Tests for _flatten_tool_content — the fix for MCP structured content.
+
+    MCP tools return [{"type": "text", "text": "..."}] content blocks.
+    GLM-5.1 sees these dict wrappers as opaque and responds "can't access results".
+    _flatten_tool_content must extract the plain text so the LLM can use it.
+    """
+
+    def test_single_text_block(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        mcp_content = [{"type": "text", "text": "Globo news headline: Brazil wins Copa America"}]
+        result = _flatten_tool_content(mcp_content)
+        assert result == "Globo news headline: Brazil wins Copa America"
+        # Must NOT contain dict wrappers
+        assert '{"type"' not in result
+        assert "'type'" not in result
+
+    def test_multiple_text_blocks(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        mcp_content = [
+            {"type": "text", "text": "Headline 1: Rain expected"},
+            {"type": "text", "text": "Headline 2: Markets rally"},
+        ]
+        result = _flatten_tool_content(mcp_content)
+        assert "Headline 1: Rain expected" in result
+        assert "Headline 2: Markets rally" in result
+        assert "\n" in result  # joined by newline
+
+    def test_mixed_blocks_extracts_only_text(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        mcp_content = [
+            {"type": "text", "text": "Search result data"},
+            {"type": "image", "url": "https://example.com/img.png"},
+        ]
+        result = _flatten_tool_content(mcp_content)
+        assert result == "Search result data"
+
+    def test_plain_string_passes_through(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        assert _flatten_tool_content("simple string") == "simple string"
+
+    def test_empty_list_returns_string_repr(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        result = _flatten_tool_content([])
+        assert isinstance(result, str)
+
+    def test_string_elements_in_list(self) -> None:
+        from agntrick.graph import _flatten_tool_content
+
+        result = _flatten_tool_content(["line one", "line two"])
+        assert result == "line one\nline two"
+
+    def test_real_mcp_web_search_response(self) -> None:
+        """Simulate actual MCP web_search response structure."""
+        from agntrick.graph import _flatten_tool_content
+
+        mcp_content = [
+            {
+                "type": "text",
+                "text": "## Search Results\n1. Globo - Top News\n2. BBC - World Update\n3. CNN - Breaking Story",
+            }
+        ]
+        result = _flatten_tool_content(mcp_content)
+        assert "Globo - Top News" in result
+        assert "## Search Results" in result
+        assert isinstance(result, str)
+        # CRITICAL: no dict wrappers visible — GLM-5.1 must see plain text
+        assert "type" not in result[:20]  # "type" key must not appear at start
+
+
+class TestMakeFlatTool:
+    """Tests for _make_flat_tool — wraps MCP tools to return plain strings.
+
+    Verifies the wrapper correctly flattens structured MCP content so that
+    when the sub-agent calls a tool, it receives a plain string ToolMessage
+    instead of [{"type": "text", "text": "..."}].
+    """
+
+    def _make_mcp_tool(self, name: str, return_value: Any) -> MagicMock:
+        """Create a mock MCP tool that returns structured content."""
+        from pydantic import BaseModel
+
+        class FakeInput(BaseModel):
+            query: str
+
+        tool = MagicMock(spec=["name", "description", "ainvoke", "args_schema"])
+        tool.name = name
+        tool.description = f"Mock {name} tool"
+        tool.args_schema = FakeInput
+        tool.ainvoke = AsyncMock(return_value=return_value)
+        return tool
+
+    @pytest.mark.asyncio
+    async def test_wraps_mcp_tool_flattens_content(self) -> None:
+        """Wrapped tool should return plain string, not structured blocks."""
+        from agntrick.graph import _make_flat_tool
+
+        mcp_tool = self._make_mcp_tool(
+            "web_search",
+            [{"type": "text", "text": "Breaking: Earthquake hits Tokyo"}],
+        )
+
+        flat_tool = _make_flat_tool(mcp_tool)
+        result = await flat_tool.ainvoke({"query": "tokyo earthquake"})
+
+        assert isinstance(result, str)
+        assert "Breaking: Earthquake hits Tokyo" in result
+        assert '{"type"' not in result
+
+    @pytest.mark.asyncio
+    async def test_wrapped_tool_preserves_name_and_description(self) -> None:
+        """Wrapped tool must keep same name and description."""
+        from agntrick.graph import _make_flat_tool
+
+        mcp_tool = self._make_mcp_tool("web_fetch", [{"type": "text", "text": "page content"}])
+        flat_tool = _make_flat_tool(mcp_tool)
+
+        assert flat_tool.name == "web_fetch"
+        assert flat_tool.description == "Mock web_fetch tool"
+
+    def test_skips_mock_tools_without_schema(self) -> None:
+        """Tools without args_schema should pass through unchanged."""
+        from agntrick.graph import _make_flat_tool
+
+        bare_tool = MagicMock(spec=["name"])
+        bare_tool.name = "fake"
+        # No args_schema attribute
+
+        result = _make_flat_tool(bare_tool)
+        assert result is bare_tool
+
+    @pytest.mark.asyncio
+    async def test_executor_flattens_tools_before_sub_agent(self) -> None:
+        """Executor node should flatten MCP tools before passing to sub-agent.
+
+        This is the integration test: verify that when executor_node processes
+        MCP tools with structured content, the sub-agent receives flat strings.
+        """
+        from pydantic import BaseModel
+
+        import agntrick.graph as graph_mod
+
+        class SearchInput(BaseModel):
+            query: str
+
+        # Create an MCP tool that returns structured content
+        mcp_tool = MagicMock(spec=["name", "description", "ainvoke", "args_schema"])
+        mcp_tool.name = "web_search"
+        mcp_tool.description = "Search the web"
+        mcp_tool.args_schema = SearchInput
+        # This is what MCP returns — structured blocks
+        mcp_tool.ainvoke = AsyncMock(return_value=[{"type": "text", "text": "## Results\n1. Globo news\n2. BBC world"}])
+
+        # Capture what tools the sub-agent receives
+        tools_received: list[Any] = []
+        original_create = graph_mod.create_agent
+
+        def capture_create(*args: Any, **kwargs: Any) -> Any:
+            tools_received.extend(kwargs.get("tools", []))
+            mock_sub = MagicMock()
+            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Here are the news results.")]})
+            return mock_sub
+
+        graph_mod.create_agent = capture_create
+        try:
+            state: AgentState = {
+                "messages": [HumanMessage(content="What's the news?")],
+                "intent": "tool_use",
+                "tool_plan": "web_search",
+                "progress": [],
+                "final_response": None,
+            }
+            await executor_node(
+                state,
+                MagicMock(),
+                model=AsyncMock(),
+                tools=[mcp_tool],
+                system_prompt="test",
+            )
+
+            # The sub-agent should have received exactly one tool
+            assert len(tools_received) == 1, f"Expected 1 tool, got {len(tools_received)}"
+
+            # Verify the wrapped tool returns flat string, not structured blocks
+            wrapped_tool = tools_received[0]
+            result = await wrapped_tool.ainvoke({"query": "news"})
+            assert isinstance(result, str), f"Expected str, got {type(result)}: {result}"
+            assert "Globo news" in result
+            assert '{"type"' not in result
+        finally:
+            graph_mod.create_agent = original_create
+
+    @pytest.mark.asyncio
+    async def test_tool_use_intent_gets_single_tool(self) -> None:
+        """For tool_use intent, only the router-selected tool should be available.
+
+        This prevents the secondary issue: LLM calling web_search twice then
+        trying web_fetch. With only one tool available, it must call once and respond.
+        """
+        from pydantic import BaseModel
+
+        import agntrick.graph as graph_mod
+
+        class FakeInput(BaseModel):
+            query: str
+
+        def make_tool(name: str) -> MagicMock:
+            t = MagicMock(spec=["name", "description", "ainvoke", "args_schema"])
+            t.name = name
+            t.description = f"Mock {name}"
+            t.args_schema = FakeInput
+            t.ainvoke = AsyncMock(return_value=[{"type": "text", "text": f"{name} result"}])
+            return t
+
+        all_tools = [make_tool("web_search"), make_tool("web_fetch"), make_tool("curl_fetch")]
+
+        tools_received: list[Any] = []
+        original_create = graph_mod.create_agent
+
+        def capture_create(*args: Any, **kwargs: Any) -> Any:
+            tools_received.extend(kwargs.get("tools", []))
+            mock_sub = MagicMock()
+            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Results")]})
+            return mock_sub
+
+        graph_mod.create_agent = capture_create
+        try:
+            state: AgentState = {
+                "messages": [HumanMessage(content="What's the news?")],
+                "intent": "tool_use",
+                "tool_plan": "web_search",
+                "progress": [],
+                "final_response": None,
+            }
+            await executor_node(
+                state,
+                MagicMock(),
+                model=AsyncMock(),
+                tools=all_tools,
+                system_prompt="test",
+            )
+
+            tool_names = [getattr(t, "name", "?") for t in tools_received]
+            assert tool_names == ["web_search"], (
+                f"Expected only ['web_search'], got {tool_names} — tool_use should narrow to router-selected tool"
+            )
         finally:
             graph_mod.create_agent = original_create

@@ -248,6 +248,63 @@ _INTENT_TOOLS: dict[str, set[str]] = {
 }
 
 
+def _flatten_tool_content(content: Any) -> str:
+    """Flatten structured MCP content to a plain string.
+
+    MCP tools return ``[{"type": "text", "text": "..."}]`` content blocks.
+    Models like GLM-5.1 don't parse this format — they see the dict wrappers
+    as opaque and respond "can't access results". This extracts the plain text.
+    """
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts) if parts else str(content)
+    return str(content)
+
+
+def _make_flat_tool(tool: Any) -> Any:
+    """Wrap an MCP tool so ``ainvoke`` returns plain strings.
+
+    MCP tools return ``[{"type": "text", "text": "..."}]`` content blocks.
+    Models like GLM-5.1 don't parse this — they see the dict wrappers as opaque.
+    This creates a new StructuredTool with the same schema but plain-string output.
+    """
+    from langchain_core.tools import StructuredTool
+    from pydantic import BaseModel
+
+    # Skip wrapping for mock/fake tools (tests) or tools without real attributes
+    if not hasattr(tool, "name") or not isinstance(tool.name, str):
+        return tool
+    schema = getattr(tool, "args_schema", None)
+    if schema is None or not ((isinstance(schema, type) and issubclass(schema, BaseModel)) or isinstance(schema, dict)):
+        return tool
+
+    original_ainvoke = tool.ainvoke
+    flatten = _flatten_tool_content
+
+    async def _coro(**kwargs: Any) -> str:
+        result = await original_ainvoke(kwargs)
+        return flatten(result)
+
+    st_kwargs: dict[str, Any] = {
+        "name": tool.name,
+        "description": tool.description if isinstance(tool.description, str) else "",
+        "func": lambda *a, **kw: "sync-only-stub",
+        "coroutine": _coro,
+    }
+    schema = getattr(tool, "args_schema", None)
+    if schema is not None and (
+        (isinstance(schema, type) and issubclass(schema, BaseModel)) or isinstance(schema, dict)
+    ):
+        st_kwargs["args_schema"] = schema
+
+    return StructuredTool(**st_kwargs)
+
+
 def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
     """Filter tools based on intent to reduce model confusion.
 
@@ -318,20 +375,13 @@ async def executor_node(
 ## TOOL USE — CALL ONCE AND RESPOND
 
 The router determined this query needs: {tool_plan}
+You have ONE tool available: {tool_plan}. Call it once, then respond to the user.
 
-EXECUTE EXACTLY THESE STEPS:
-1. Call the tool: {tool_plan}
-2. Read the tool's response
-3. Ask yourself: "Does this data answer the user's question?"
-   - YES → Respond to the user now. STOP.
-   - PARTIAL → You may try ONE more targeted tool to fill the gap, then respond
-   - ERROR/EMPTY → Try ONE alternative tool, then respond with whatever you have
-
-MANDATORY RULES:
-- Maximum 2 tool calls total
-- After each tool call, evaluate if you can answer the user's question — if yes, STOP
-- NEVER call more tools just to get "better" data — respond with what you have
-- NEVER say "unable to retrieve" if ANY tool returned data
+RULES:
+- Call {tool_plan} exactly once
+- If it returns ANY data → respond to the user with that data. STOP.
+- If it returns an error → respond explaining the issue. STOP.
+- NEVER say "unable to retrieve" if the tool returned data
 """
     elif tool_plan and intent == "research":
         guided_prompt += f"""
@@ -360,10 +410,26 @@ Do NOT use any other tools. Just invoke the agent and return its result.
     elif tool_plan:
         guided_prompt += f"\n\n## TASK PLAN\n{tool_plan}"
 
-    filtered_tools = _filter_tools(tools, intent)
+    # For tool_use, narrow tools to only the one the router selected.
+    # Giving the LLM 5 tools causes it to waste calls on irrelevant ones
+    # (e.g. calling web_fetch after web_search instead of responding).
+    if intent == "tool_use" and tool_plan and tool_plan in {getattr(t, "name", "") for t in tools}:
+        filtered_tools = [t for t in tools if getattr(t, "name", "") == tool_plan]
+    else:
+        filtered_tools = _filter_tools(tools, intent)
+
     tool_limit = _INTENT_TOOL_LIMITS.get(intent, _DEFAULT_TOOL_LIMIT)
     tool_names = [getattr(t, "name", "?") for t in filtered_tools]
     logger.info(f"[executor] intent={intent} tool_limit={tool_limit} filtered_tools={tool_names}")
+
+    # Flatten MCP tool output to plain strings. MCP tools return structured
+    # content blocks ([{"type": "text", "text": "..."}]) but GLM-5.1 and
+    # similar models don't parse this — they see the dict wrappers as opaque
+    # and respond "can't access results" despite having good data.
+    # Wrap tools to return plain strings instead of structured MCP content
+    # blocks. GLM-5.1 and similar models treat [{"type":"text","text":"..."}]
+    # as opaque, causing "can't access results" errors.
+    filtered_tools = [_make_flat_tool(t) for t in filtered_tools]
 
     sub_agent = create_agent(
         model=model,
