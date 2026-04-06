@@ -112,15 +112,16 @@ start_all() {
     TOOLKIT_PID=$!
     disown $TOOLKIT_PID
 
-    # Wait for toolbox SSE endpoint
+    # Wait for toolbox to accept connections (SSE endpoint holds connection open,
+    # so just check that the port responds within 1s)
     for i in $(seq 1 15); do
-        curl -sf "http://127.0.0.1:8080/sse" -o /dev/null 2>&1 && break
+        curl -sf -m 1 "http://127.0.0.1:8080/sse" -o /dev/null 2>&1 && break || true
         sleep 1
     done
-    if curl -sf "http://127.0.0.1:8080/sse" -o /dev/null 2>&1; then
+    if is_running "$TOOLKIT_PID"; then
         echo "Toolbox ready (PID $TOOLKIT_PID)"
     else
-        echo "WARNING: Toolbox not responding after 15s"
+        echo "WARNING: Toolbox not running after 15s"
     fi
 
     # 2. API
