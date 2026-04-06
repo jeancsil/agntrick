@@ -52,19 +52,26 @@ save_pids() {
 
 stop_all() {
     read_pids
+    local stopped=0
+
+    echo "Stopping services..."
 
     # Kill by PID file first
-    if is_running "${API_PID:-}";     then kill "$API_PID"      2>/dev/null && echo "Stopped API (PID $API_PID)";      fi
-    if is_running "${GW_PID:-}";      then kill "$GW_PID"       2>/dev/null && echo "Stopped Gateway (PID $GW_PID)";   fi
-    if is_running "${TOOLKIT_PID:-}"; then kill "$TOOLKIT_PID"  2>/dev/null && echo "Stopped Toolbox (PID $TOOLKIT_PID)"; fi
+    if is_running "${API_PID:-}";     then kill "$API_PID"      2>/dev/null && echo "  API     (PID $API_PID) stopped"; stopped=1; fi
+    if is_running "${GW_PID:-}";      then kill "$GW_PID"       2>/dev/null && echo "  Gateway (PID $GW_PID) stopped"; stopped=1; fi
+    if is_running "${TOOLKIT_PID:-}"; then kill "$TOOLKIT_PID"  2>/dev/null && echo "  Toolbox (PID $TOOLKIT_PID) stopped"; stopped=1; fi
 
     # Kill any orphaned processes (started outside this script)
-    pkill -f "agntrick-gateway"        2>/dev/null && echo "Stopped orphaned gateway"
-    pkill -f "agntrick serve"          2>/dev/null && echo "Stopped orphaned API"
-    pkill -f "toolbox-server"          2>/dev/null && echo "Stopped orphaned toolbox"
+    if pkill -f "agntrick-gateway"   2>/dev/null; then echo "  Gateway (orphaned) stopped"; stopped=1; fi
+    if pkill -f "agntrick serve"     2>/dev/null; then echo "  API     (orphaned) stopped"; stopped=1; fi
+    if pkill -f "toolbox-server"     2>/dev/null; then echo "  Toolbox (orphaned) stopped"; stopped=1; fi
 
     # Wait for ports to free up
     sleep 1
+
+    if [ "$stopped" -eq 0 ]; then
+        echo "  (nothing was running)"
+    fi
 
     rm -f "$PID_FILE" "$TOOLKIT_PID_FILE"
 }
