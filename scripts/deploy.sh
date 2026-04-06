@@ -152,10 +152,11 @@ show_status() {
 case "${1:-}" in
     status)  show_status ;;
     stop)    stop_all ;;
+    start)   start_all ;;
     restart) stop_all; sleep 1; start_all ;;
     logs)    tail -f "$TOOLKIT_LOG" "$API_LOG" "$GATEWAY_LOG" ;;
     pull)    pull ;;
     build)   build ;;
     '')      stop_all; pull; build; start_all ;;
-    *)       echo "Usage: $0 [stop|restart|status|logs|pull|build]" ;;
+    *)       echo "Usage: $0 [start|stop|restart|status|logs|pull|build]" ;;
 esac
