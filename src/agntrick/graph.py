@@ -83,22 +83,12 @@ async def _log_llm_call(
     """Wrap model.ainvoke() with timing and size logging."""
     input_msgs = len(messages)
     input_chars = sum(len(str(m.content)) for m in messages if hasattr(m, "content"))
-    logger.debug(
-        "[llm] node=%s input_msgs=%s input_chars=%d",
-        node,
-        input_msgs,
-        input_chars,
-    )
+    logger.debug(f"[llm] node={node} input_msgs={input_msgs} input_chars={input_chars}")
     start = time.monotonic()
     response = await model.ainvoke(messages)
     elapsed = time.monotonic() - start
     output_chars = len(str(response.content)) if hasattr(response, "content") else 0
-    logger.info(
-        "[llm] node=%s output_chars=%d elapsed=%.1fs",
-        node,
-        output_chars,
-        elapsed,
-    )
+    logger.info(f"[llm] node={node} output_chars={output_chars} elapsed={elapsed:.1f}s")
     return response
 
 
@@ -372,12 +362,8 @@ Do NOT use any other tools. Just invoke the agent and return its result.
 
     filtered_tools = _filter_tools(tools, intent)
     tool_limit = _INTENT_TOOL_LIMITS.get(intent, _DEFAULT_TOOL_LIMIT)
-    logger.info(
-        "[executor] intent=%s tool_limit=%d filtered_tools=%s",
-        intent,
-        tool_limit,
-        [getattr(t, "name", "?") for t in filtered_tools],
-    )
+    tool_names = [getattr(t, "name", "?") for t in filtered_tools]
+    logger.info(f"[executor] intent={intent} tool_limit={tool_limit} filtered_tools={tool_names}")
 
     sub_agent = create_agent(
         model=model,
