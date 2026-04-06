@@ -26,6 +26,9 @@ ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 # Maximum chars of message content to send to the LLM to avoid 400 errors
 _MAX_MESSAGE_CHARS = 15_000
 
+# Number of recent messages the router sees for context (follow-up understanding)
+_ROUTER_CONTEXT_WINDOW = 5
+
 
 def _truncate_messages(
     messages: list[BaseMessage],
@@ -204,15 +207,21 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
 
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
+    # Send a sliding window of recent messages so the router can understand
+    # follow-up questions (e.g. "yes", "and in Paris?") that need context.
+    context_window = state["messages"][-_ROUTER_CONTEXT_WINDOW:]
     last_message = state["messages"][-1]
     query_preview = str(last_message.content)[:200]
-    logger.info(f"[router] input: {query_preview}")
+    logger.info(
+        "[router] input: %d messages in window, last: %s",
+        len(context_window),
+        query_preview,
+    )
 
-    # Only send the last message to the router — it just needs the query
     response = await model.ainvoke(
         [
             SystemMessage(content=ROUTER_PROMPT),
-            last_message,
+            *context_window,
         ],
     )
     parsed = _parse_router_response(response.content)
@@ -336,7 +345,12 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     a valid message sequence (SystemMessage + at least one HumanMessage).
     """
     if state.get("intent") == "chat":
-        msgs = _truncate_messages(state["messages"])
+        msgs = state["messages"]  # Chat needs full conversation history for follow-ups
+        logger.debug(
+            "[responder] chat intent: %d messages, types=%s",
+            len(msgs),
+            [type(m).__name__ for m in msgs],
+        )
         safe_msgs = _safe_invoke_messages(RESPONDER_PROMPT, msgs)
         try:
             response = await model.ainvoke(safe_msgs)

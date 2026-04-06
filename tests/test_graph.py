@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from agntrick.graph import (
     AgentState,
@@ -488,3 +488,109 @@ class TestGraphIntegration:
         assert "run_shell" not in tool_names, f"run_shell should be filtered out, got: {tool_names}"
         assert "web_search" in tool_names
         assert "web_fetch" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_receives_full_conversation_history(self) -> None:
+        """Responder should receive full conversation history for chat intent.
+
+        This verifies the fix for the memory loss bug where _truncate_messages
+        was stripping history for chat intent, causing the agent to not
+        understand follow-up messages like "yes" or "and in Paris?".
+        """
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+
+        # Track what messages the responder receives via ainvoke calls
+        invoke_calls: list[list[BaseMessage]] = []
+
+        async def capture_ainvoke(messages: list[BaseMessage]) -> AIMessage:
+            invoke_calls.append(messages)
+            call_index = len(invoke_calls) - 1
+            if call_index == 0:
+                # Router response: classify follow-up as chat
+                return AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            # Responder response
+            return AIMessage(content="The weather in Paris is 18°C.")
+
+        mock_model.ainvoke = capture_ainvoke
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        # Simulate a multi-turn conversation:
+        # Turn 1: user asked about Tokyo weather, agent responded
+        # Turn 2: user follows up with "And in Paris?"
+        await graph.ainvoke(
+            {
+                "messages": [
+                    HumanMessage(content="What's the weather in Tokyo?"),
+                    AIMessage(content="The weather in Tokyo is 22°C, sunny."),
+                    HumanMessage(content="And in Paris?"),
+                ]
+            },
+            config={"configurable": {"thread_id": "test-multi-turn-memory"}},
+        )
+
+        # First ainvoke call is the router, second is the responder
+        assert len(invoke_calls) >= 2, f"Expected >= 2 ainvoke calls, got {len(invoke_calls)}"
+
+        # The responder (second call) should receive ALL messages, not just
+        # the last HumanMessage. This is the core fix being tested.
+        responder_messages = invoke_calls[1]
+        human_msgs = [m for m in responder_messages if isinstance(m, HumanMessage)]
+        assert len(human_msgs) >= 2, (
+            f"Responder should see >= 2 HumanMessages (full history), "
+            f"got {len(human_msgs)}: {[m.content for m in human_msgs]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_router_receives_context_window(self) -> None:
+        """Router should receive a sliding window of recent messages, not just one."""
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+
+        invoke_calls: list[list[BaseMessage]] = []
+
+        async def capture_ainvoke(messages: list[BaseMessage]) -> AIMessage:
+            invoke_calls.append(messages)
+            call_index = len(invoke_calls) - 1
+            if call_index == 0:
+                return AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            return AIMessage(content="Yes, I remember.")
+
+        mock_model.ainvoke = capture_ainvoke
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        # Build a conversation with 3 exchange pairs (6 messages total)
+        await graph.ainvoke(
+            {
+                "messages": [
+                    HumanMessage(content="Message 1"),
+                    AIMessage(content="Response 1"),
+                    HumanMessage(content="Message 2"),
+                    AIMessage(content="Response 2"),
+                    HumanMessage(content="Message 3"),
+                    AIMessage(content="Response 3"),
+                ]
+            },
+            config={"configurable": {"thread_id": "test-router-context"}},
+        )
+
+        # First ainvoke call is the router
+        router_messages = invoke_calls[0]
+        # Router should see the sliding window (up to 5 messages), not just 1
+        non_system_msgs = [m for m in router_messages if not isinstance(m, SystemMessage)]
+        assert len(non_system_msgs) > 1, (
+            f"Router should receive > 1 non-system message (context window), "
+            f"got {len(non_system_msgs)}: {[type(m).__name__ for m in non_system_msgs]}"
+        )
