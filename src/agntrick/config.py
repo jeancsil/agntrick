@@ -8,11 +8,39 @@ variable fallback. Configuration files are searched in order:
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def _resolve_env_vars(value: Any) -> Any:
+    """Resolve ${VAR} and ${VAR:-default} placeholders in config values.
+
+    Args:
+        value: A config value (str, dict, list, or scalar).
+
+    Returns:
+        The value with environment variable references resolved.
+    """
+    if isinstance(value, str):
+
+        def _replacer(match: re.Match[str]) -> str:
+            var_name = match.group("var")
+            default = match.group("default")
+            result = os.getenv(var_name, default if default is not None else "")
+            if result == "" and default is None and os.getenv(var_name) is None:
+                return match.group(0)  # keep original if var not set and no default
+            return result
+
+        return re.sub(r"\$\{(?P<var>[A-Za-z_][A-Za-z0-9_]*)(?::-(?P<default>[^}]*))?\}", _replacer, value)
+    if isinstance(value, dict):
+        return {k: _resolve_env_vars(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_env_vars(item) for item in value]
+    return value
 
 
 @dataclass
@@ -228,6 +256,7 @@ def get_config(force_reload: bool = False) -> AgntrickConfig:
         with config_file.open() as f:
             config_dict = yaml.safe_load(f) or {}
 
+        config_dict = _resolve_env_vars(config_dict)
         _config = AgntrickConfig.from_dict(config_dict)
         _config._config_path = str(config_file)
         return _config
