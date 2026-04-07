@@ -372,6 +372,27 @@ Copy `.env.example` to `.env` and fill in:
 
 ---
 
+## Claude Code Automations
+
+Project-level `.claude/` contains automations for Claude Code:
+
+### Hooks (`.claude/settings.json`)
+
+- **PostToolUse** on `Write|Edit`: auto-formats `.py` files with `ruff format` + `ruff check --fix`
+- **PreToolUse** on `Write|Edit` (global): blocks `.env` file edits to prevent secret leaks
+
+### Skills (`.claude/skills/`)
+
+- **`/agntrick-add-agent`** — scaffolds a new agent (agent.py, prompt.md, test file, registry decorator)
+- **`/agntrick-add-tool`** — scaffolds a new tool (tool.py, test file, `__init__.py` export)
+
+### Subagents (`.claude/agents/`)
+
+- **`diagram-sync-checker`** — verifies Mermaid diagrams in this file match current code. Run when modifying `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`
+- **`go-test-runner`** — runs Go gateway tests (`go vet`, `go fmt`, `go test`). Run when modifying `gateway/`
+
+---
+
 ## Git Hooks
 
 Pre-push hook runs `make check`. If it fails, fix errors and try again.
