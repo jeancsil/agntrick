@@ -8,9 +8,12 @@ import time
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 
-from agntrick.config import AgntrickConfig, WhatsAppTenantConfig, get_config
+load_dotenv()  # must load .env before reading AGNTRICK_TOOLKIT_PATH
+
+from agntrick.config import AgntrickConfig, WhatsAppTenantConfig, get_config  # noqa: E402
 
 logger = logging.getLogger(__name__)
 console = Console()

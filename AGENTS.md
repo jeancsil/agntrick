@@ -24,13 +24,13 @@ Agntrick works best paired with **[agntrick-toolkit](https://github.com/jeancsil
 
 ```bash
 # 1. Start the toolkit (one command)
-cd /path/to/agntrick-toolbox && docker-compose up -d
+cd /path/to/agntrick-toolkit && docker-compose up -d
 
-# 2. Tell agntrick where it is
-export AGNTRICK_TOOLKIT_PATH=/path/to/agntrick-toolbox
+# 2. Tell agntrick where it is — add to .env
+echo 'AGNTRICK_TOOLKIT_PATH=/path/to/agntrick-toolkit' >> .env
 ```
 
-That's it. The `chat` CLI and `serve` command auto-discover the toolkit via `AGNTRICK_TOOLKIT_PATH` and start the MCP subprocess. The `assistant` agent registers `toolbox` as its MCP server and gets access to all toolkit tools automatically.
+That's it. The `chat` CLI and `serve` command auto-discover the toolkit via `AGNTRICK_TOOLKIT_PATH` (loaded from `.env`) and start the MCP subprocess. The `assistant` agent registers `toolbox` as its MCP server and gets access to all toolkit tools automatically.
 
 **Verify it's working:**
 
