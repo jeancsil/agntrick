@@ -69,7 +69,21 @@ def test_agent_has_correct_name():
 
 5. Export the agent from `src/agntrick/agents/__init__.py` if needed.
 
-6. Run `make check && make test` to verify everything works.
+6. **Wire into the delegation pipeline.** A new agent is invisible to the assistant until you update these 3 files:
+
+   a. **`src/agntrick/tools/agent_invocation.py`**:
+      - Add the agent name to the `DELEGATABLE_AGENTS` list
+      - Add the agent to the `description` property's "Available agents" list
+
+   b. **`src/agntrick/prompts/assistant.md`**:
+      - Add a row to the `| Agent | Specialty | Use when |` table
+      - Add a delegation rule to the "Delegation rules" section
+
+   c. **`src/agntrick/graph.py`**:
+      - If the agent handles a specific intent (e.g. news, code), add a routing rule to `ROUTER_PROMPT`'s "Tool selection rules" section
+      - Add a routing example to the `Examples:` section in `ROUTER_PROMPT`
+
+7. Run `make check && make test` to verify everything works.
 
 ## Reference
 

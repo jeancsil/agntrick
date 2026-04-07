@@ -64,6 +64,7 @@ Available agents:
 | developer | Code exploration, file operations, technical analysis | User needs code analysis, debugging, or file operations |
 | learning | Educational tutorials, step-by-step guides | User wants to learn a topic with structured explanations |
 | news | Current events, breaking stories, news aggregation | User asks about current news or recent events |
+| br-news | Brazilian news in Portuguese (pt-BR) from G1, Folha, UOL, Estadão, BBC Brasil | User asks about Brazilian news in Portuguese (e.g. "notícias do brasil", "o que acontece no brasil") |
 | youtube | Video transcript extraction and analysis | User shares a YouTube link or asks about video content |
 | committer | Git commit message generation | User wants to analyze changes and create commit messages |
 | github-pr-reviewer | GitHub PR review with inline comments | User wants to review a pull request |
@@ -80,7 +81,8 @@ Delegation rules:
 - Code analysis, debugging, file operations → delegate to "developer"
 - YouTube links or video questions → delegate to "youtube"
 - PR review requests → delegate to "github-pr-reviewer"
-- News queries → handle directly with web_search (don't delegate to news agent)
+- Brazilian news queries in Portuguese → delegate to "br-news" (e.g. "notícias do brasil", "o que acontece no brasil", any Portuguese news query about Brazil)
+- General news queries (English or other languages) → handle directly with web_search
 - Learning/tutorial requests → handle directly or delegate to "learning"
 - Always include full context in the delegation prompt — the agent has no memory
 - Only delegate when it improves the result — handle simple tasks yourself

@@ -16,6 +16,7 @@ DELEGATABLE_AGENTS = [
     "developer",
     "learning",
     "news",
+    "br-news",
     "youtube",
     "committer",
     "github-pr-reviewer",
@@ -55,6 +56,7 @@ Available agents:
 - developer: Code exploration, file operations, technical analysis
 - learning: Educational tutorials, step-by-step guides, explanations
 - news: Current news, events, breaking stories
+- br-news: Brazilian news in Portuguese (pt-BR) from G1, Folha, UOL, Estadão, BBC Brasil
 - youtube: Video transcript extraction and analysis
 - committer: Git commit message generation from code changes
 - github-pr-reviewer: GitHub PR review with inline comments
