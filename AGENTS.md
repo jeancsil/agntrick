@@ -24,13 +24,13 @@ Agntrick works best paired with **[agntrick-toolkit](https://github.com/jeancsil
 
 ```bash
 # 1. Start the toolkit (one command)
-cd /path/to/agntrick-toolbox && docker-compose up -d
+cd /path/to/agntrick-toolkit && docker-compose up -d
 
-# 2. Tell agntrick where it is
-export AGNTRICK_TOOLKIT_PATH=/path/to/agntrick-toolbox
+# 2. Tell agntrick where it is — add to .env
+echo 'AGNTRICK_TOOLKIT_PATH=/path/to/agntrick-toolkit' >> .env
 ```
 
-That's it. The `chat` CLI and `serve` command auto-discover the toolkit via `AGNTRICK_TOOLKIT_PATH` and start the MCP subprocess. The `assistant` agent registers `toolbox` as its MCP server and gets access to all toolkit tools automatically.
+That's it. The `chat` CLI and `serve` command auto-discover the toolkit via `AGNTRICK_TOOLKIT_PATH` (loaded from `.env`) and start the MCP subprocess. The `assistant` agent registers `toolbox` as its MCP server and gets access to all toolkit tools automatically.
 
 **Verify it's working:**
 
@@ -184,16 +184,89 @@ tests/                    # Test suite
 
 ---
 
-## Key Architecture Concepts
+## Execution Flow
 
-### Intent Routing (graph.py)
+### End-to-End Pipeline
 
-The `assistant` agent uses a 3-node LangGraph `StateGraph`:
-- **Router** — classifies user intent (simple_chat, tool_use, research, delegate)
-- **Executor** — runs tools/sub-agents based on intent
-- **Responder** — formats the final response
+```mermaid
+flowchart TD
+    subgraph Entry["Entry Points"]
+        direction LR
+        CLI["agntrick run/chat<br/><small>cli.py</small>"]
+        API["Go Gateway → FastAPI<br/><small>api/routes/whatsapp.py</small>"]
+        CHAT["TestClient<br/><small>chat_cli.py</small>"]
+    end
 
-Other agents use the default ReAct loop from `AgentBase`.
+    subgraph Init["Agent Initialization"]
+        direction TB
+        REG["AgentRegistry.discover_agents()<br/><small>registry.py</small>"]
+        INST["agent_cls(**kwargs)<br/><small>agent.py:AgentBase.__init__</small>"]
+        LAZY["_ensure_initialized()"]
+
+        subgraph LazyInit["Lazy Init (first run only)"]
+            MANIFEST{{"_fetch_tool_manifest()"}}:::blocking
+            MCP_LOAD["Sequential MCP connections<br/><small>mcp/provider.py</small>"]:::blocking
+            GRAPH_CREATE["_create_graph()"]
+        end
+
+        REG --> INST --> LAZY --> MANIFEST --> MCP_LOAD --> GRAPH_CREATE
+    end
+
+    subgraph Exec["Graph Execution <small>(graph.py)</small>"]
+        ROUTER["Router node<br/>Classify intent"]
+        EXEC["Executor node<br/>Run tools / sub-agents"]
+        RESP["Responder node<br/>Format for WhatsApp"]
+    end
+
+    CLI --> REG
+    API --> REG
+    CHAT --> REG
+    GRAPH_CREATE --> ROUTER
+    ROUTER -->|"chat"| RESP
+    ROUTER -->|"tool_use / research / delegate"| EXEC
+    EXEC -->|"agent_invocation<br/>:::blocking"| EXEC
+    EXEC --> RESP
+    RESP --> END_NODE["Response"]
+
+    classDef blocking fill:#ff6b6b,stroke:#c0392b,color:#fff
+```
+
+### Graph Detail (3-Node StateGraph)
+
+```mermaid
+flowchart LR
+    ROUTER["<b>Router</b><br/>LLM classifies intent<br/><small>sliding window: last 5 msgs</small>"]
+
+    ROUTER -->|"chat"| RESP
+    ROUTER -->|"tool_use<br/>limit: 2 calls"| EXEC
+    ROUTER -->|"research<br/>limit: 5 calls"| EXEC
+    ROUTER -->|"delegate<br/>limit: 1 call"| EXEC
+
+    EXEC["<b>Executor</b>"]
+    EXEC --> FILT["Filter tools<br/>by intent"]
+    FILT --> SUB["create_agent()<br/><small>sync factory, fast</small>"]
+    SUB --> FLAT["Flatten MCP output<br/>_make_flat_tool()"]
+    FLAT --> CLEAN["Sanitize artifacts<br/>_sanitize_ai_content()"]
+    CLEAN --> RESP
+
+    EXEC -.->|"ReAct loop:<br/>re-classify if<br/>more tools needed"| ROUTER
+
+    SUB -.- note1["⟳ Recursive: triggers<br/>full End-to-End flow<br/>via agent_invocation.py<br/>(new thread + event loop)"]:::note
+
+    RESP["<b>Responder</b><br/>Format for WhatsApp<br/><small>max 15K chars</small>"]
+    RESP --> END_NODE["END"]
+
+    classDef note fill:#fff3cd,stroke:#856404,color:#333,font-style:italic
+```
+
+### Blocking Calls
+
+| Location | Pattern | Impact | Intentional? |
+|---|---|---|---|
+| `tools/agent_invocation.py:136-138` | `thread.join()` + new event loop | Blocks up to 65s on delegation | Necessary — each delegated agent needs isolated loop |
+| `mcp/provider.py:122-127` | Sequential `await stack.enter_async_context()` | N × 60s startup delay | Yes — avoids anyio "different task" cleanup bugs |
+| `graph.py:434` | `create_agent()` sync factory | Negligible (in-memory) | Yes |
+| `agent.py:266-294` | `_fetch_tool_manifest()` HTTP | 5s+ if toolbox slow | Circuit breaker + 5m cache mitigates |
 
 ### Agent Registration
 
@@ -282,6 +355,7 @@ uv run pytest tests/test_graph.py  # run specific file
 - **Never** use pip/poetry/pipenv — only `uv`
 - **Before** adding features, check if similar functionality exists
 - **Before** refactoring, ensure tests cover affected code
+- **When modifying** `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`: verify the "Execution Flow" Mermaid diagrams still reflect the current code
 
 ---
 
@@ -295,6 +369,27 @@ Copy `.env.example` to `.env` and fill in:
 - `AGNTRICK_TOOLKIT_PATH` (optional — path to agntrick-toolbox for MCP tools)
 - `GITHUB_TOKEN` (optional — for PR reviewer agent)
 - `GROQ_AUDIO_API_KEY` (optional — for audio transcription)
+
+---
+
+## Claude Code Automations
+
+Project-level `.claude/` contains automations for Claude Code:
+
+### Hooks (`.claude/settings.json`)
+
+- **PostToolUse** on `Write|Edit`: auto-formats `.py` files with `ruff format` + `ruff check --fix`
+- **PreToolUse** on `Write|Edit` (global): blocks `.env` file edits to prevent secret leaks
+
+### Skills (`.claude/skills/`)
+
+- **`/agntrick-add-agent`** — scaffolds a new agent (agent.py, prompt.md, test file, registry decorator)
+- **`/agntrick-add-tool`** — scaffolds a new tool (tool.py, test file, `__init__.py` export)
+
+### Subagents (`.claude/agents/`)
+
+- **`diagram-sync-checker`** — verifies Mermaid diagrams in this file match current code. Run when modifying `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`
+- **`go-test-runner`** — runs Go gateway tests (`go vet`, `go fmt`, `go test`). Run when modifying `gateway/`
 
 ---
 

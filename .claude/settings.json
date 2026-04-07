@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{ read -r json; f=$(echo \"$json\" | jq -r '.tool_input.file_path // .tool_response.filePath'); [[ \"$f\" == *.py ]] && uv run --directory /Users/jeancsil/code/agents ruff format --silent \"$f\" 2>/dev/null && uv run --directory /Users/jeancsil/code/agents ruff check --fix --silent \"$f\" 2>/dev/null; } || true"
+          }
+        ]
+      }
+    ]
+  }
+}
