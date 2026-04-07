@@ -84,7 +84,7 @@ auth:
 whatsapp:
   tenants:
     - id: personal
-      phone: "REDACTED_PHONE"
+      phone: "+34123456789"
       default_agent: developer
       allowed_contacts: []
     - id: work
@@ -246,7 +246,7 @@ The gateway uses a multi-strategy approach to detect "note to self" messages:
 4. **Phone number fallback**: Normalized phone comparison against tenant config
 
 This handles all WhatsApp JID formats:
-- Phone-based: `34677427318@s.whatsapp.net`
+- Phone-based: `34123456789@s.whatsapp.net`
 - LID-based: `118657162162293@lid`
 - Mixed: Chat uses LID, Sender uses phone
 

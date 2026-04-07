@@ -15,7 +15,7 @@ import (
 
 // handleMessage handles incoming WhatsApp messages.
 // Self-messages are detected by checking IsFromMe + Chat==Sender (JID equality).
-// This works for both phone-based JIDs (34677427318@s.whatsapp.net) and LID-based JIDs (118657162162293@lid).
+// This works for both phone-based JIDs (34123456789@s.whatsapp.net) and LID-based JIDs (118657162162293@lid).
 func handleMessage(eh *EventHandler, msg *events.Message) {
 	startTime := time.Now()
 	logger := eh.logger.With().Str("tenant_id", eh.tenantID).Logger()
@@ -227,11 +227,11 @@ func isSelfMessage(eh *EventHandler, msg *events.Message) bool {
 // normalizePhoneNumber normalizes a phone number or JID to digits only.
 // Strips JID domain (@s.whatsapp.net, @lid, etc.), device suffixes, and non-digit characters.
 func normalizePhoneNumber(jidOrPhone string) string {
-	// Remove JID domain if present (e.g., "34677427318@s.whatsapp.net" -> "34677427318")
+	// Remove JID domain if present (e.g., "34123456789@s.whatsapp.net" -> "34123456789")
 	if idx := strings.Index(jidOrPhone, "@"); idx > 0 {
 		jidOrPhone = jidOrPhone[:idx]
 	}
-	// Remove device suffix if present (e.g., "34677427318.0:21" -> "34677427318")
+	// Remove device suffix if present (e.g., "34123456789.0:21" -> "34123456789")
 	if idx := strings.Index(jidOrPhone, "."); idx > 0 {
 		jidOrPhone = jidOrPhone[:idx]
 	}

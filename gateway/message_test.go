@@ -99,7 +99,7 @@ func Test_isSelfMessageForTesting_differentChat(t *testing.T) {
 // by the phone-based isSelfMessageForTesting helper (LID matching requires the full isSelfMessage)
 func Test_isSelfMessageForTesting_LIDBasedJID(t *testing.T) {
 	// LID-based chat JID won't match phone-based store ID via this helper
-	result := isSelfMessageForTesting(true, "118657162162293@lid", "34677427318@s.whatsapp.net")
+	result := isSelfMessageForTesting(true, "118657162162293@lid", "34123456789@s.whatsapp.net")
 	if result {
 		t.Errorf("Expected isSelfMessageForTesting to return false for LID vs phone mismatch, got true")
 	}
@@ -111,11 +111,11 @@ func Test_normalizePhoneNumber(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"34677427318@s.whatsapp.net", "34677427318"},
-		{"34677427318.0:21@s.whatsapp.net", "34677427318"},
+		{"34123456789@s.whatsapp.net", "34123456789"},
+		{"34123456789.0:21@s.whatsapp.net", "34123456789"},
 		{"118657162162293@lid", "118657162162293"},
-		{"REDACTED_PHONE", "34677427318"},
-		{"34677427318", "34677427318"},
+		{"+34123456789", "34123456789"},
+		{"34123456789", "34123456789"},
 	}
 
 	for _, tc := range tests {

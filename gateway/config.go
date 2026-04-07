@@ -4,10 +4,47 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// envVarRe matches ${VAR} and ${VAR:-default} patterns.
+var envVarRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
+
+// expandEnvVars replaces ${VAR} and ${VAR:-default} in a string with environment variable values.
+func expandEnvVars(s string) string {
+	return envVarRe.ReplaceAllStringFunc(s, func(match string) string {
+		sub := envVarRe.FindStringSubmatch(match)
+		name := sub[1]
+		def := sub[2]
+		if val, ok := os.LookupEnv(name); ok {
+			return val
+		}
+		if def != "" {
+			return def
+		}
+		return match
+	})
+}
+
+// expandEnvInYAML recursively resolves env var placeholders in a parsed YAML tree.
+func expandEnvInYAML(v interface{}) interface{} {
+	switch tv := v.(type) {
+	case string:
+		return expandEnvVars(tv)
+	case map[string]interface{}:
+		for k, val := range tv {
+			tv[k] = expandEnvInYAML(val)
+		}
+	case []interface{}:
+		for i, val := range tv {
+			tv[i] = expandEnvInYAML(val)
+		}
+	}
+	return v
+}
 
 // Config represents the main configuration structure from .agntrick.yaml
 type Config struct {
@@ -53,8 +90,20 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	// Parse YAML into raw map first to expand env vars, then re-serialize into Config
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	expanded := expandEnvInYAML(raw).(map[string]interface{})
+
+	expandedData, err := yaml.Marshal(expanded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-marshal expanded config: %w", err)
+	}
+
 	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := yaml.Unmarshal(expandedData, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
