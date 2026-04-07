@@ -82,7 +82,17 @@ def test_tool_invoke_returns_string():
     assert isinstance(result, str)
 ```
 
-5. Run `make check && make test` to verify everything works.
+5. **Wire into the routing pipeline.** A new tool is invisible to the assistant and router until you update these 2 files:
+
+   a. **`src/agntrick/prompts/assistant.md`**:
+      - Add a rule to `<tool-selection-rules>` explaining when to use the new tool
+      - Add a bullet to `<tools>` section describing the tool and its use case
+
+   b. **`src/agntrick/graph.py`**:
+      - If the tool handles a specific query type, add a routing rule to `ROUTER_PROMPT`'s "Tool selection rules" section
+      - Add a routing example to the `Examples:` section in `ROUTER_PROMPT`
+
+6. Run `make check && make test` to verify everything works.
 
 ## Rules
 

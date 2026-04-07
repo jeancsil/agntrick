@@ -160,7 +160,8 @@ ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the
 Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": null, "skip_tools": false}
 
 Tool selection rules (CRITICAL):
-- News, current events, headlines → web_search
+- Brazilian news queries in Portuguese → delegate to "br-news"
+- General news, current events, headlines → web_search
 - Specific URL to read → web_fetch
 - API calls → curl_fetch
 - YouTube links → delegate to "youtube"
@@ -177,6 +178,9 @@ For "delegate": tool_plan = agent name + prompt
 For "chat": tool_plan = null, skip_tools = true
 
 Examples:
+"noticias do brasil" → {"intent": "delegate", "tool_plan": "br-news", "skip_tools": false}
+"quais as noticias de hoje?" → {"intent": "delegate", "tool_plan": "br-news", "skip_tools": false}
+"o que acontece no brasil" → {"intent": "delegate", "tool_plan": "br-news", "skip_tools": false}
 "What's happening in Brazil?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
 "What are the top news in g1.globo.com?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
 "Read this article: https://..." → {"intent": "tool_use", "tool_plan": "web_fetch", "skip_tools": false}
