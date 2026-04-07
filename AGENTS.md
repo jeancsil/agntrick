@@ -355,6 +355,7 @@ uv run pytest tests/test_graph.py  # run specific file
 - **Never** use pip/poetry/pipenv — only `uv`
 - **Before** adding features, check if similar functionality exists
 - **Before** refactoring, ensure tests cover affected code
+- **When modifying** `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`: verify the "Execution Flow" Mermaid diagrams still reflect the current code
 
 ---
 
