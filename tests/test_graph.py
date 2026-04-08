@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
 
 from agntrick.graph import (
     AgentState,
@@ -1424,3 +1424,156 @@ class TestResponderChatWindow:
         human_contents = [m.content for m in sent_messages if isinstance(m, HumanMessage)]
         assert "Latest question" in human_contents, f"Window should include latest message, got: {human_contents}"
         assert "Recent question" in human_contents, f"Window should include recent messages, got: {human_contents}"
+
+
+class TestBuildPruneRemoves:
+    """Tests for _build_prune_removes helper — returns RemoveMessage list for old messages."""
+
+    def test_returns_empty_when_within_cap(self) -> None:
+        """5 messages with cap 20 → no pruning needed."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(5)]
+        assert _build_prune_removes(msgs, max_messages=20) == []
+
+    def test_returns_removes_for_excess_messages(self) -> None:
+        """25 messages with cap 20 → 5 RemoveMessage objects."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(25)]
+        removes = _build_prune_removes(msgs, max_messages=20)
+        assert len(removes) == 5
+        assert all(isinstance(r, RemoveMessage) for r in removes)
+
+    def test_preserves_most_recent_messages(self) -> None:
+        """Oldest messages are removed, newest kept."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(25)]
+        removes = _build_prune_removes(msgs, max_messages=20)
+        removed_ids = {r.id for r in removes}
+        # Should remove msg-0 through msg-4 (oldest 5)
+        assert removed_ids == {f"msg-{i}" for i in range(5)}
+        # Should NOT remove msg-5 through msg-24 (newest 20)
+        kept_ids = {f"msg-{i}" for i in range(5, 25)}
+        assert removed_ids.isdisjoint(kept_ids)
+
+    def test_skips_messages_without_ids(self) -> None:
+        """Messages with id=None should be skipped safely."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}") for i in range(25)]  # No explicit IDs
+        removes = _build_prune_removes(msgs, max_messages=20)
+        assert removes == []
+
+    def test_empty_state_returns_empty(self) -> None:
+        """0 messages → no pruning."""
+        from agntrick.graph import _build_prune_removes
+
+        assert _build_prune_removes([], max_messages=20) == []
+
+    def test_exact_cap_returns_empty(self) -> None:
+        """Exactly 20 messages → no pruning."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(20)]
+        assert _build_prune_removes(msgs, max_messages=20) == []
+
+
+class TestResponderStatePruning:
+    """Tests for responder_node pruning old messages from state."""
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_prunes_old_messages(self) -> None:
+        """Chat intent with 30 messages should prune 10 oldest."""
+        msgs: list[Any] = []
+        for i in range(15):
+            msgs.append(HumanMessage(content=f"Q{i}", id=f"h-{i}"))
+            msgs.append(AIMessage(content=f"A{i}", id=f"a-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello back"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1, "Should still add 1 AIMessage for chat"
+        assert len(removes) == 10, f"Should prune 10 oldest (30 - 20), got {len(removes)}"
+
+    @pytest.mark.asyncio
+    async def test_tool_use_intent_prunes_old_messages(self) -> None:
+        """Tool_use intent with 30 messages should prune 10 oldest."""
+        msgs: list[Any] = []
+        for i in range(15):
+            msgs.append(HumanMessage(content=f"Q{i}", id=f"h-{i}"))
+            msgs.append(AIMessage(content=f"A{i}", id=f"a-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 0, "Tool_use should not add AI messages"
+        assert len(removes) == 10, f"Should prune 10 oldest, got {len(removes)}"
+
+    @pytest.mark.asyncio
+    async def test_short_history_no_pruning(self) -> None:
+        """5 messages → no pruning, just normal response."""
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Hello", id="h-0"),
+                AIMessage(content="Hi!", id="a-0"),
+            ],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hi"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        assert len(removes) == 0, "Short history should not prune"
+        assert len(result["messages"]) == 1  # Just the AIMessage
+
+    @pytest.mark.asyncio
+    async def test_prune_targets_oldest_ids(self) -> None:
+        """Verify removed IDs are the oldest messages, not newest."""
+        msgs: list[Any] = []
+        for i in range(25):
+            msgs.append(HumanMessage(content=f"msg {i}", id=f"id-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Response"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        removed_ids = {r.id for r in removes}
+        assert removed_ids == {f"id-{i}" for i in range(5)}

@@ -12,7 +12,7 @@ from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitMiddleware
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
@@ -34,6 +34,11 @@ _ROUTER_CONTEXT_WINDOW = 5
 # Matches _ROUTER_CONTEXT_WINDOW — enough for follow-up understanding
 # without wasting tokens on stale context.
 _RESPONDER_CHAT_WINDOW = 5
+
+# Maximum messages retained in checkpointer state.
+# Prunes the oldest messages when exceeded — prevents unbounded token waste.
+# Set to 4x the window size (20 = 4 × 5) for multi-turn follow-up context.
+_MAX_STATE_MESSAGES = 20
 
 # Intent-specific tool call limits to prevent tool usage spirals.
 _INTENT_TOOL_LIMITS: dict[str, int] = {
@@ -137,6 +142,28 @@ def _window_messages(
     if len(messages) <= max_messages:
         return messages
     return messages[-max_messages:]
+
+
+def _build_prune_removes(
+    messages: list[BaseMessage],
+    max_messages: int,
+) -> list[RemoveMessage]:
+    """Return RemoveMessage objects for messages beyond the cap.
+
+    Keeps the most recent ``max_messages`` and marks older ones for
+    removal via the ``add_messages`` reducer.
+
+    Args:
+        messages: Current state messages (all have IDs from the reducer).
+        max_messages: Maximum messages to retain in state.
+
+    Returns:
+        List of RemoveMessage for messages to prune. Empty if within cap.
+    """
+    if len(messages) <= max_messages:
+        return []
+    to_remove = messages[:-max_messages]
+    return [RemoveMessage(id=m.id) for m in to_remove if m.id is not None]
 
 
 def _safe_invoke_messages(
@@ -533,6 +560,9 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     Uses _safe_invoke_messages to ensure the GLM API always receives
     a valid message sequence (SystemMessage + at least one HumanMessage).
     """
+    # Compute pruning once — applies to all return paths.
+    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+
     if state.get("intent") == "chat":
         msgs = _window_messages(state["messages"], _RESPONDER_CHAT_WINDOW)
         logger.debug(
@@ -549,9 +579,9 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
             last = state["messages"][-1] if state["messages"] else None
             return {
                 "final_response": str(last.content) if last else "Sorry, please try again.",
-                "messages": [],
+                "messages": removes,
             }
-        return {"final_response": str(response.content), "messages": [response]}
+        return {"final_response": str(response.content), "messages": [response] + removes}
 
     # tool_use / research / delegate intent — format executor output
     last_msg = state["messages"][-1]
@@ -571,12 +601,12 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         # Fallback: return raw content, truncated for WhatsApp
         return {
             "final_response": content[:4096],
-            "messages": [],
+            "messages": removes,
         }
 
     final = str(response.content)
     logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
-    return {"final_response": final, "messages": []}
+    return {"final_response": final, "messages": removes}
 
 
 def route_decision(state: AgentState) -> str:

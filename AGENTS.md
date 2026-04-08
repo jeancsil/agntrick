@@ -253,7 +253,7 @@ flowchart LR
 
     SUB -.- note1["⟳ Recursive: triggers<br/>full End-to-End flow<br/>via agent_invocation.py<br/>(new thread + event loop)"]:::note
 
-    RESP["<b>Responder</b><br/>Format for WhatsApp<br/><small>chat: adds msg to state<br/>tool_use: sets final_response only<br/>max 15K chars</small>"]
+    RESP["<b>Responder</b><br/>Format for WhatsApp<br/><small>chat: adds msg to state<br/>tool_use: sets final_response only<br/>prunes state to 20 msgs<br/>max 15K chars</small>"]
     RESP --> END_NODE["END"]
 
     classDef note fill:#fff3cd,stroke:#856404,color:#333,font-style:italic
