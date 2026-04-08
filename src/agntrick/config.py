@@ -26,6 +26,49 @@ class LLMConfig:
 
 
 @dataclass
+class AgentModelConfig:
+    """Per-agent model configuration with optional per-graph-node overrides.
+
+    Allows mapping each agent to a specific LLM model name, and optionally
+    overriding the model for individual graph nodes (router, executor, responder).
+
+    Configured in YAML under ``agent_models``:
+
+    .. code-block:: yaml
+
+        agent_models:
+          assistant: glm-5.1
+          developer: glm-5
+          assistant_nodes:
+            router: glm-4.7
+            responder: glm-4.7
+    """
+
+    models: dict[str, str] = field(default_factory=dict)
+    node_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def get_model_for(self, agent_name: str, node: str | None = None) -> str | None:
+        """Resolve model name for a given agent and optional graph node.
+
+        Lookup order:
+            1. ``node_overrides[agent_name][node]``
+            2. ``models[agent_name]``
+
+        Args:
+            agent_name: Registered agent name (e.g. "assistant").
+            node: Optional graph node name (e.g. "router", "executor", "responder").
+
+        Returns:
+            Model name string, or None if no override is configured.
+        """
+        if node:
+            node_map = self.node_overrides.get(agent_name)
+            if node_map and node in node_map:
+                return node_map[node]
+        return self.models.get(agent_name)
+
+
+@dataclass
 class LoggingConfig:
     """Logging configuration."""
 
@@ -122,6 +165,7 @@ class AgntrickConfig:
     auth: AuthConfig = field(default_factory=AuthConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     whatsapp: WhatsAppConfig = field(default_factory=WhatsAppConfig)
+    agent_models: AgentModelConfig = field(default_factory=AgentModelConfig)
 
     _config_path: str | None = field(default=None, init=False, repr=False)
 
@@ -149,6 +193,18 @@ class AgntrickConfig:
                 )
             )
 
+        # Parse agent_models section
+        am_dict = config_dict.get("agent_models", {})
+        am_models: dict[str, str] = {}
+        am_node_overrides: dict[str, dict[str, str]] = {}
+        for key, value in am_dict.items():
+            if key.endswith("_nodes") and isinstance(value, dict):
+                agent_name = key.removesuffix("_nodes")
+                am_node_overrides[agent_name] = value
+            elif isinstance(value, str):
+                am_models[key] = value
+        agent_models_config = AgentModelConfig(models=am_models, node_overrides=am_node_overrides)
+
         return cls(
             llm=LLMConfig(**config_dict.get("llm", {})),
             logging=LoggingConfig(**config_dict.get("logging", {})),
@@ -160,6 +216,7 @@ class AgntrickConfig:
             ),
             storage=StorageConfig(**config_dict.get("storage", {})),
             whatsapp=WhatsAppConfig(tenants=tenants),
+            agent_models=agent_models_config,
         )
 
 

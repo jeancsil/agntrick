@@ -4,12 +4,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
 
 from agntrick.graph import (
     AgentState,
     _parse_router_response,
     executor_node,
+    responder_node,
     route_decision,
 )
 
@@ -746,6 +747,138 @@ class TestFlattenToolContent:
         assert "type" not in result[:20]  # "type" key must not appear at start
 
 
+class TestPerNodeModels:
+    """Tests for per-node model overrides in create_assistant_graph."""
+
+    @pytest.mark.asyncio
+    async def test_router_uses_override_model(self) -> None:
+        """Router should use router_model when provided."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        router_model = AsyncMock()
+
+        # Track which model is called for routing
+        router_model.ainvoke = AsyncMock(
+            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+        )
+        primary_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+            router_model=router_model,
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-router-override"}},
+        )
+
+        # Router should have used router_model, not primary
+        router_model.ainvoke.assert_called_once()
+        # Primary should NOT have been called for routing
+        primary_model.ainvoke.assert_called_once()  # only for responder
+
+    @pytest.mark.asyncio
+    async def test_responder_uses_override_model(self) -> None:
+        """Responder should use responder_model when provided."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        responder_model = AsyncMock()
+
+        primary_model.ainvoke = AsyncMock(
+            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+        )
+        responder_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted response"))
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+            responder_model=responder_model,
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-responder-override"}},
+        )
+
+        responder_model.ainvoke.assert_called_once()
+        # Primary should only have been called for routing
+        primary_model.ainvoke.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_overrides_uses_primary_for_all(self) -> None:
+        """Without overrides, all nodes should use the primary model."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        primary_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-no-overrides"}},
+        )
+
+        # Primary should have been called twice (router + responder)
+        assert primary_model.ainvoke.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_executor_uses_override_model(self) -> None:
+        """Executor should use executor_model when provided."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        executor_model = AsyncMock()
+
+        primary_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="Formatted"),
+            ]
+        )
+        executor_model.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub_agent = MagicMock()
+            mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Search results")]})
+            mock_create.return_value = mock_sub_agent
+
+            graph = create_assistant_graph(
+                model=primary_model,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+                executor_model=executor_model,
+            )
+
+            await graph.ainvoke(
+                {"messages": [HumanMessage(content="Search for news")]},
+                config={"configurable": {"thread_id": "test-executor-override"}},
+            )
+
+        # Verify executor_model was passed to create_agent, not primary_model
+        call_kwargs = mock_create.call_args[1] if mock_create.call_args else {}
+        assert call_kwargs.get("model") is executor_model, (
+            f"Expected executor_model passed to create_agent, got {call_kwargs.get('model')}"
+        )
+
+
 class TestMakeFlatTool:
     """Tests for _make_flat_tool — wraps MCP tools to return plain strings.
 
@@ -924,3 +1057,523 @@ class TestMakeFlatTool:
             )
         finally:
             graph_mod.create_agent = original_create
+
+
+class TestResponderMessageOutput:
+    """Tests for responder_node message output — verifies no duplicate AI messages."""
+
+    @pytest.mark.asyncio
+    async def test_responder_tool_use_returns_no_messages(self) -> None:
+        """For tool_use intent, responder should NOT add messages to state.
+
+        The executor already added its AIMessage. The responder should only
+        set final_response, not append another AIMessage.
+        """
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted response"))
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="What's the news?"),
+                AIMessage(content="Here are the news results from executor."),
+            ],
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await responder_node(state, {}, model=mock_model)
+
+        assert result["final_response"] is not None
+        assert result["messages"] == [], (
+            f"Responder should return empty messages for tool_use intent, got {len(result['messages'])} messages"
+        )
+
+    @pytest.mark.asyncio
+    async def test_responder_research_returns_no_messages(self) -> None:
+        """For research intent, responder should NOT add messages to state."""
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted research"))
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Compare React vs Vue"),
+                AIMessage(content="Research results..."),
+            ],
+            "intent": "research",
+            "tool_plan": "1. web_search\n2. web_fetch",
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await responder_node(state, {}, model=mock_model)
+        assert result["messages"] == []
+        assert result["final_response"] is not None
+
+    @pytest.mark.asyncio
+    async def test_responder_delegate_returns_no_messages(self) -> None:
+        """For delegate intent, responder should NOT add messages to state."""
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted delegation"))
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Summarize this video"),
+                AIMessage(content="Video summary from youtube agent..."),
+            ],
+            "intent": "delegate",
+            "tool_plan": "youtube agent",
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await responder_node(state, {}, model=mock_model)
+        assert result["messages"] == []
+        assert result["final_response"] is not None
+
+    @pytest.mark.asyncio
+    async def test_responder_chat_returns_message(self) -> None:
+        """For chat intent, responder IS the response node — it should add its message."""
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello! How can I help?"))
+
+        state: AgentState = {
+            "messages": [HumanMessage(content="Hello")],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await responder_node(state, {}, model=mock_model)
+        assert len(result["messages"]) == 1, (
+            f"Chat intent should add exactly 1 AIMessage, got {len(result['messages'])}"
+        )
+        assert isinstance(result["messages"][0], AIMessage)
+        assert result["final_response"] is not None
+
+    @pytest.mark.asyncio
+    async def test_responder_tool_use_fallback_returns_no_messages(self) -> None:
+        """Responder fallback for tool_use should also not add messages."""
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(side_effect=RuntimeError("API error"))
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Search news"),
+                AIMessage(content="Results here that are very long" * 100),
+            ],
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await responder_node(state, {}, model=mock_model)
+        assert result["messages"] == []
+        assert result["final_response"] is not None
+
+
+class TestSingleAIMessagePerTurn:
+    """Integration tests verifying exactly 1 AI message is added per turn."""
+
+    @pytest.mark.asyncio
+    async def test_tool_use_adds_exactly_one_ai_message(self) -> None:
+        """After a tool_use turn, state should have exactly 1 HumanMessage + 1 AIMessage."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="WhatsApp formatted news"),
+            ]
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub = MagicMock()
+            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="News results from search")]})
+            mock_create.return_value = mock_sub
+
+            graph = create_assistant_graph(
+                model=mock_model,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+            )
+
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="What's the news?")]},
+                config={"configurable": {"thread_id": "test-single-msg-tool-use"}},
+            )
+
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1, (
+            f"Expected exactly 1 AIMessage after tool_use turn, got {len(ai_msgs)}. "
+            f"Contents: {[m.content[:50] for m in ai_msgs]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_chat_adds_exactly_one_ai_message(self) -> None:
+        """After a chat turn, state should have exactly 1 HumanMessage + 1 AIMessage."""
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello! How can I help?"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hello")]},
+            config={"configurable": {"thread_id": "test-single-msg-chat"}},
+        )
+
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1, f"Expected exactly 1 AIMessage after chat turn, got {len(ai_msgs)}"
+
+    @pytest.mark.asyncio
+    async def test_research_adds_exactly_one_ai_message(self) -> None:
+        """After a research turn, state should have exactly 1 AIMessage."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(
+                    content='{"intent": "research", "tool_plan": "1. web_search\\n2. web_fetch", "skip_tools": false}'
+                ),
+                AIMessage(content="Formatted research results"),
+            ]
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub = MagicMock()
+            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Research results")]})
+            mock_create.return_value = mock_sub
+
+            graph = create_assistant_graph(
+                model=mock_model,
+                tools=[MagicMock(name="web_search"), MagicMock(name="web_fetch")],
+                system_prompt="You are a test assistant.",
+            )
+
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="Compare React vs Vue")]},
+                config={"configurable": {"thread_id": "test-single-msg-research"}},
+            )
+
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1, f"Expected exactly 1 AIMessage after research turn, got {len(ai_msgs)}"
+
+    @pytest.mark.asyncio
+    async def test_multi_turn_accumulates_one_ai_per_turn(self) -> None:
+        """Over multiple turns, each turn should add exactly 1 AI message.
+
+        Simulates 3 turns (2 chat, 1 tool_use) and verifies the final
+        state has exactly 3 HumanMessages and 3 AIMessages.
+        """
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        thread_id = "test-multi-turn-single-ai"
+
+        # --- Turn 1: chat ---
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[MagicMock(name="web_search")],
+            system_prompt="You are a test assistant.",
+        )
+
+        result1 = await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": thread_id}},
+        )
+
+        ai_after_turn1 = [m for m in result1["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_after_turn1) == 1, f"Turn 1: expected 1 AI msg, got {len(ai_after_turn1)}"
+
+        # --- Turn 2: tool_use ---
+        mock_model2 = AsyncMock()
+        mock_model2.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="Formatted news"),
+            ]
+        )
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub = MagicMock()
+            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="News results")]})
+            mock_create.return_value = mock_sub
+
+            graph2 = create_assistant_graph(
+                model=mock_model2,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+            )
+
+            result2 = await graph2.ainvoke(
+                {"messages": [HumanMessage(content="What's the news?")]},
+                config={"configurable": {"thread_id": thread_id}},
+            )
+
+        # After turn 2, we should have exactly 2 AI messages total
+        # (1 from turn 1 + 1 from turn 2)
+        ai_after_turn2 = [m for m in result2["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_after_turn2) == 1, (
+            f"Turn 2: expected 1 NEW AI msg (total should be 1 since state is per-invoke), got {len(ai_after_turn2)}"
+        )
+
+
+class TestResponderChatWindow:
+    """Tests for responder chat history windowing."""
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_trims_long_history(self) -> None:
+        """Responder for chat should cap messages to a sliding window."""
+        from agntrick.graph import responder_node
+
+        mock_model = AsyncMock()
+        captured_messages: list[Any] = []
+
+        async def capture_invoke(messages: list[Any]) -> AIMessage:
+            captured_messages.append(messages)
+            return AIMessage(content="Response")
+
+        mock_model.ainvoke = capture_invoke
+
+        # Build a long conversation: 20 exchange pairs = 40 messages
+        long_history: list[Any] = []
+        for i in range(20):
+            long_history.append(HumanMessage(content=f"Question {i}"))
+            long_history.append(AIMessage(content=f"Answer {i}"))
+
+        state: AgentState = {
+            "messages": long_history,
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        await responder_node(state, {}, model=mock_model)
+
+        # The responder should NOT send all 40 messages
+        sent_messages = captured_messages[0]
+        non_system = [m for m in sent_messages if not isinstance(m, SystemMessage)]
+        assert len(non_system) < 40, f"Responder sent all {len(non_system)} messages — should be windowed"
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_window_preserves_recent_messages(self) -> None:
+        """Responder windowing should keep the most recent messages."""
+        from agntrick.graph import responder_node
+
+        mock_model = AsyncMock()
+        captured_messages: list[Any] = []
+
+        async def capture_invoke(messages: list[Any]) -> AIMessage:
+            captured_messages.append(messages)
+            return AIMessage(content="Response")
+
+        mock_model.ainvoke = capture_invoke
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Old question"),
+                AIMessage(content="Old answer"),
+                HumanMessage(content="Recent question"),
+                AIMessage(content="Recent answer"),
+                HumanMessage(content="Latest question"),
+            ],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        await responder_node(state, {}, model=mock_model)
+
+        sent_messages = captured_messages[0]
+        human_contents = [m.content for m in sent_messages if isinstance(m, HumanMessage)]
+        assert "Latest question" in human_contents, f"Window should include latest message, got: {human_contents}"
+        assert "Recent question" in human_contents, f"Window should include recent messages, got: {human_contents}"
+
+
+class TestBuildPruneRemoves:
+    """Tests for _build_prune_removes helper — returns RemoveMessage list for old messages."""
+
+    def test_returns_empty_when_within_cap(self) -> None:
+        """5 messages with cap 20 → no pruning needed."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(5)]
+        assert _build_prune_removes(msgs, max_messages=20) == []
+
+    def test_returns_removes_for_excess_messages(self) -> None:
+        """25 messages with cap 20 → 5 RemoveMessage objects."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(25)]
+        removes = _build_prune_removes(msgs, max_messages=20)
+        assert len(removes) == 5
+        assert all(isinstance(r, RemoveMessage) for r in removes)
+
+    def test_preserves_most_recent_messages(self) -> None:
+        """Oldest messages are removed, newest kept."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(25)]
+        removes = _build_prune_removes(msgs, max_messages=20)
+        removed_ids = {r.id for r in removes}
+        # Should remove msg-0 through msg-4 (oldest 5)
+        assert removed_ids == {f"msg-{i}" for i in range(5)}
+        # Should NOT remove msg-5 through msg-24 (newest 20)
+        kept_ids = {f"msg-{i}" for i in range(5, 25)}
+        assert removed_ids.isdisjoint(kept_ids)
+
+    def test_skips_messages_without_ids(self) -> None:
+        """Messages with id=None should be skipped safely."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}") for i in range(25)]  # No explicit IDs
+        removes = _build_prune_removes(msgs, max_messages=20)
+        assert removes == []
+
+    def test_empty_state_returns_empty(self) -> None:
+        """0 messages → no pruning."""
+        from agntrick.graph import _build_prune_removes
+
+        assert _build_prune_removes([], max_messages=20) == []
+
+    def test_exact_cap_returns_empty(self) -> None:
+        """Exactly 20 messages → no pruning."""
+        from agntrick.graph import _build_prune_removes
+
+        msgs = [HumanMessage(content=f"msg {i}", id=f"msg-{i}") for i in range(20)]
+        assert _build_prune_removes(msgs, max_messages=20) == []
+
+
+class TestResponderStatePruning:
+    """Tests for responder_node pruning old messages from state."""
+
+    @pytest.mark.asyncio
+    async def test_chat_intent_prunes_old_messages(self) -> None:
+        """Chat intent with 30 messages should prune 10 oldest."""
+        msgs: list[Any] = []
+        for i in range(15):
+            msgs.append(HumanMessage(content=f"Q{i}", id=f"h-{i}"))
+            msgs.append(AIMessage(content=f"A{i}", id=f"a-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello back"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1, "Should still add 1 AIMessage for chat"
+        assert len(removes) == 10, f"Should prune 10 oldest (30 - 20), got {len(removes)}"
+
+    @pytest.mark.asyncio
+    async def test_tool_use_intent_prunes_old_messages(self) -> None:
+        """Tool_use intent with 30 messages should prune 10 oldest."""
+        msgs: list[Any] = []
+        for i in range(15):
+            msgs.append(HumanMessage(content=f"Q{i}", id=f"h-{i}"))
+            msgs.append(AIMessage(content=f"A{i}", id=f"a-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 0, "Tool_use should not add AI messages"
+        assert len(removes) == 10, f"Should prune 10 oldest, got {len(removes)}"
+
+    @pytest.mark.asyncio
+    async def test_short_history_no_pruning(self) -> None:
+        """5 messages → no pruning, just normal response."""
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="Hello", id="h-0"),
+                AIMessage(content="Hi!", id="a-0"),
+            ],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hi"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        assert len(removes) == 0, "Short history should not prune"
+        assert len(result["messages"]) == 1  # Just the AIMessage
+
+    @pytest.mark.asyncio
+    async def test_prune_targets_oldest_ids(self) -> None:
+        """Verify removed IDs are the oldest messages, not newest."""
+        msgs: list[Any] = []
+        for i in range(25):
+            msgs.append(HumanMessage(content=f"msg {i}", id=f"id-{i}"))
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Response"))
+
+        result = await responder_node(state, {}, model=mock_model)
+        removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
+        removed_ids = {r.id for r in removes}
+        assert removed_ids == {f"id-{i}" for i in range(5)}

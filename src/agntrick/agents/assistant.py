@@ -49,11 +49,15 @@ class AssistantAgent(AgentBase):
         system_prompt: str,
         checkpointer: Any,
     ) -> Any:
-        """Use the 3-node StateGraph instead of the default ReAct agent."""
+        """Use the 3-node StateGraph with per-node model overrides."""
+        node_models = self._get_node_models()
         return create_assistant_graph(
             model=model,
             tools=tools,
             system_prompt=system_prompt,
             checkpointer=checkpointer,
             progress_callback=self._progress_callback,
+            router_model=node_models.get("router"),
+            executor_model=node_models.get("executor"),
+            responder_model=node_models.get("responder"),
         )

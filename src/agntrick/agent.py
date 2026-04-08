@@ -85,8 +85,12 @@ class AgentBase(Agent):
         """
         config = get_config()
 
+        # Resolve agent name early (needed for model lookup)
+        self._agent_name = _agent_name or config.agents.default_agent_name
+
+        # Resolve model: agent config > global config > provider default
         if model_name is None:
-            model_name = config.llm.model or get_default_model()
+            model_name = config.agent_models.get_model_for(self._agent_name) or config.llm.model or get_default_model()
 
         if temperature is None:
             temperature = config.llm.temperature
@@ -105,8 +109,6 @@ class AgentBase(Agent):
             toolbox_url = config.mcp.toolbox_url or "http://localhost:8080"
         self._toolbox_url = toolbox_url
         self._tool_manifest: ToolManifest | None = None
-        # Get agent name from: parameter > config > default
-        self._agent_name = _agent_name or config.agents.default_agent_name
         self._progress_callback = progress_callback
 
     @property
@@ -169,6 +171,23 @@ class AgentBase(Agent):
 
         # Use custom prompt if available, otherwise use agent's base prompt
         return date_header + (custom_prompt if custom_prompt is not None else base_prompt)
+
+    def _get_node_models(self) -> dict[str, Any]:
+        """Resolve per-node model instances for graph nodes.
+
+        Returns:
+            Dict mapping node names ("router", "executor", "responder") to
+            model instances. Only includes nodes that have explicit node-level
+            overrides configured (not the agent-level fallback).
+        """
+        config = get_config()
+        node_map = config.agent_models.node_overrides.get(self._agent_name, {})
+        overrides: dict[str, Any] = {}
+        for node in ("router", "executor", "responder"):
+            node_model_name = node_map.get(node)
+            if node_model_name:
+                overrides[node] = _create_model(node_model_name, config.llm.temperature)
+        return overrides
 
     def local_tools(self) -> Sequence[Any]:
         """Built-in tools available even without MCP.

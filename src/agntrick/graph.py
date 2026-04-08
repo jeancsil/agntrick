@@ -12,7 +12,7 @@ from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitMiddleware
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
@@ -29,6 +29,16 @@ _MAX_MESSAGE_CHARS = 15_000
 
 # Number of recent messages the router sees for context (follow-up understanding)
 _ROUTER_CONTEXT_WINDOW = 5
+
+# Maximum number of recent messages the responder sees for chat intent.
+# Matches _ROUTER_CONTEXT_WINDOW — enough for follow-up understanding
+# without wasting tokens on stale context.
+_RESPONDER_CHAT_WINDOW = 5
+
+# Maximum messages retained in checkpointer state.
+# Prunes the oldest messages when exceeded — prevents unbounded token waste.
+# Set to 4x the window size (20 = 4 × 5) for multi-turn follow-up context.
+_MAX_STATE_MESSAGES = 20
 
 # Intent-specific tool call limits to prevent tool usage spirals.
 _INTENT_TOOL_LIMITS: dict[str, int] = {
@@ -114,6 +124,46 @@ def _truncate_messages(
             return [msg]
 
     return messages
+
+
+def _window_messages(
+    messages: list[BaseMessage],
+    max_messages: int,
+) -> list[BaseMessage]:
+    """Keep only the most recent messages within a window.
+
+    Args:
+        messages: Full message history.
+        max_messages: Maximum number of messages to keep.
+
+    Returns:
+        List of the most recent messages (up to max_messages).
+    """
+    if len(messages) <= max_messages:
+        return messages
+    return messages[-max_messages:]
+
+
+def _build_prune_removes(
+    messages: list[BaseMessage],
+    max_messages: int,
+) -> list[RemoveMessage]:
+    """Return RemoveMessage objects for messages beyond the cap.
+
+    Keeps the most recent ``max_messages`` and marks older ones for
+    removal via the ``add_messages`` reducer.
+
+    Args:
+        messages: Current state messages (all have IDs from the reducer).
+        max_messages: Maximum messages to retain in state.
+
+    Returns:
+        List of RemoveMessage for messages to prune. Empty if within cap.
+    """
+    if len(messages) <= max_messages:
+        return []
+    to_remove = messages[:-max_messages]
+    return [RemoveMessage(id=m.id) for m in to_remove if m.id is not None]
 
 
 def _safe_invoke_messages(
@@ -498,11 +548,23 @@ Do NOT use any other tools. Just invoke the agent and return its result.
 async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Format the final response for WhatsApp.
 
+    For chat intent: the responder IS the response node (router classified
+    no tools needed), so it returns its AIMessage in ``messages`` to persist
+    in the conversation state.
+
+    For tool_use/research/delegate intents: the executor already added its
+    AIMessage to state. The responder only formats it for WhatsApp output
+    via ``final_response`` — it must NOT append another AIMessage to state,
+    as that would create a duplicate and bloat the conversation history.
+
     Uses _safe_invoke_messages to ensure the GLM API always receives
     a valid message sequence (SystemMessage + at least one HumanMessage).
     """
+    # Compute pruning once — applies to all return paths.
+    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+
     if state.get("intent") == "chat":
-        msgs = state["messages"]  # Chat needs full conversation history for follow-ups
+        msgs = _window_messages(state["messages"], _RESPONDER_CHAT_WINDOW)
         logger.debug(
             "[responder] chat intent: %d messages, types=%s",
             len(msgs),
@@ -517,9 +579,9 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
             last = state["messages"][-1] if state["messages"] else None
             return {
                 "final_response": str(last.content) if last else "Sorry, please try again.",
-                "messages": [],
+                "messages": removes,
             }
-        return {"final_response": str(response.content), "messages": [response]}
+        return {"final_response": str(response.content), "messages": [response] + removes}
 
     # tool_use / research / delegate intent — format executor output
     last_msg = state["messages"][-1]
@@ -539,12 +601,12 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
         # Fallback: return raw content, truncated for WhatsApp
         return {
             "final_response": content[:4096],
-            "messages": [],
+            "messages": removes,
         }
 
     final = str(response.content)
     logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
-    return {"final_response": final, "messages": [response]}
+    return {"final_response": final, "messages": removes}
 
 
 def route_decision(state: AgentState) -> str:
@@ -560,35 +622,44 @@ def create_assistant_graph(
     system_prompt: str,
     checkpointer: Any | None = None,
     progress_callback: ProgressCallback = None,
+    router_model: Any | None = None,
+    executor_model: Any | None = None,
+    responder_model: Any | None = None,
 ) -> Any:
     """Create the 3-node assistant StateGraph.
 
     Args:
-        model: LLM model instance.
+        model: Primary LLM model instance (used for executor if executor_model not set).
         tools: Sequence of tools available to the executor.
         system_prompt: Base system prompt for the agent.
         checkpointer: Optional checkpointer for persistent memory.
         progress_callback: Optional async callback for progress updates.
+        router_model: Optional model override for the router node.
+        executor_model: Optional model override for the executor node.
+        responder_model: Optional model override for the responder node.
 
     Returns:
         Compiled StateGraph ready for ainvoke().
     """
+    _router_model = router_model or model
+    _executor_model = executor_model or model
+    _responder_model = responder_model or model
 
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
-        return await router_node(state, config, model=model)
+        return await router_node(state, config, model=_router_model)
 
     async def _executor(state: AgentState, config: RunnableConfig) -> dict:
         return await executor_node(
             state,
             config,
-            model=model,
+            model=_executor_model,
             tools=tools,
             system_prompt=system_prompt,
             progress_callback=progress_callback,
         )
 
     async def _responder(state: AgentState, config: RunnableConfig) -> dict:
-        return await responder_node(state, config, model=model)
+        return await responder_node(state, config, model=_responder_model)
 
     graph = StateGraph(AgentState)
     graph.add_node("router", _router)
