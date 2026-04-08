@@ -30,6 +30,11 @@ _MAX_MESSAGE_CHARS = 15_000
 # Number of recent messages the router sees for context (follow-up understanding)
 _ROUTER_CONTEXT_WINDOW = 5
 
+# Maximum number of recent messages the responder sees for chat intent.
+# Matches _ROUTER_CONTEXT_WINDOW — enough for follow-up understanding
+# without wasting tokens on stale context.
+_RESPONDER_CHAT_WINDOW = 5
+
 # Intent-specific tool call limits to prevent tool usage spirals.
 _INTENT_TOOL_LIMITS: dict[str, int] = {
     "tool_use": 2,  # 1 primary + 1 fallback
@@ -114,6 +119,24 @@ def _truncate_messages(
             return [msg]
 
     return messages
+
+
+def _window_messages(
+    messages: list[BaseMessage],
+    max_messages: int,
+) -> list[BaseMessage]:
+    """Keep only the most recent messages within a window.
+
+    Args:
+        messages: Full message history.
+        max_messages: Maximum number of messages to keep.
+
+    Returns:
+        List of the most recent messages (up to max_messages).
+    """
+    if len(messages) <= max_messages:
+        return messages
+    return messages[-max_messages:]
 
 
 def _safe_invoke_messages(
@@ -498,11 +521,20 @@ Do NOT use any other tools. Just invoke the agent and return its result.
 async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Format the final response for WhatsApp.
 
+    For chat intent: the responder IS the response node (router classified
+    no tools needed), so it returns its AIMessage in ``messages`` to persist
+    in the conversation state.
+
+    For tool_use/research/delegate intents: the executor already added its
+    AIMessage to state. The responder only formats it for WhatsApp output
+    via ``final_response`` — it must NOT append another AIMessage to state,
+    as that would create a duplicate and bloat the conversation history.
+
     Uses _safe_invoke_messages to ensure the GLM API always receives
     a valid message sequence (SystemMessage + at least one HumanMessage).
     """
     if state.get("intent") == "chat":
-        msgs = state["messages"]  # Chat needs full conversation history for follow-ups
+        msgs = _window_messages(state["messages"], _RESPONDER_CHAT_WINDOW)
         logger.debug(
             "[responder] chat intent: %d messages, types=%s",
             len(msgs),
@@ -544,7 +576,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
 
     final = str(response.content)
     logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
-    return {"final_response": final, "messages": [response]}
+    return {"final_response": final, "messages": []}
 
 
 def route_decision(state: AgentState) -> str:
