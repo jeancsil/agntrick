@@ -8,9 +8,9 @@ The agntrick project has a Go WhatsApp gateway in `gateway/`. Changes to Go file
 
 ## What to Do
 
-1. Run `cd /Users/jeancsil/code/agents/gateway && go vet ./...` — check for code issues
-2. Run `cd /Users/jeancsil/code/agents/gateway && go fmt ./...` — check formatting
-3. Run `cd /Users/jeancsil/code/agents/gateway && go test ./... -v` — run all tests
+1. Run `cd gateway && go vet ./...` — check for code issues
+2. Run `cd gateway && go fmt ./...` — check formatting
+3. Run `cd gateway && go test ./... -v` — run all tests
 
 ## When to Run
 
