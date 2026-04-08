@@ -746,6 +746,138 @@ class TestFlattenToolContent:
         assert "type" not in result[:20]  # "type" key must not appear at start
 
 
+class TestPerNodeModels:
+    """Tests for per-node model overrides in create_assistant_graph."""
+
+    @pytest.mark.asyncio
+    async def test_router_uses_override_model(self) -> None:
+        """Router should use router_model when provided."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        router_model = AsyncMock()
+
+        # Track which model is called for routing
+        router_model.ainvoke = AsyncMock(
+            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+        )
+        primary_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+            router_model=router_model,
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-router-override"}},
+        )
+
+        # Router should have used router_model, not primary
+        router_model.ainvoke.assert_called_once()
+        # Primary should NOT have been called for routing
+        primary_model.ainvoke.assert_called_once()  # only for responder
+
+    @pytest.mark.asyncio
+    async def test_responder_uses_override_model(self) -> None:
+        """Responder should use responder_model when provided."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        responder_model = AsyncMock()
+
+        primary_model.ainvoke = AsyncMock(
+            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+        )
+        responder_model.ainvoke = AsyncMock(return_value=AIMessage(content="Formatted response"))
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+            responder_model=responder_model,
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-responder-override"}},
+        )
+
+        responder_model.ainvoke.assert_called_once()
+        # Primary should only have been called for routing
+        primary_model.ainvoke.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_overrides_uses_primary_for_all(self) -> None:
+        """Without overrides, all nodes should use the primary model."""
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        primary_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=primary_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-no-overrides"}},
+        )
+
+        # Primary should have been called twice (router + responder)
+        assert primary_model.ainvoke.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_executor_uses_override_model(self) -> None:
+        """Executor should use executor_model when provided."""
+        from unittest.mock import patch
+
+        from agntrick.graph import create_assistant_graph
+
+        primary_model = AsyncMock()
+        executor_model = AsyncMock()
+
+        primary_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}'),
+                AIMessage(content="Formatted"),
+            ]
+        )
+        executor_model.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
+
+        with patch("agntrick.graph.create_agent") as mock_create:
+            mock_sub_agent = MagicMock()
+            mock_sub_agent.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Search results")]})
+            mock_create.return_value = mock_sub_agent
+
+            graph = create_assistant_graph(
+                model=primary_model,
+                tools=[MagicMock(name="web_search")],
+                system_prompt="You are a test assistant.",
+                executor_model=executor_model,
+            )
+
+            await graph.ainvoke(
+                {"messages": [HumanMessage(content="Search for news")]},
+                config={"configurable": {"thread_id": "test-executor-override"}},
+            )
+
+        # Verify executor_model was passed to create_agent, not primary_model
+        call_kwargs = mock_create.call_args[1] if mock_create.call_args else {}
+        assert call_kwargs.get("model") is executor_model, (
+            f"Expected executor_model passed to create_agent, got {call_kwargs.get('model')}"
+        )
+
+
 class TestMakeFlatTool:
     """Tests for _make_flat_tool — wraps MCP tools to return plain strings.
 

@@ -560,35 +560,44 @@ def create_assistant_graph(
     system_prompt: str,
     checkpointer: Any | None = None,
     progress_callback: ProgressCallback = None,
+    router_model: Any | None = None,
+    executor_model: Any | None = None,
+    responder_model: Any | None = None,
 ) -> Any:
     """Create the 3-node assistant StateGraph.
 
     Args:
-        model: LLM model instance.
+        model: Primary LLM model instance (used for executor if executor_model not set).
         tools: Sequence of tools available to the executor.
         system_prompt: Base system prompt for the agent.
         checkpointer: Optional checkpointer for persistent memory.
         progress_callback: Optional async callback for progress updates.
+        router_model: Optional model override for the router node.
+        executor_model: Optional model override for the executor node.
+        responder_model: Optional model override for the responder node.
 
     Returns:
         Compiled StateGraph ready for ainvoke().
     """
+    _router_model = router_model or model
+    _executor_model = executor_model or model
+    _responder_model = responder_model or model
 
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
-        return await router_node(state, config, model=model)
+        return await router_node(state, config, model=_router_model)
 
     async def _executor(state: AgentState, config: RunnableConfig) -> dict:
         return await executor_node(
             state,
             config,
-            model=model,
+            model=_executor_model,
             tools=tools,
             system_prompt=system_prompt,
             progress_callback=progress_callback,
         )
 
     async def _responder(state: AgentState, config: RunnableConfig) -> dict:
-        return await responder_node(state, config, model=model)
+        return await responder_node(state, config, model=_responder_model)
 
     graph = StateGraph(AgentState)
     graph.add_node("router", _router)
