@@ -69,6 +69,7 @@ dependencies = [
     "platformdirs>=4.9.4",
     "fastapi>=0.135.2",
     "uvicorn>=0.40.0",
+    "crawl4ai>=0.8.6",
 ]
 
 [project.urls]
@@ -140,3 +141,8 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 files = ["src", "tests"]
 exclude = ["src/agntrick/cron/"]
+
+[[tool.mypy.overrides]]
+module = "crawl4ai.*"
+ignore_missing_imports = true
+follow_imports = "skip"
