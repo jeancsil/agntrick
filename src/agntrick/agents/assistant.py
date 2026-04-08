@@ -11,7 +11,7 @@ from agntrick.agent import AgentBase
 from agntrick.graph import create_assistant_graph
 from agntrick.prompts import load_prompt
 from agntrick.registry import AgentRegistry
-from agntrick.tools import AgentInvocationTool
+from agntrick.tools import AgentInvocationTool, WebExtractorTool
 
 
 @AgentRegistry.register(
@@ -39,8 +39,11 @@ class AssistantAgent(AgentBase):
         return load_prompt("assistant")
 
     def local_tools(self) -> Sequence[Any]:
-        """Return local tools including agent invocation."""
-        return [AgentInvocationTool().to_langchain_tool()]
+        """Return local tools including agent invocation and web extraction."""
+        return [
+            AgentInvocationTool().to_langchain_tool(),
+            WebExtractorTool().to_langchain_tool(),
+        ]
 
     def _create_graph(
         self,
