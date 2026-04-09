@@ -52,6 +52,9 @@ COPY config ./config
 # This installs the package in editable mode with all dependencies
 RUN uv sync --frozen --no-dev
 
+# Install Playwright Chromium browser + system dependencies for Crawl4AI
+RUN uv run playwright install --with-deps chromium
+
 # Copy Go binary from go-builder stage
 COPY --from=go-builder /agntrick-gateway /usr/local/bin/
 

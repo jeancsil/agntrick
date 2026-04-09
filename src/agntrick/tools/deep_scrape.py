@@ -140,11 +140,14 @@ class DeepScrapeTool(Tool):
             # Already in an event loop — use nest_asyncio or run in thread
             return self._try_crawl4ai_sync_fallback(url)
         except Exception as e:
+            err_msg = str(e)
+            if "Executable doesn't exist" in err_msg or "playwright install" in err_msg.lower():
+                err_msg = "Playwright browser not installed. Run: make install"
             return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
-                error=str(e),
+                error=err_msg,
             )
 
     async def _crawl4ai_async(self, url: str) -> DeepScrapeResult:
