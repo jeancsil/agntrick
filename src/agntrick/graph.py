@@ -457,12 +457,10 @@ Maximum 5 tool calls allowed.
         guided_prompt += f"""
 
 ## DELEGATION
-Use the invoke_agent tool with these parameters:
-{tool_plan}
+Call the invoke_agent tool with input_str set to a JSON string like this:
+{{"agent_name": "{tool_plan}", "prompt": "<full task description with all context>"}}
 
-IMPORTANT: Include ALL relevant context from the conversation in the "prompt" field.
-The delegated agent has no memory — it only sees what you put in the prompt.
-
+The prompt field must contain everything the agent needs — it has no memory.
 Do NOT use any other tools. Just invoke the agent and return its result.
 """
     elif tool_plan:
