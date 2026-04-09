@@ -92,6 +92,12 @@ build() {
     cd "$AGNTRICK_DIR"
     uv sync
 
+    # Install Playwright Chromium browser only if missing (needed by Crawl4AI)
+    if [ ! -d "${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"/chromium* ]; then
+        echo "--- Installing Playwright Chromium browser ---"
+        uv run playwright install --with-deps chromium
+    fi
+
     echo "--- Installing toolkit dependencies ---"
     cd "$TOOLKIT_DIR"
     uv sync
