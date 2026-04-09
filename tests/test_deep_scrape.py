@@ -1,22 +1,22 @@
-"""Tests for WebExtractorTool — 3-stage web content extraction pipeline."""
+"""Tests for DeepScrapeTool — 3-stage web content extraction pipeline."""
 
 from unittest.mock import MagicMock, patch
 
 import httpx
 
-from agntrick.tools.web_extractor import (
+from agntrick.tools.deep_scrape import (
+    DeepScrapeResult,
+    DeepScrapeTool,
     ExtractionStage,
     ExtractionStatus,
-    WebContentResult,
-    WebExtractorTool,
 )
 
 
-class TestWebContentResult:
-    """Tests for the WebContentResult model."""
+class TestDeepScrapeResult:
+    """Tests for the DeepScrapeResult model."""
 
     def test_success_str_format(self) -> None:
-        result = WebContentResult(
+        result = DeepScrapeResult(
             url="https://example.com/article",
             status=ExtractionStatus.SUCCESS,
             stage=ExtractionStage.CRAWL4AI,
@@ -30,7 +30,7 @@ class TestWebContentResult:
         assert "crawl4ai" in output
 
     def test_error_str_format(self) -> None:
-        result = WebContentResult(
+        result = DeepScrapeResult(
             url="https://example.com/paywall",
             status=ExtractionStatus.BLOCKED,
             error="Content blocked by paywall.",
@@ -40,7 +40,7 @@ class TestWebContentResult:
         assert "blocked by paywall" in output
 
     def test_success_no_title(self) -> None:
-        result = WebContentResult(
+        result = DeepScrapeResult(
             url="https://example.com",
             status=ExtractionStatus.SUCCESS,
             stage=ExtractionStage.FIRECRAWL,
@@ -51,22 +51,22 @@ class TestWebContentResult:
         assert "Just content." in output
 
 
-class TestWebExtractorTool:
-    """Tests for the WebExtractorTool class."""
+class TestDeepScrapeTool:
+    """Tests for the DeepScrapeTool class."""
 
     def test_name_and_description(self) -> None:
-        tool = WebExtractorTool()
-        assert tool.name == "web_extract"
+        tool = DeepScrapeTool()
+        assert tool.name == "deep_scrape"
         assert "Extract clean text" in tool.description
 
     def test_rejects_invalid_url(self) -> None:
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool.invoke("not-a-url")
         assert "Error" in result
         assert "Invalid URL" in result
 
     def test_rejects_non_http_url(self) -> None:
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool.invoke("ftp://example.com/file")
         assert "Error" in result
 
@@ -77,10 +77,10 @@ class TestWebExtractorTool:
         mock_result.metadata = {"title": title} if title else {}
         return mock_result
 
-    @patch("agntrick.tools.web_extractor.asyncio")
+    @patch("agntrick.tools.deep_scrape.asyncio")
     def test_stage1_crawl4ai_success(self, mock_asyncio: MagicMock) -> None:
         """Crawl4AI returns rich content — pipeline stops at Stage 1."""
-        mock_asyncio.run.return_value = WebContentResult(
+        mock_asyncio.run.return_value = DeepScrapeResult(
             url="https://example.com/article",
             status=ExtractionStatus.SUCCESS,
             stage=ExtractionStage.CRAWL4AI,
@@ -89,12 +89,12 @@ class TestWebExtractorTool:
             final_url="https://example.com/article",
         )
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool.invoke("https://example.com/article")
         assert "Test Article" in result
         assert "crawl4ai" in result
 
-    @patch("agntrick.tools.web_extractor.asyncio")
+    @patch("agntrick.tools.deep_scrape.asyncio")
     @patch.object(httpx, "post")
     @patch.object(httpx, "get")
     def test_stage1_fails_stage2_firecrawl_succeeds(
@@ -104,7 +104,7 @@ class TestWebExtractorTool:
         mock_asyncio: MagicMock,
     ) -> None:
         """Crawl4AI fails, Firecrawl succeeds — returns content from Stage 2."""
-        mock_asyncio.run.return_value = WebContentResult(
+        mock_asyncio.run.return_value = DeepScrapeResult(
             url="https://wsj.com/article",
             status=ExtractionStatus.BLOCKED,
             stage=ExtractionStage.CRAWL4AI,
@@ -125,14 +125,14 @@ class TestWebExtractorTool:
         }
         mock_post.return_value = firecrawl_response
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         tool._firecrawl_api_key = "test-key"
         result = tool.invoke("https://wsj.com/article")
         assert "Paywalled Article" in result
 
     def test_stage2_firecrawl_skipped_without_key(self) -> None:
         """Firecrawl stage is skipped when no API key is set."""
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         tool._firecrawl_api_key = ""
         result = tool._try_firecrawl("https://example.com")
         assert result.status == ExtractionStatus.ERROR
@@ -148,7 +148,7 @@ class TestWebExtractorTool:
         )
         mock_get.return_value = mock_response
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool._try_archive_ph("https://example.com")
         assert result.status == ExtractionStatus.SUCCESS
         assert result.stage == ExtractionStage.ARCHIVE_PH
@@ -160,27 +160,27 @@ class TestWebExtractorTool:
         mock_response.status_code = 404
         mock_get.return_value = mock_response
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool._try_archive_ph("https://nonexistent.com")
         assert result.status == ExtractionStatus.NOT_FOUND
 
     def test_extract_text_from_html(self) -> None:
         html = "<html><head><title>Test</title></head><body><p>Hello world</p><script>var x=1;</script></body></html>"
-        text = WebExtractorTool._extract_text_from_html(html)
+        text = DeepScrapeTool._extract_text_from_html(html)
         assert "Hello world" in text
         assert "var x" not in text
 
     def test_extract_title(self) -> None:
         html = "<html><head><title>My Page Title</title></head><body></body></html>"
-        title = WebExtractorTool._extract_title(html)
+        title = DeepScrapeTool._extract_title(html)
         assert title == "My Page Title"
 
     def test_extract_title_empty(self) -> None:
         html = "<html><head></head><body></body></html>"
-        title = WebExtractorTool._extract_title(html)
+        title = DeepScrapeTool._extract_title(html)
         assert title == ""
 
-    @patch("agntrick.tools.web_extractor.asyncio")
+    @patch("agntrick.tools.deep_scrape.asyncio")
     @patch.object(httpx, "post")
     @patch.object(httpx, "get")
     def test_full_pipeline_all_fail(
@@ -190,7 +190,7 @@ class TestWebExtractorTool:
         mock_asyncio: MagicMock,
     ) -> None:
         """When all 3 stages fail, returns a combined error."""
-        mock_asyncio.run.return_value = WebContentResult(
+        mock_asyncio.run.return_value = DeepScrapeResult(
             url="https://example.com/article",
             status=ExtractionStatus.ERROR,
             stage=ExtractionStage.CRAWL4AI,
@@ -198,11 +198,11 @@ class TestWebExtractorTool:
         )
         mock_get.side_effect = httpx.ConnectError("Connection refused")
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool.invoke("https://example.com/article")
         assert "All extraction stages failed" in result
 
-    @patch("agntrick.tools.web_extractor.asyncio")
+    @patch("agntrick.tools.deep_scrape.asyncio")
     @patch.object(httpx, "post")
     @patch.object(httpx, "get")
     def test_whitespace_url_handling(
@@ -211,7 +211,7 @@ class TestWebExtractorTool:
         mock_post: MagicMock,
         mock_asyncio: MagicMock,
     ) -> None:
-        mock_asyncio.run.return_value = WebContentResult(
+        mock_asyncio.run.return_value = DeepScrapeResult(
             url="https://example.com/article",
             status=ExtractionStatus.ERROR,
             stage=ExtractionStage.CRAWL4AI,
@@ -219,6 +219,6 @@ class TestWebExtractorTool:
         )
         mock_get.side_effect = httpx.ConnectError("fail")
 
-        tool = WebExtractorTool()
+        tool = DeepScrapeTool()
         result = tool.invoke("  https://example.com/article  ")
         assert "All extraction stages failed" in result or "example.com" in result

@@ -212,6 +212,7 @@ Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": nul
 Tool selection rules (CRITICAL):
 - News, current events, headlines → web_search
 - Specific URL to read → web_fetch
+- Paywalled or blocked URL → deep_scrape (bypasses paywalls via Crawl4AI/Firecrawl/Archive.ph)
 - API calls → curl_fetch
 - YouTube links → delegate to "youtube"
 - Code questions → delegate to "developer"
@@ -219,6 +220,7 @@ Tool selection rules (CRITICAL):
 URL handling rules (CRITICAL):
 - "news from a site" or "top news in X" → web_search (search for that site's news)
 - "read this URL" or "open this link" → web_fetch (fetch the specific URL)
+- Paywalled/blocked site (globo.com, wsj.com, nyt.com, etc.) or user says "extract" → deep_scrape
 - If user mentions a site name/URL but asks for NEWS → web_search, NOT web_fetch
 
 For "tool_use": tool_plan = exact tool name, e.g. "web_search"
@@ -230,6 +232,9 @@ Examples:
 "What's happening in Brazil?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
 "What are the top news in g1.globo.com?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
 "Read this article: https://..." → {"intent": "tool_use", "tool_plan": "web_fetch", "skip_tools": false}
+"Extract content from https://globo.com/..." → {"intent": "tool_use", "tool_plan": "deep_scrape", "skip_tools": false}
+"Read this paywalled article https://wsj.com/..." → {"intent": "tool_use", \
+"tool_plan": "deep_scrape", "skip_tools": false}
 "Compare React vs Vue" → {"intent": "research", \
 "tool_plan": "1. web_search React vs Vue 2026\\n2. web_fetch comparison article", \
 "skip_tools": false}
@@ -281,6 +286,7 @@ _INTENT_TOOLS: dict[str, set[str]] = {
     "tool_use": {
         "web_search",
         "web_fetch",
+        "deep_scrape",
         "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
@@ -288,6 +294,7 @@ _INTENT_TOOLS: dict[str, set[str]] = {
     "research": {
         "web_search",
         "web_fetch",
+        "deep_scrape",
         "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",

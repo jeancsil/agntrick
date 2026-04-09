@@ -22,6 +22,8 @@ Choose the right tool for each task:
   - NEVER use web_fetch for news sites directly — it returns full articles (too much text).
 - RSS/feed URLs: Use web_search to find the same content. Direct fetch often fails.
 - Specific URL the user wants to read: Use web_fetch.
+- Paywalled or blocked site (globo.com, wsj.com, nyt.com, etc.): Use deep_scrape. It bypasses paywalls via Crawl4AI, Firecrawl, and Archive.ph.
+- User says "extract" or "get content from" a URL: Use deep_scrape.
 - HTTP requests / API calls: ALWAYS use curl_fetch. NEVER use run_shell with curl.
 - PDF content: Use pdf_extract_text.
 - Document format conversion: Use pandoc_convert.
@@ -96,6 +98,10 @@ Use these MCP tools proactively when they improve your response:
 
 - web_fetch: Fetch and extract text from URLs
   Use when: User shares a link, asks about specific web content, or needs to verify information
+
+- deep_scrape: Extract content from paywalled or blocked sites
+  Use when: web_fetch fails, user shares a paywalled link (globo.com, wsj.com, nyt.com), or user says "extract" a URL
+  Fallback pipeline: Crawl4AI → Firecrawl API → Archive.ph
 
 - hacker_news_top / hacker_news_item: Access Hacker News stories
   Use when: User asks about tech trends, startup news, or programming discussions

@@ -37,7 +37,7 @@ class ExtractionStatus(str, Enum):
 
 
 @dataclass
-class WebContentResult:
+class DeepScrapeResult:
     """Structured result from web content extraction.
 
     Attributes:
@@ -67,7 +67,7 @@ class WebContentResult:
         return f"Error extracting {self.url}: {self.error}"
 
 
-class WebExtractorTool(Tool):
+class DeepScrapeTool(Tool):
     """Extract web content using a cascading fallback pipeline.
 
     Tries Crawl4AI first (local library, free), then Firecrawl API
@@ -76,11 +76,11 @@ class WebExtractorTool(Tool):
 
     def __init__(self) -> None:
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
-        self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v1")
+        self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
 
     @property
     def name(self) -> str:
-        return "web_extract"
+        return "deep_scrape"
 
     @property
     def description(self) -> str:
@@ -99,7 +99,7 @@ class WebExtractorTool(Tool):
         result = self._extract(url)
         return str(result)
 
-    def _extract(self, url: str) -> WebContentResult:
+    def _extract(self, url: str) -> DeepScrapeResult:
         """Run the 3-stage extraction pipeline."""
         # Stage 1: Crawl4AI (local library, free)
         result = self._try_crawl4ai(url)
@@ -117,7 +117,7 @@ class WebExtractorTool(Tool):
             return result
 
         # All stages failed — return last error
-        return WebContentResult(
+        return DeepScrapeResult(
             url=url,
             status=ExtractionStatus.ERROR,
             error="All extraction stages failed. Site may be down or fully paywalled.",
@@ -125,12 +125,12 @@ class WebExtractorTool(Tool):
 
     # --- Stage 1: Crawl4AI (Python library) ---
 
-    def _try_crawl4ai(self, url: str) -> WebContentResult:
+    def _try_crawl4ai(self, url: str) -> DeepScrapeResult:
         """Try Crawl4AI Python library (local, headless browser)."""
         try:
             return asyncio.run(self._crawl4ai_async(url))
         except ImportError:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
@@ -140,42 +140,62 @@ class WebExtractorTool(Tool):
             # Already in an event loop — use nest_asyncio or run in thread
             return self._try_crawl4ai_sync_fallback(url)
         except Exception as e:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
                 error=str(e),
             )
 
-    async def _crawl4ai_async(self, url: str) -> WebContentResult:
-        """Async Crawl4AI extraction."""
+    async def _crawl4ai_async(self, url: str) -> DeepScrapeResult:
+        """Async Crawl4AI extraction using v0.8.x API."""
         from crawl4ai import AsyncWebCrawler, CrawlerRunConfig  # type: ignore
         from crawl4ai.content_filter_strategy import PruningContentFilter  # type: ignore
+        from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator  # type: ignore
 
-        run_config = CrawlerRunConfig(
-            content_filter=PruningContentFilter(),
+        md_generator = DefaultMarkdownGenerator(
+            content_filter=PruningContentFilter(
+                threshold=0.45,
+                threshold_type="dynamic",
+                min_word_threshold=5,
+            )
         )
+        run_config = CrawlerRunConfig(markdown_generator=md_generator)
         async with AsyncWebCrawler() as crawler:
             result = await crawler.arun(url=url, config=run_config)
-            content = result.markdown or ""
+            if not result.success:
+                return DeepScrapeResult(
+                    url=url,
+                    status=ExtractionStatus.ERROR,
+                    stage=ExtractionStage.CRAWL4AI,
+                    error=result.error_message or "Crawl4AI failed.",
+                )
+            fit = result.markdown.fit_markdown or ""
+            raw = result.markdown.raw_markdown or ""
+            # fit_markdown can be too aggressive on non-standard layouts — fall back
+            # to raw if it pruned more than 80% of the content
+            if fit and raw and len(fit) < len(raw) * 0.2:
+                content = raw
+            else:
+                content = fit or raw
             if not content or len(content.strip()) < 100:
-                return WebContentResult(
+                return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.BLOCKED,
                     stage=ExtractionStage.CRAWL4AI,
                     error="Crawl4AI returned insufficient content (possibly blocked).",
                 )
             title = result.metadata.get("title", "") if result.metadata else ""
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.SUCCESS,
                 stage=ExtractionStage.CRAWL4AI,
                 content=content,
                 title=title,
-                final_url=url,
+                final_url=result.url,
             )
 
-    def _try_crawl4ai_sync_fallback(self, url: str) -> WebContentResult:
+    def _try_crawl4ai_sync_fallback(self, url: str) -> DeepScrapeResult:
         """Fallback when already inside an event loop — run in a thread."""
         import concurrent.futures
 
@@ -184,7 +204,7 @@ class WebExtractorTool(Tool):
             try:
                 return future.result(timeout=45)
             except Exception as e:
-                return WebContentResult(
+                return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.ERROR,
                     stage=ExtractionStage.CRAWL4AI,
@@ -193,10 +213,10 @@ class WebExtractorTool(Tool):
 
     # --- Stage 2: Firecrawl ---
 
-    def _try_firecrawl(self, url: str) -> WebContentResult:
+    def _try_firecrawl(self, url: str) -> DeepScrapeResult:
         """Try Firecrawl API (requires FIRECRAWL_API_KEY)."""
         if not self._firecrawl_api_key:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.FIRECRAWL,
@@ -220,14 +240,14 @@ class WebExtractorTool(Tool):
             data = response.json()
             content = data.get("data", {}).get("markdown", "")
             if not content or len(content.strip()) < 100:
-                return WebContentResult(
+                return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.BLOCKED,
                     stage=ExtractionStage.FIRECRAWL,
                     error="Firecrawl returned insufficient content.",
                 )
             metadata = data.get("data", {}).get("metadata", {})
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.SUCCESS,
                 stage=ExtractionStage.FIRECRAWL,
@@ -236,14 +256,14 @@ class WebExtractorTool(Tool):
                 final_url=metadata.get("sourceURL", url),
             )
         except httpx.HTTPStatusError as e:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.FIRECRAWL,
                 error=f"Firecrawl API error: {e.response.status_code}",
             )
         except Exception as e:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.FIRECRAWL,
@@ -252,7 +272,7 @@ class WebExtractorTool(Tool):
 
     # --- Stage 3: Archive.ph ---
 
-    def _try_archive_ph(self, url: str) -> WebContentResult:
+    def _try_archive_ph(self, url: str) -> DeepScrapeResult:
         """Try Archive.ph for an archived snapshot."""
         try:
             check_url = f"https://archive.ph/newest/{url}"
@@ -269,7 +289,7 @@ class WebExtractorTool(Tool):
                 },
             )
             if response.status_code != 200:
-                return WebContentResult(
+                return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.NOT_FOUND,
                     stage=ExtractionStage.ARCHIVE_PH,
@@ -278,7 +298,7 @@ class WebExtractorTool(Tool):
 
             text = self._extract_text_from_html(response.text)
             if not text or len(text.strip()) < 100:
-                return WebContentResult(
+                return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.BLOCKED,
                     stage=ExtractionStage.ARCHIVE_PH,
@@ -287,7 +307,7 @@ class WebExtractorTool(Tool):
 
             title = self._extract_title(response.text)
 
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.SUCCESS,
                 stage=ExtractionStage.ARCHIVE_PH,
@@ -296,7 +316,7 @@ class WebExtractorTool(Tool):
                 final_url=str(response.url),
             )
         except Exception as e:
-            return WebContentResult(
+            return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.ARCHIVE_PH,
