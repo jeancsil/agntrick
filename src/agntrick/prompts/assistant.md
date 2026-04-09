@@ -22,8 +22,9 @@ Choose the right tool for each task:
   - NEVER use web_fetch for news sites directly — it returns full articles (too much text).
 - RSS/feed URLs: Use web_search to find the same content. Direct fetch often fails.
 - Specific URL the user wants to read: Use web_fetch.
-- Paywalled or blocked site (globo.com, wsj.com, nyt.com, etc.): Use deep_scrape. It bypasses paywalls via Crawl4AI, Firecrawl, and Archive.ph.
-- User says "extract" or "get content from" a URL: Use deep_scrape.
+- Paywalled or blocked site (globo.com, wsj.com, nyt.com, etc.): delegate to "paywall-remover"
+- User says "extract", "remove paywall", or "get content from" a blocked URL: delegate to "paywall-remover"
+- web_fetch returns insufficient content or fails on a URL: delegate to "paywall-remover"
 - HTTP requests / API calls: ALWAYS use curl_fetch. NEVER use run_shell with curl.
 - PDF content: Use pdf_extract_text.
 - Document format conversion: Use pandoc_convert.
@@ -69,6 +70,7 @@ Available agents:
 | youtube | Video transcript extraction and analysis | User shares a YouTube link or asks about video content |
 | committer | Git commit message generation | User wants to analyze changes and create commit messages |
 | github-pr-reviewer | GitHub PR review with inline comments | User wants to review a pull request |
+| paywall-remover | Extract content from paywalled/blocked sites via deep scraping | web_fetch fails, user asks to remove paywall, or known paywalled site |
 
 When to delegate:
 1. The task requires specialized expertise (code analysis, tutorials, etc.)
@@ -84,6 +86,9 @@ Delegation rules:
 - PR review requests → delegate to "github-pr-reviewer"
 - News queries → handle directly with web_search (don't delegate to news agent)
 - Learning/tutorial requests → handle directly or delegate to "learning"
+- Paywalled/blocked URLs (globo.com, wsj.com, nyt.com, ft.com, etc.) → delegate to "paywall-remover"
+- web_fetch returns insufficient content → delegate to "paywall-remover"
+- User says "remove paywall" or "extract from" a URL → delegate to "paywall-remover"
 - Always include full context in the delegation prompt — the agent has no memory
 - Only delegate when it improves the result — handle simple tasks yourself
 - Review delegated results before presenting them to the user
@@ -98,10 +103,6 @@ Use these MCP tools proactively when they improve your response:
 
 - web_fetch: Fetch and extract text from URLs
   Use when: User shares a link, asks about specific web content, or needs to verify information
-
-- deep_scrape: Extract content from paywalled or blocked sites
-  Use when: web_fetch fails, user shares a paywalled link (globo.com, wsj.com, nyt.com), or user says "extract" a URL
-  Fallback pipeline: Crawl4AI → Firecrawl API → Archive.ph
 
 - hacker_news_top / hacker_news_item: Access Hacker News stories
   Use when: User asks about tech trends, startup news, or programming discussions
