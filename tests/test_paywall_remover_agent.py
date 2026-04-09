@@ -1,5 +1,6 @@
 """Tests for paywall-remover agent registration and delegation wiring."""
 
+from agntrick.graph import _INTENT_TOOLS
 from agntrick.registry import AgentRegistry
 from agntrick.tools.agent_invocation import DELEGATABLE_AGENTS
 
@@ -22,3 +23,19 @@ class TestPaywallRemoverRegistration:
 
         tool = AgentInvocationTool()
         assert "paywall-remover" in tool.description
+
+
+class TestDeepScrapeRemovedFromGraph:
+    """Verify web_extract/deep_scrape are NOT in intent tools (replaced by delegation)."""
+
+    def test_web_extract_not_in_tool_use(self) -> None:
+        assert "web_extract" not in _INTENT_TOOLS["tool_use"]
+
+    def test_web_extract_not_in_research(self) -> None:
+        assert "web_extract" not in _INTENT_TOOLS["research"]
+
+    def test_deep_scrape_not_in_tool_use(self) -> None:
+        assert "deep_scrape" not in _INTENT_TOOLS["tool_use"]
+
+    def test_deep_scrape_not_in_research(self) -> None:
+        assert "deep_scrape" not in _INTENT_TOOLS["research"]
