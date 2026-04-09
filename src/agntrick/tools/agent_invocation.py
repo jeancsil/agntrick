@@ -19,6 +19,7 @@ DELEGATABLE_AGENTS = [
     "youtube",
     "committer",
     "github-pr-reviewer",
+    "paywall-remover",
 ]
 
 
@@ -58,6 +59,7 @@ Available agents:
 - youtube: Video transcript extraction and analysis
 - committer: Git commit message generation from code changes
 - github-pr-reviewer: GitHub PR review with inline comments
+- paywall-remover: Extract content from paywalled/blocked sites
 
 Input (JSON):
 {
