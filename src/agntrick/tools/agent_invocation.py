@@ -11,6 +11,36 @@ from agntrick.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
+
+def _clear_langchain_httpx_cache() -> None:
+    """Clear langchain_openai's LRU-cached httpx clients.
+
+    ``langchain_openai.chat_models._client_utils`` caches async (and sync)
+    ``httpx`` clients with ``@lru_cache`` so that every ``ChatOpenAI``
+    instance reuses the same underlying ``httpx.AsyncClient``.  That
+    client's ``asyncio.locks.Event`` objects are bound to the event loop
+    that was active when the client was first *used*.  When a delegated
+    agent runs inside a brand-new event loop (created in
+    ``run_in_new_loop``), those bound locks cause::
+
+        RuntimeError: <asyncio.locks.Event> is bound to a different event loop
+
+    Calling this function before creating the delegated agent ensures a
+    fresh ``httpx.AsyncClient`` is created in the new loop.
+    """
+    try:
+        from langchain_openai.chat_models._client_utils import (
+            _cached_async_httpx_client,
+            _cached_sync_httpx_client,
+        )
+
+        _cached_async_httpx_client.cache_clear()
+        _cached_sync_httpx_client.cache_clear()
+    except ImportError:
+        # langchain_openai not installed — nothing to clear.
+        pass
+
+
 # Agents that can be delegated to (excludes assistant and ollama to prevent recursion)
 DELEGATABLE_AGENTS = [
     "developer",
@@ -125,6 +155,7 @@ Returns the agent's response or an error message."""
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)
                         try:
+                            _clear_langchain_httpx_cache()
                             result[0] = new_loop.run_until_complete(
                                 self._invoke_agent_async(agent_cls, agent_name, prompt, timeout)
                             )

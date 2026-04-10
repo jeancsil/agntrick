@@ -109,3 +109,36 @@ class TestAgentInvocationTool:
 
         assert isinstance(lc_tool, StructuredTool)
         assert lc_tool.name == "invoke_agent"
+
+    def test_invoke_in_async_context_clears_httpx_cache(self):
+        """Running in a new loop should clear the langchain httpx LRU cache.
+
+        This verifies the fix for the 'bound to a different event loop' crash.
+        """
+        from agntrick.tools.agent_invocation import _clear_langchain_httpx_cache
+
+        mock_async_cache = MagicMock()
+        mock_sync_cache = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "langchain_openai": MagicMock(),
+                "langchain_openai.chat_models": MagicMock(),
+                "langchain_openai.chat_models._client_utils": MagicMock(
+                    _cached_async_httpx_client=mock_async_cache,
+                    _cached_sync_httpx_client=mock_sync_cache,
+                ),
+            },
+        ):
+            _clear_langchain_httpx_cache()
+            mock_async_cache.cache_clear.assert_called_once()
+            mock_sync_cache.cache_clear.assert_called_once()
+
+    def test_clear_httpx_cache_is_safe_without_langchain(self):
+        """_clear_langchain_httpx_cache should not crash if langchain is missing."""
+        from agntrick.tools.agent_invocation import _clear_langchain_httpx_cache
+
+        with patch.dict("sys.modules", {"langchain_openai.chat_models._client_utils": None}):
+            # Should not raise
+            _clear_langchain_httpx_cache()
