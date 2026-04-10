@@ -12,6 +12,8 @@ import asyncio
 import logging
 import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -21,6 +23,19 @@ from firecrawl import Firecrawl  # type: ignore[import-untyped]
 from agntrick.interfaces.base import Tool
 
 logger = logging.getLogger(__name__)
+
+# Patterns that indicate transient DNS or tunnel connection failures.
+_DNS_ERROR_PATTERNS = (
+    "DNS resolution failed",
+    "ERR_TUNNEL_CONNECTION_FAILED",
+    "getaddrinfo failed",
+    "Name or service not known",
+    "nodename nor servname provided",
+    "Temporary failure in name resolution",
+)
+
+_MAX_DNS_RETRIES = 1  # One retry after initial attempt (2 total attempts)
+_DNS_RETRY_DELAY_SECONDS = 2.0
 
 
 class ExtractionStage(str, Enum):
@@ -69,6 +84,50 @@ class DeepScrapeResult:
             meta = f"[Source: {stage_value} | URL: {self.final_url or self.url}]\n\n"
             return f"{meta}{header}{self.content}"
         return f"Error extracting {self.url}: {self.error}"
+
+
+def _is_dns_error(error_message: str) -> bool:
+    """Check if an error message indicates a DNS or tunnel connection failure.
+
+    Args:
+        error_message: The error string to inspect.
+
+    Returns:
+        True if the error is DNS-related and potentially transient.
+    """
+    msg_lower = error_message.lower()
+    return any(pattern.lower() in msg_lower for pattern in _DNS_ERROR_PATTERNS)
+
+
+def _retry_on_dns_error(
+    stage_label: str,
+    attempt_fn: Callable[[], DeepScrapeResult],
+) -> DeepScrapeResult:
+    """Retry a single-attempt extraction function once on DNS-related errors.
+
+    Args:
+        stage_label: Human-readable stage name for log messages (e.g. "Stage 2 (Firecrawl)").
+        attempt_fn: Callable that takes no arguments and returns a DeepScrapeResult.
+
+    Returns:
+        The first successful result, or the last error result if all attempts fail.
+    """
+    for attempt in range(_MAX_DNS_RETRIES + 1):
+        result = attempt_fn()
+        if result.status == ExtractionStatus.SUCCESS:
+            return result
+        if attempt < _MAX_DNS_RETRIES and _is_dns_error(result.error):
+            logger.info(
+                "[deep_scrape] %s: DNS error on attempt %d, retrying in %.1fs — %s",
+                stage_label,
+                attempt + 1,
+                _DNS_RETRY_DELAY_SECONDS,
+                result.error,
+            )
+            time.sleep(_DNS_RETRY_DELAY_SECONDS)
+            continue
+        return result
+    return result  # unreachable, but satisfies mypy
 
 
 class DeepScrapeTool(Tool):
@@ -231,7 +290,10 @@ class DeepScrapeTool(Tool):
     # --- Stage 2: Firecrawl ---
 
     def _try_firecrawl(self, url: str) -> DeepScrapeResult:
-        """Try Firecrawl API via firecrawl-py SDK (requires FIRECRAWL_API_KEY)."""
+        """Try Firecrawl API via firecrawl-py SDK (requires FIRECRAWL_API_KEY).
+
+        Retries once on DNS-related errors to handle transient network failures.
+        """
         if not self._firecrawl_api_key:
             return DeepScrapeResult(
                 url=url,
@@ -239,6 +301,18 @@ class DeepScrapeTool(Tool):
                 stage=ExtractionStage.FIRECRAWL,
                 error="FIRECRAWL_API_KEY not set — skipping Firecrawl stage.",
             )
+
+        return _retry_on_dns_error("Stage 2 (Firecrawl)", lambda: self._firecrawl_attempt(url))
+
+    def _firecrawl_attempt(self, url: str) -> DeepScrapeResult:
+        """Single attempt at Firecrawl extraction.
+
+        Args:
+            url: The URL to scrape.
+
+        Returns:
+            DeepScrapeResult with extraction outcome.
+        """
         try:
             app = Firecrawl(api_key=self._firecrawl_api_key, api_url=self._firecrawl_url)
             result = app.scrape(url, formats=["markdown"], only_main_content=True)
@@ -270,7 +344,21 @@ class DeepScrapeTool(Tool):
     # --- Stage 3: Archive.ph ---
 
     def _try_archive_ph(self, url: str) -> DeepScrapeResult:
-        """Try Archive.ph for an archived snapshot."""
+        """Try Archive.ph for an archived snapshot.
+
+        Retries once on connection/DNS errors to handle transient failures.
+        """
+        return _retry_on_dns_error("Stage 3 (Archive.ph)", lambda: self._archive_ph_attempt(url))
+
+    def _archive_ph_attempt(self, url: str) -> DeepScrapeResult:
+        """Single attempt at Archive.ph extraction.
+
+        Args:
+            url: The URL to look up in the archive.
+
+        Returns:
+            DeepScrapeResult with extraction outcome.
+        """
         try:
             check_url = f"https://archive.ph/newest/{url}"
             response = httpx.get(

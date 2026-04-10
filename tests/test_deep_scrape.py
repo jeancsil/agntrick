@@ -1,4 +1,4 @@
-"""Tests for DeepScrapeTool — 3-stage web content extraction pipeline."""
+"""Tests for DeepScrapeTool — 3-stage web content extraction pipeline with DNS retry."""
 
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +9,7 @@ from agntrick.tools.deep_scrape import (
     DeepScrapeTool,
     ExtractionStage,
     ExtractionStatus,
+    _is_dns_error,
 )
 
 
@@ -51,6 +52,43 @@ class TestDeepScrapeResult:
         assert "Just content." in output
 
 
+class TestIsDnsError:
+    """Tests for the _is_dns_error helper."""
+
+    def test_dns_resolution_failed(self) -> None:
+        assert _is_dns_error('Firecrawl error: DNS resolution failed for hostname "g1.globo.com.br"')
+
+    def test_tunnel_connection_failed(self) -> None:
+        assert _is_dns_error(
+            "Firecrawl error: Internal Server Error: Failed to scrape. "
+            'The URL failed to load in the browser with error code "ERR_TUNNEL_CONNECTION_FAILED"'
+        )
+
+    def test_getaddrinfo_failed(self) -> None:
+        assert _is_dns_error("httpx.ConnectError: getaddrinfo failed for host example.com")
+
+    def test_name_or_service_not_known(self) -> None:
+        assert _is_dns_error("ConnectionError: Name or service not known")
+
+    def test_nodename_failure(self) -> None:
+        assert _is_dns_error("nodename nor servname provided, or not known")
+
+    def test_temporary_failure(self) -> None:
+        assert _is_dns_error("Temporary failure in name resolution")
+
+    def test_non_dns_error_returns_false(self) -> None:
+        assert not _is_dns_error("Firecrawl returned insufficient content.")
+
+    def test_non_dns_connection_error(self) -> None:
+        assert not _is_dns_error("Connection refused")
+
+    def test_empty_string(self) -> None:
+        assert not _is_dns_error("")
+
+    def test_case_insensitive(self) -> None:
+        assert _is_dns_error("dns RESOLUTION FAILED for host")
+
+
 class TestDeepScrapeTool:
     """Tests for the DeepScrapeTool class."""
 
@@ -69,13 +107,6 @@ class TestDeepScrapeTool:
         tool = DeepScrapeTool()
         result = tool.invoke("ftp://example.com/file")
         assert "Error" in result
-
-    def _make_crawl_result(self, markdown: str, title: str = "") -> MagicMock:
-        """Create a mock CrawlResult object."""
-        mock_result = MagicMock()
-        mock_result.markdown = markdown
-        mock_result.metadata = {"title": title} if title else {}
-        return mock_result
 
     @patch("agntrick.tools.deep_scrape.asyncio")
     def test_stage1_crawl4ai_success(self, mock_asyncio: MagicMock) -> None:
@@ -215,3 +246,211 @@ class TestDeepScrapeTool:
         tool = DeepScrapeTool()
         result = tool.invoke("  https://example.com/article  ")
         assert "All extraction stages failed" in result or "example.com" in result
+
+
+class TestFirecrawlDnsRetry:
+    """Tests for DNS retry logic in _try_firecrawl."""
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    def test_firecrawl_retries_on_dns_error_then_succeeds(
+        self,
+        mock_firecrawl_cls: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Firecrawl retries once when DNS error occurs, then succeeds."""
+        mock_app = MagicMock()
+        # First call raises DNS error, second succeeds
+        mock_app.scrape.side_effect = [
+            Exception('DNS resolution failed for hostname "g1.globo.com.br"'),
+            {
+                "markdown": "Recovered content " + "x" * 200,
+                "metadata": {"title": "Recovered", "sourceURL": "https://g1.globo.com"},
+            },
+        ]
+        mock_firecrawl_cls.return_value = mock_app
+
+        tool = DeepScrapeTool()
+        tool._firecrawl_api_key = "test-key"
+        result = tool._try_firecrawl("https://g1.globo.com")
+
+        assert result.status == ExtractionStatus.SUCCESS
+        assert result.title == "Recovered"
+        assert mock_app.scrape.call_count == 2
+        mock_time.sleep.assert_called_once_with(2.0)
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    def test_firecrawl_retries_on_tunnel_error_then_succeeds(
+        self,
+        mock_firecrawl_cls: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Firecrawl retries once when ERR_TUNNEL_CONNECTION_FAILED occurs."""
+        mock_app = MagicMock()
+        mock_app.scrape.side_effect = [
+            Exception('The URL failed to load with error code "ERR_TUNNEL_CONNECTION_FAILED"'),
+            {
+                "markdown": "Tunnel recovered " + "x" * 200,
+                "metadata": {"title": "Tunnel OK", "sourceURL": "https://example.com"},
+            },
+        ]
+        mock_firecrawl_cls.return_value = mock_app
+
+        tool = DeepScrapeTool()
+        tool._firecrawl_api_key = "test-key"
+        result = tool._try_firecrawl("https://example.com")
+
+        assert result.status == ExtractionStatus.SUCCESS
+        assert result.title == "Tunnel OK"
+        assert mock_app.scrape.call_count == 2
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    def test_firecrawl_does_not_retry_on_non_dns_error(
+        self,
+        mock_firecrawl_cls: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Firecrawl does NOT retry on non-DNS errors."""
+        mock_app = MagicMock()
+        mock_app.scrape.side_effect = Exception("Internal Server Error: Rate limit exceeded")
+        mock_firecrawl_cls.return_value = mock_app
+
+        tool = DeepScrapeTool()
+        tool._firecrawl_api_key = "test-key"
+        result = tool._try_firecrawl("https://example.com")
+
+        assert result.status == ExtractionStatus.ERROR
+        assert "Rate limit exceeded" in result.error
+        assert mock_app.scrape.call_count == 1
+        mock_time.sleep.assert_not_called()
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    def test_firecrawl_dns_retry_exhausted(
+        self,
+        mock_firecrawl_cls: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Firecrawl retries once on DNS error, then returns error if still failing."""
+        mock_app = MagicMock()
+        mock_app.scrape.side_effect = Exception("getaddrinfo failed for host example.com")
+        mock_firecrawl_cls.return_value = mock_app
+
+        tool = DeepScrapeTool()
+        tool._firecrawl_api_key = "test-key"
+        result = tool._try_firecrawl("https://example.com")
+
+        assert result.status == ExtractionStatus.ERROR
+        assert "getaddrinfo failed" in result.error
+        assert mock_app.scrape.call_count == 2
+        mock_time.sleep.assert_called_once_with(2.0)
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    def test_firecrawl_no_retry_on_blocked(
+        self,
+        mock_firecrawl_cls: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Firecrawl does NOT retry when content is blocked (insufficient content)."""
+        mock_app = MagicMock()
+        mock_app.scrape.return_value = {
+            "markdown": "short",
+            "metadata": {},
+        }
+        mock_firecrawl_cls.return_value = mock_app
+
+        tool = DeepScrapeTool()
+        tool._firecrawl_api_key = "test-key"
+        result = tool._try_firecrawl("https://example.com")
+
+        assert result.status == ExtractionStatus.BLOCKED
+        assert mock_app.scrape.call_count == 1
+        mock_time.sleep.assert_not_called()
+
+
+class TestArchivePhDnsRetry:
+    """Tests for DNS retry logic in _try_archive_ph."""
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch.object(httpx, "get")
+    def test_archive_ph_retries_on_dns_error_then_succeeds(
+        self,
+        mock_get: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Archive.ph retries once on DNS error, then succeeds."""
+        dns_error = httpx.ConnectError("getaddrinfo failed for host archive.ph")
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.url = "https://archive.ph/abc/https://example.com"
+        success_response.text = (
+            "<html><head><title>Archived</title></head><body><p>" + "Content. " * 50 + "</p></body></html>"
+        )
+
+        mock_get.side_effect = [dns_error, success_response]
+
+        tool = DeepScrapeTool()
+        result = tool._try_archive_ph("https://example.com")
+
+        assert result.status == ExtractionStatus.SUCCESS
+        assert result.title == "Archived"
+        assert mock_get.call_count == 2
+        mock_time.sleep.assert_called_once_with(2.0)
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch.object(httpx, "get")
+    def test_archive_ph_does_not_retry_on_non_dns_error(
+        self,
+        mock_get: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Archive.ph does NOT retry on non-DNS connection errors."""
+        mock_get.side_effect = httpx.ConnectError("Connection refused")
+
+        tool = DeepScrapeTool()
+        result = tool._try_archive_ph("https://example.com")
+
+        assert result.status == ExtractionStatus.ERROR
+        assert "Connection refused" in result.error
+        assert mock_get.call_count == 1
+        mock_time.sleep.assert_not_called()
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch.object(httpx, "get")
+    def test_archive_ph_dns_retry_exhausted(
+        self,
+        mock_get: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Archive.ph retries once on DNS error, returns error if still failing."""
+        mock_get.side_effect = httpx.ConnectError("DNS resolution failed for archive.ph")
+
+        tool = DeepScrapeTool()
+        result = tool._try_archive_ph("https://example.com")
+
+        assert result.status == ExtractionStatus.ERROR
+        assert "DNS resolution failed" in result.error
+        assert mock_get.call_count == 2
+        mock_time.sleep.assert_called_once_with(2.0)
+
+    @patch("agntrick.tools.deep_scrape.time")
+    @patch.object(httpx, "get")
+    def test_archive_ph_no_retry_on_404(
+        self,
+        mock_get: MagicMock,
+        mock_time: MagicMock,
+    ) -> None:
+        """Archive.ph does NOT retry on 404 (not a DNS error)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        tool = DeepScrapeTool()
+        result = tool._try_archive_ph("https://example.com")
+
+        assert result.status == ExtractionStatus.NOT_FOUND
+        assert mock_get.call_count == 1
+        mock_time.sleep.assert_not_called()
