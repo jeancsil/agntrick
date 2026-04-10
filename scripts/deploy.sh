@@ -93,7 +93,7 @@ build() {
     uv sync
 
     # Install Playwright Chromium browser only if missing (needed by Crawl4AI)
-    if [ ! -d "${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"/chromium* ]; then
+    if ! ls "${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"/chromium* >/dev/null 2>&1; then
         echo "--- Installing Playwright Chromium browser ---"
         uv run playwright install --with-deps chromium
     fi
