@@ -9,6 +9,7 @@ Stage 3: Archive.ph (free, archived snapshots — last resort)
 """
 
 import asyncio
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ import httpx
 from firecrawl import Firecrawl  # type: ignore[import-untyped]
 
 from agntrick.interfaces.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionStage(str, Enum):
@@ -104,20 +107,24 @@ class DeepScrapeTool(Tool):
         """Run the 3-stage extraction pipeline."""
         # Stage 1: Crawl4AI (local library, free)
         result = self._try_crawl4ai(url)
+        logger.info("[deep_scrape] Stage 1 (Crawl4AI): status=%s error=%s", result.status.value, result.error)
         if result.status == ExtractionStatus.SUCCESS:
             return result
 
         # Stage 2: Firecrawl (API, credit-based)
         result = self._try_firecrawl(url)
+        logger.info("[deep_scrape] Stage 2 (Firecrawl): status=%s error=%s", result.status.value, result.error)
         if result.status == ExtractionStatus.SUCCESS:
             return result
 
         # Stage 3: Archive.ph (free, last resort)
         result = self._try_archive_ph(url)
+        logger.info("[deep_scrape] Stage 3 (Archive.ph): status=%s error=%s", result.status.value, result.error)
         if result.status == ExtractionStatus.SUCCESS:
             return result
 
         # All stages failed — return last error
+        logger.warning("[deep_scrape] All 3 stages failed for %s", url)
         return DeepScrapeResult(
             url=url,
             status=ExtractionStatus.ERROR,
@@ -129,6 +136,15 @@ class DeepScrapeTool(Tool):
     def _try_crawl4ai(self, url: str) -> DeepScrapeResult:
         """Try Crawl4AI Python library (local, headless browser)."""
         try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already in an event loop — run in a separate thread
+            return self._try_crawl4ai_sync_fallback(url)
+
+        try:
             return asyncio.run(self._crawl4ai_async(url))
         except ImportError:
             return DeepScrapeResult(
@@ -137,9 +153,6 @@ class DeepScrapeTool(Tool):
                 stage=ExtractionStage.CRAWL4AI,
                 error="crawl4ai package not installed. Run: uv add crawl4ai",
             )
-        except RuntimeError:
-            # Already in an event loop — use nest_asyncio or run in thread
-            return self._try_crawl4ai_sync_fallback(url)
         except Exception as e:
             err_msg = str(e)
             if "Executable doesn't exist" in err_msg or "playwright install" in err_msg.lower():
