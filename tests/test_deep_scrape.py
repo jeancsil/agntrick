@@ -95,12 +95,12 @@ class TestDeepScrapeTool:
         assert "crawl4ai" in result
 
     @patch("agntrick.tools.deep_scrape.asyncio")
-    @patch.object(httpx, "post")
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
     @patch.object(httpx, "get")
     def test_stage1_fails_stage2_firecrawl_succeeds(
         self,
         mock_get: MagicMock,
-        mock_post: MagicMock,
+        mock_firecrawl_cls: MagicMock,
         mock_asyncio: MagicMock,
     ) -> None:
         """Crawl4AI fails, Firecrawl succeeds — returns content from Stage 2."""
@@ -111,19 +111,15 @@ class TestDeepScrapeTool:
             error="Insufficient content.",
         )
 
-        firecrawl_response = MagicMock()
-        firecrawl_response.status_code = 200
-        firecrawl_response.raise_for_status = MagicMock()
-        firecrawl_response.json.return_value = {
-            "data": {
-                "markdown": "Full article content " + "x" * 200,
-                "metadata": {
-                    "title": "Paywalled Article",
-                    "sourceURL": "https://wsj.com/article",
-                },
-            }
+        mock_app = MagicMock()
+        mock_app.scrape.return_value = {
+            "markdown": "Full article content " + "x" * 200,
+            "metadata": {
+                "title": "Paywalled Article",
+                "sourceURL": "https://wsj.com/article",
+            },
         }
-        mock_post.return_value = firecrawl_response
+        mock_firecrawl_cls.return_value = mock_app
 
         tool = DeepScrapeTool()
         tool._firecrawl_api_key = "test-key"
@@ -181,12 +177,10 @@ class TestDeepScrapeTool:
         assert title == ""
 
     @patch("agntrick.tools.deep_scrape.asyncio")
-    @patch.object(httpx, "post")
     @patch.object(httpx, "get")
     def test_full_pipeline_all_fail(
         self,
         mock_get: MagicMock,
-        mock_post: MagicMock,
         mock_asyncio: MagicMock,
     ) -> None:
         """When all 3 stages fail, returns a combined error."""
@@ -199,16 +193,15 @@ class TestDeepScrapeTool:
         mock_get.side_effect = httpx.ConnectError("Connection refused")
 
         tool = DeepScrapeTool()
+        tool._firecrawl_api_key = ""
         result = tool.invoke("https://example.com/article")
         assert "All extraction stages failed" in result
 
     @patch("agntrick.tools.deep_scrape.asyncio")
-    @patch.object(httpx, "post")
     @patch.object(httpx, "get")
     def test_whitespace_url_handling(
         self,
         mock_get: MagicMock,
-        mock_post: MagicMock,
         mock_asyncio: MagicMock,
     ) -> None:
         mock_asyncio.run.return_value = DeepScrapeResult(

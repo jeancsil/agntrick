@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
+from firecrawl import Firecrawl  # type: ignore[import-untyped]
 
 from agntrick.interfaces.base import Tool
 
@@ -217,7 +218,7 @@ class DeepScrapeTool(Tool):
     # --- Stage 2: Firecrawl ---
 
     def _try_firecrawl(self, url: str) -> DeepScrapeResult:
-        """Try Firecrawl API (requires FIRECRAWL_API_KEY)."""
+        """Try Firecrawl API via firecrawl-py SDK (requires FIRECRAWL_API_KEY)."""
         if not self._firecrawl_api_key:
             return DeepScrapeResult(
                 url=url,
@@ -226,22 +227,9 @@ class DeepScrapeTool(Tool):
                 error="FIRECRAWL_API_KEY not set — skipping Firecrawl stage.",
             )
         try:
-            response = httpx.post(
-                f"{self._firecrawl_url}/scrape",
-                headers={
-                    "Authorization": f"Bearer {self._firecrawl_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "url": url,
-                    "formats": ["markdown"],
-                    "onlyMainContent": True,
-                },
-                timeout=45.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            content = data.get("data", {}).get("markdown", "")
+            app = Firecrawl(api_key=self._firecrawl_api_key, api_url=self._firecrawl_url)
+            result = app.scrape(url, formats=["markdown"], only_main_content=True)
+            content = result.get("markdown", "") if isinstance(result, dict) else str(result)
             if not content or len(content.strip()) < 100:
                 return DeepScrapeResult(
                     url=url,
@@ -249,7 +237,7 @@ class DeepScrapeTool(Tool):
                     stage=ExtractionStage.FIRECRAWL,
                     error="Firecrawl returned insufficient content.",
                 )
-            metadata = data.get("data", {}).get("metadata", {})
+            metadata = result.get("metadata", {}) if isinstance(result, dict) else {}
             return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.SUCCESS,
@@ -258,19 +246,12 @@ class DeepScrapeTool(Tool):
                 title=metadata.get("title", ""),
                 final_url=metadata.get("sourceURL", url),
             )
-        except httpx.HTTPStatusError as e:
-            return DeepScrapeResult(
-                url=url,
-                status=ExtractionStatus.ERROR,
-                stage=ExtractionStage.FIRECRAWL,
-                error=f"Firecrawl API error: {e.response.status_code}",
-            )
         except Exception as e:
             return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.FIRECRAWL,
-                error=str(e),
+                error=f"Firecrawl error: {e}",
             )
 
     # --- Stage 3: Archive.ph ---
