@@ -159,11 +159,11 @@ class AgentBase(Agent):
         # If we have a manifest and tool categories, append tools section
         if self._tool_manifest is not None and self._tool_categories:
             try:
-                agent_name = self._agent_name or self.__class__.__name__.replace("Agent", "").lower()
+                effective_prompt = custom_prompt if custom_prompt is not None else base_prompt
                 full_prompt = generate_system_prompt(
-                    agent_name=agent_name,
                     manifest=self._tool_manifest,
                     categories=self._tool_categories,
+                    base_prompt=effective_prompt,
                 )
                 return date_header + full_prompt
             except Exception as e:
