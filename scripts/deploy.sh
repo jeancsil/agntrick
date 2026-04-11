@@ -105,7 +105,9 @@ build() {
 
     # Install Playwright Chromium browser only if missing (needed by Crawl4AI Stage 1)
     # Non-fatal: Stage 1 (Crawl4AI) fails gracefully; Stages 2-3 (Firecrawl, Archive.ph) still work.
-    if ! ls "${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"/chromium* >/dev/null 2>&1; then
+    # Override PLAYWRIGHT_BROWSERS_PATH to store browsers on a different disk (e.g. a mounted volume).
+    export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$AGNTRICK_DIR/.playwright-browsers}"
+    if ! ls "$PLAYWRIGHT_BROWSERS_PATH"/chromium* >/dev/null 2>&1; then
         echo "--- Installing Playwright Chromium browser ---"
         if uv run playwright install --with-deps chromium; then
             echo "  Playwright Chromium installed successfully."
