@@ -44,6 +44,7 @@ class TestMCPServerManager:
                     call_args = mock_popen.call_args
                     assert call_args[0][0] == ["uv", "run", "python", "-m", "agentic_toolkit"]
                     assert call_args[1]["start_new_session"] is True
+                    assert call_args[1]["cwd"] == toolkit_path
 
                     # Verify process is set
                     assert manager.process is mock_process

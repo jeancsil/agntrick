@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 from agntrick.interfaces.base import Tool
@@ -52,6 +53,10 @@ DELEGATABLE_AGENTS = [
     "paywall-remover",
 ]
 
+# Default timeout for agent invocations (seconds).
+# Override with AGENT_INVOCATION_TIMEOUT env var.
+_DEFAULT_AGENT_TIMEOUT = int(os.environ.get("AGENT_INVOCATION_TIMEOUT", "120"))
+
 
 class AgentInvocationTool(Tool):
     """Tool to invoke other registered agents.
@@ -64,7 +69,7 @@ class AgentInvocationTool(Tool):
         {
             "agent_name": "developer",
             "prompt": "Analyze the auth module...",
-            "timeout": 60  // optional, defaults to 60
+            "timeout": 120  // optional, defaults to 120 (override with AGENT_INVOCATION_TIMEOUT env var)
         }
 
     Returns:
@@ -95,7 +100,7 @@ Input (JSON):
 {
     "agent_name": "developer",
     "prompt": "Your task with full context...",
-    "timeout": 60
+    "timeout": 120
 }
 
 Returns the agent's response or an error message."""
@@ -123,7 +128,7 @@ Returns the agent's response or an error message."""
 
         agent_name = data["agent_name"]
         prompt = data["prompt"]
-        timeout = data.get("timeout", 60)
+        timeout = data.get("timeout", _DEFAULT_AGENT_TIMEOUT)
 
         # Block self-delegation
         if agent_name == "ollama":
@@ -178,6 +183,7 @@ Returns the agent's response or an error message."""
                 return result[0]
             except RuntimeError:
                 # No running loop, use asyncio.run()
+                _clear_langchain_httpx_cache()
                 return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")

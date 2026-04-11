@@ -142,3 +142,48 @@ class TestAgentInvocationTool:
         with patch.dict("sys.modules", {"langchain_openai.chat_models._client_utils": None}):
             # Should not raise
             _clear_langchain_httpx_cache()
+
+    def test_default_timeout_is_120(self):
+        """Default timeout should be 120 seconds."""
+        from agntrick.tools.agent_invocation import _DEFAULT_AGENT_TIMEOUT
+
+        assert _DEFAULT_AGENT_TIMEOUT == 120
+
+    def test_env_var_overrides_default_timeout(self):
+        """AGENT_INVOCATION_TIMEOUT env var should override default."""
+        import importlib
+
+        with patch.dict("os.environ", {"AGENT_INVOCATION_TIMEOUT": "300"}):
+            # Reimport to pick up the new env var
+            import agntrick.tools.agent_invocation as mod
+
+            importlib.reload(mod)
+            assert mod._DEFAULT_AGENT_TIMEOUT == 300
+
+        # Reload again to restore default
+        importlib.reload(mod)
+
+    def test_asyncio_run_path_clears_httpx_cache(self):
+        """The asyncio.run() fallback path should also clear httpx cache."""
+        tool = AgentInvocationTool()
+
+        input_json = json.dumps({"agent_name": "developer", "prompt": "Test prompt"})
+
+        with (
+            patch("agntrick.tools.agent_invocation.AgentRegistry") as mock_registry,
+            patch("agntrick.tools.agent_invocation._clear_langchain_httpx_cache") as mock_clear,
+        ):
+            mock_agent_cls = MagicMock()
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value="Agent response")
+            mock_agent_cls.return_value = mock_agent
+            mock_registry.get.return_value = mock_agent_cls
+            mock_registry.list_agents.return_value = ["developer"]
+            mock_registry.get_tool_categories.return_value = []
+
+            # Force the asyncio.run() path by making get_running_loop raise RuntimeError
+            with patch("asyncio.get_running_loop", side_effect=RuntimeError("no running loop")):
+                tool.invoke(input_json)
+
+            # Both paths should clear the cache
+            assert mock_clear.called

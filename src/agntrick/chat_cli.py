@@ -156,6 +156,7 @@ class MCPServerManager:
         # Start the subprocess with a new process group
         self.process = subprocess.Popen(
             ["uv", "run", "python", "-m", "agentic_toolkit"],
+            cwd=toolkit_path,
             start_new_session=True,
         )
 

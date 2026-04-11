@@ -462,6 +462,8 @@ Call the invoke_agent tool with input_str set to a JSON string like this:
 
 The prompt field must contain everything the agent needs — it has no memory.
 Do NOT use any other tools. Just invoke the agent and return its result.
+If the agent returns an error or times out, respond to the user with the error.
+NEVER retry invoke_agent on failure — you only get ONE attempt.
 """
     elif tool_plan:
         guided_prompt += f"\n\n## TASK PLAN\n{tool_plan}"
