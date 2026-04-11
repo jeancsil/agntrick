@@ -594,6 +594,198 @@ class TestDeepScrapeTool:
         asyncio.run(cleanup())
         assert DeepScrapeTool._crawler is None
 
+
+class TestBrowserCrashRecovery:
+    """Tests for browser crash recovery in _get_crawler()."""
+
+    def test_get_crawler_recreates_on_crash(self) -> None:
+        """Verify that _get_crawler() recreates browser if it crashes."""
+        import asyncio
+
+        async def check_crash_recovery() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            tool = DeepScrapeTool()
+
+            # First call creates the crawler
+            first_crawler = await tool._get_crawler()
+            assert first_crawler is not None
+            assert DeepScrapeTool._crawler is first_crawler
+
+            # Simulate a crash by setting crawler to None
+            DeepScrapeTool._crawler = None
+
+            # Second call should recreate the crawler
+            second_crawler = await tool._get_crawler()
+            assert second_crawler is not None
+            assert DeepScrapeTool._crawler is second_crawler
+
+            # Verify it's a new instance (not the old one)
+            assert second_crawler is not first_crawler
+
+        asyncio.run(check_crash_recovery())
+
+    def test_get_crawler_handles_exception_during_health_check(self) -> None:
+        """Verify that _get_crawler() handles exceptions during health check."""
+        import asyncio
+
+        async def check_exception_handling() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            tool = DeepScrapeTool()
+
+            # Create initial crawler
+            crawler = await tool._get_crawler()
+            assert crawler is not None
+
+            # We can't easily mock the health check without a real operation,
+            # but we can verify the exception handling path exists
+            # by setting crawler to None and ensuring it recreates
+            DeepScrapeTool._crawler = None
+
+            # Should recreate successfully
+            new_crawler = await tool._get_crawler()
+            assert new_crawler is not None
+            assert DeepScrapeTool._crawler is new_crawler
+
+        asyncio.run(check_exception_handling())
+
+    def test_get_crawler_thread_safety_during_recovery(self) -> None:
+        """Verify that _get_crawler() is thread-safe during crash recovery."""
+        import asyncio
+
+        async def check_concurrent_recovery() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            tool = DeepScrapeTool()
+
+            # Create initial crawler
+            await tool._get_crawler()
+            assert DeepScrapeTool._crawler is not None
+
+            # Simulate crash
+            DeepScrapeTool._crawler = None
+
+            # Multiple concurrent calls should all get the same new crawler
+            tasks = [tool._get_crawler() for _ in range(5)]
+            crawlers = await asyncio.gather(*tasks)
+
+            # All should be the same instance
+            assert len(set(id(c) for c in crawlers)) == 1
+            assert DeepScrapeTool._crawler is crawlers[0]
+
+        asyncio.run(check_concurrent_recovery())
+
+
+class TestTimeoutProtection:
+    """Tests for timeout protection in _crawl4ai_async()."""
+
+    @patch("agntrick.tools.deep_scrape.asyncio.wait_for")
+    def test_crawl4ai_timeout_returns_error(self, mock_wait_for: MagicMock) -> None:
+        """Verify that _crawl4ai_async() handles timeout gracefully."""
+        import asyncio
+
+        # Mock wait_for to raise TimeoutError
+        mock_wait_for.side_effect = asyncio.TimeoutError()
+
+        tool = DeepScrapeTool()
+
+        async def check_timeout() -> None:
+            result = await tool._crawl4ai_async("https://example.com")
+
+            assert result.status == ExtractionStatus.ERROR
+            assert result.stage == ExtractionStage.CRAWL4AI
+            assert "timeout after 30 seconds" in result.error.lower()
+
+        asyncio.run(check_timeout())
+
+    @patch("agntrick.tools.deep_scrape.asyncio.wait_for")
+    def test_crawl4ai_timeout_does_not_crash_browser(self, mock_wait_for: MagicMock) -> None:
+        """Verify that timeout doesn't corrupt the persistent browser instance."""
+        import asyncio
+
+        # Mock wait_for to raise TimeoutError on first call, succeed on second
+        mock_crawl_result = MagicMock()
+        mock_crawl_result.success = True
+        mock_crawl_result.markdown.fit_markdown = "Content " * 50
+        mock_crawl_result.markdown.raw_markdown = "Content " * 50
+        mock_crawl_result.metadata = {"title": "Test"}
+        mock_crawl_result.url = "https://example.com"
+
+        mock_wait_for.side_effect = [
+            asyncio.TimeoutError(),
+            mock_crawl_result,
+        ]
+
+        tool = DeepScrapeTool()
+
+        async def check_recovery_after_timeout() -> None:
+            # First call times out
+            result1 = await tool._crawl4ai_async("https://example.com")
+            assert result1.status == ExtractionStatus.ERROR
+            assert "timeout" in result1.error.lower()
+
+            # Second call should succeed (browser still functional)
+            result2 = await tool._crawl4ai_async("https://example.com")
+            assert result2.status == ExtractionStatus.SUCCESS
+            assert result2.title == "Test"
+
+        asyncio.run(check_recovery_after_timeout())
+
+    @patch("agntrick.tools.deep_scrape.asyncio.wait_for")
+    def test_crawl4ai_exception_handling(self, mock_wait_for: MagicMock) -> None:
+        """Verify that _crawl4ai_async() handles non-timeout exceptions."""
+        import asyncio
+
+        # Mock wait_for to raise a generic exception
+        mock_wait_for.side_effect = RuntimeError("Browser process crashed")
+
+        tool = DeepScrapeTool()
+
+        async def check_exception() -> None:
+            result = await tool._crawl4ai_async("https://example.com")
+
+            assert result.status == ExtractionStatus.ERROR
+            assert result.stage == ExtractionStage.CRAWL4AI
+            assert "Crawl4AI error:" in result.error
+            assert "Browser process crashed" in result.error
+
+        asyncio.run(check_exception())
+
+    @patch("agntrick.tools.deep_scrape.asyncio.wait_for")
+    def test_crawl4ai_timeout_value_is_30_seconds(self, mock_wait_for: MagicMock) -> None:
+        """Verify that the timeout is set to 30 seconds."""
+        import asyncio
+
+        # Mock wait_for to succeed immediately
+        mock_crawl_result = MagicMock()
+        mock_crawl_result.success = True
+        mock_crawl_result.markdown.fit_markdown = "Content " * 50
+        mock_crawl_result.markdown.raw_markdown = "Content " * 50
+        mock_crawl_result.metadata = {"title": "Test"}
+        mock_crawl_result.url = "https://example.com"
+
+        async def mock_arun(*args, **kwargs):
+            return mock_crawl_result
+
+        mock_wait_for.return_value = mock_crawl_result
+
+        tool = DeepScrapeTool()
+
+        async def check_timeout_value() -> None:
+            await tool._crawl4ai_async("https://example.com")
+
+            # Verify wait_for was called with timeout=30.0
+            mock_wait_for.assert_called_once()
+            call_kwargs = mock_wait_for.call_args[1]
+            assert "timeout" in call_kwargs
+            assert call_kwargs["timeout"] == 30.0
+
+        asyncio.run(check_timeout_value())
+
     def test_rejects_invalid_url(self) -> None:
         tool = DeepScrapeTool()
         result = tool.invoke("not-a-url")

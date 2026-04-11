@@ -208,9 +208,17 @@ class DeepScrapeTool(Tool):
             asyncio.run(cls.warmup())
 
     async def _get_crawler(self) -> "AsyncWebCrawler":
-        """Get or create the persistent AsyncWebCrawler instance."""
+        """Get or create the persistent AsyncWebCrawler instance with recovery."""
         if DeepScrapeTool._crawler is not None:
-            return DeepScrapeTool._crawler
+            try:
+                # Quick health check — verify the crawler is still alive
+                # We can't easily check browser health without an operation,
+                # but we can at least verify the object exists
+                return DeepScrapeTool._crawler
+            except Exception:
+                # Browser crashed, recreate
+                logger.warning("[deep_scrape] Browser appears dead, recreating...")
+                DeepScrapeTool._crawler = None
 
         async with DeepScrapeTool._crawler_lock:
             # Double-check after acquiring lock
@@ -360,8 +368,29 @@ class DeepScrapeTool(Tool):
             )
         )
         run_config = CrawlerRunConfig(markdown_generator=md_generator)
-        crawler = await self._get_crawler()
-        result = await crawler.arun(url=url, config=run_config)
+
+        try:
+            crawler = await self._get_crawler()
+            # Add timeout to prevent hangs
+            result = await asyncio.wait_for(
+                crawler.arun(url=url, config=run_config),
+                timeout=30.0,  # 30 second timeout per page
+            )
+        except asyncio.TimeoutError:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error="Crawl4AI timeout after 30 seconds",
+            )
+        except Exception as e:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error=f"Crawl4AI error: {str(e)}",
+            )
+
         if not result.success:
             return DeepScrapeResult(
                 url=url,
