@@ -254,7 +254,7 @@ class DeepScrapeTool(Tool):
 
     async def _crawl4ai_async(self, url: str) -> DeepScrapeResult:
         """Async Crawl4AI extraction using v0.8.x API."""
-        from crawl4ai import AsyncWebCrawler, CrawlerRunConfig  # type: ignore
+        from crawl4ai import CrawlerRunConfig  # type: ignore
         from crawl4ai.content_filter_strategy import PruningContentFilter  # type: ignore
         from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator  # type: ignore
 
@@ -266,39 +266,39 @@ class DeepScrapeTool(Tool):
             )
         )
         run_config = CrawlerRunConfig(markdown_generator=md_generator)
-        async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url=url, config=run_config)
-            if not result.success:
-                return DeepScrapeResult(
-                    url=url,
-                    status=ExtractionStatus.ERROR,
-                    stage=ExtractionStage.CRAWL4AI,
-                    error=result.error_message or "Crawl4AI failed.",
-                )
-            fit = result.markdown.fit_markdown or ""
-            raw = result.markdown.raw_markdown or ""
-            # fit_markdown can be too aggressive on non-standard layouts — fall back
-            # to raw if it pruned more than 80% of the content
-            if fit and raw and len(fit) < len(raw) * 0.2:
-                content = raw
-            else:
-                content = fit or raw
-            if not content or len(content.strip()) < 100:
-                return DeepScrapeResult(
-                    url=url,
-                    status=ExtractionStatus.BLOCKED,
-                    stage=ExtractionStage.CRAWL4AI,
-                    error="Crawl4AI returned insufficient content (possibly blocked).",
-                )
-            title = result.metadata.get("title", "") if result.metadata else ""
+        crawler = await self._get_crawler()
+        result = await crawler.arun(url=url, config=run_config)
+        if not result.success:
             return DeepScrapeResult(
                 url=url,
-                status=ExtractionStatus.SUCCESS,
+                status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
-                content=content,
-                title=title,
-                final_url=result.url,
+                error=result.error_message or "Crawl4AI failed.",
             )
+        fit = result.markdown.fit_markdown or ""
+        raw = result.markdown.raw_markdown or ""
+        # fit_markdown can be too aggressive on non-standard layouts — fall back
+        # to raw if it pruned more than 80% of the content
+        if fit and raw and len(fit) < len(raw) * 0.2:
+            content = raw
+        else:
+            content = fit or raw
+        if not content or len(content.strip()) < 100:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.BLOCKED,
+                stage=ExtractionStage.CRAWL4AI,
+                error="Crawl4AI returned insufficient content (possibly blocked).",
+            )
+        title = result.metadata.get("title", "") if result.metadata else ""
+        return DeepScrapeResult(
+            url=url,
+            status=ExtractionStatus.SUCCESS,
+            stage=ExtractionStage.CRAWL4AI,
+            content=content,
+            title=title,
+            final_url=result.url,
+        )
 
     def _try_crawl4ai_sync_fallback(self, url: str) -> DeepScrapeResult:
         """Fallback when already inside an event loop — run in a thread."""

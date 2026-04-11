@@ -97,6 +97,25 @@ class TestDeepScrapeTool:
         assert tool.name == "deep_scrape"
         assert "Extract clean text" in tool.description
 
+    def test_persistent_crawler_reuse(self) -> None:
+        """Verify that _get_crawler() returns the same instance across calls."""
+        import asyncio
+
+        async def check_reuse() -> None:
+            tool1 = DeepScrapeTool()
+            tool2 = DeepScrapeTool()
+
+            # Both tool instances should share the same class-level crawler
+            crawler1 = await tool1._get_crawler()
+            crawler2 = await tool2._get_crawler()
+
+            # Verify they're the same instance
+            assert crawler1 is crawler2
+            assert DeepScrapeTool._crawler is crawler1
+
+        # Run the async test
+        asyncio.run(check_reuse())
+
     def test_rejects_invalid_url(self) -> None:
         tool = DeepScrapeTool()
         result = tool.invoke("not-a-url")
