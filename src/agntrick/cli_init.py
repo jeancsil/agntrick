@@ -5,6 +5,7 @@ configuration (LLM provider, API key, model) and writes ~/.agntrick.yaml.
 Optionally creates a .env file with the API key.
 """
 
+import shlex
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,18 +15,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
 console = Console()
-
-
-class ProviderInfo(dict[str, Any]):
-    """Type dict for provider info."""
-
-    provider: str
-    api_key_env: str
-    base_url_env: str
-    base_url_default: str
-    default_model: str
-    needs_api_key: bool
-    needs_base_url: bool
 
 
 SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
@@ -156,7 +145,7 @@ def _write_env_file(path: Path, env_vars: dict[str, str]) -> None:
         lines = [line for line in lines if not line.startswith(f"{var_name}=")]
 
     for var_name, value in env_vars.items():
-        lines.append(f"{var_name}={value}")
+        lines.append(f"{var_name}={shlex.quote(value)}")
 
     path.write_text("\n".join(lines) + "\n")
 
@@ -258,11 +247,19 @@ def init_command() -> None:
     )
 
     # Step 3: Temperature
-    temperature_str = Prompt.ask(
-        "[bold]Temperature[/bold] (0.0 = deterministic, 1.0 = creative)",
-        default="0.1",
-    )
-    temperature = float(temperature_str)
+    temperature = 0.1
+    while True:
+        temperature_str = Prompt.ask(
+            "[bold]Temperature[/bold] (0.0 = deterministic, 1.0 = creative)",
+            default="0.1",
+        )
+        try:
+            temperature = float(temperature_str)
+            if 0.0 <= temperature <= 2.0:
+                break
+            console.print("[red]Temperature must be between 0.0 and 2.0[/red]")
+        except ValueError:
+            console.print(f"[red]Invalid number: {temperature_str}[/red]")
 
     # Step 4: API key (only if provider needs one)
     wrote_env = False

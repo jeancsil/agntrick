@@ -151,7 +151,7 @@ def _budget_window_messages(
     count = 0
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
-        msg_chars = len(str(msg.content)) if hasattr(msg, "content") else 0
+        msg_chars = len(str(msg.content))
         if count > 0 and total_chars + msg_chars > max_chars:
             break
         if count >= max_messages:

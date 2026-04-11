@@ -39,9 +39,14 @@ if [[ ! -f "$GATEWAY_DIR/main.go" ]]; then
     log_error "gateway/main.go not found. Run from repo root."
 fi
 
-# Verify Go is installed
+# Verify Go is installed and meets minimum version
 if ! command -v go &>/dev/null; then
     log_error "Go is required. Install: https://go.dev/dl/"
+fi
+GO_VERSION=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+' | head -1)
+REQUIRED_VERSION="1.25"
+if [[ "$(printf '%s\n' "$REQUIRED_VERSION" "$GO_VERSION" | sort -V | head -1)" != "$REQUIRED_VERSION" ]]; then
+    log_error "Go >= $REQUIRED_VERSION required, got $GO_VERSION. Update: https://go.dev/dl/"
 fi
 
 # Verify release exists on GitHub
