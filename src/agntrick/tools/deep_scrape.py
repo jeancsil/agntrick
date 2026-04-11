@@ -16,13 +16,22 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 from firecrawl import Firecrawl  # type: ignore[import-untyped]
 
 from agntrick.interfaces.base import Tool
 
+if TYPE_CHECKING:
+    from crawl4ai import AsyncWebCrawler, BrowserConfig
+
 logger = logging.getLogger(__name__)
+
+# Module-level persistent crawler instance
+_crawler_instance: "AsyncWebCrawler | None" = None
+_crawler_lock = asyncio.Lock()
+_crawler_initialized = False
 
 # Patterns that indicate transient DNS or tunnel connection failures.
 _DNS_ERROR_PATTERNS = (
@@ -137,9 +146,124 @@ class DeepScrapeTool(Tool):
     (credit-based), then Archive.ph (free archive) as a last resort.
     """
 
+    # Class-level state for persistent browser
+    _crawler: ClassVar["AsyncWebCrawler | None"] = None
+    _crawler_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+
     def __init__(self) -> None:
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
         self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
+        self._crawl4ai_enabled = os.environ.get("CRAWL4AI_ENABLED", "true").lower() == "true"
+
+    @classmethod
+    async def warmup(cls) -> None:
+        """Pre-launch the Playwright browser for faster first request.
+
+        Call this during application startup to eliminate cold-start latency.
+        """
+        if cls._crawler is not None:
+            return  # Already warmed
+
+        async with cls._crawler_lock:
+            if cls._crawler is not None:
+                return
+
+            from crawl4ai import AsyncWebCrawler
+
+            browser_config = cls._get_browser_config()
+            cls._crawler = AsyncWebCrawler(config=browser_config)
+            await cls._crawler.__aenter__()
+            logger.info("[deep_scrape] Playwright browser warmed up")
+
+    @classmethod
+    async def shutdown(cls) -> None:
+        """Clean up the persistent browser instance.
+
+        Call this during application shutdown.
+        """
+        if cls._crawler is None:
+            return
+
+        async with cls._crawler_lock:
+            if cls._crawler is None:
+                return
+
+            await cls._crawler.__aexit__(None, None, None)
+            cls._crawler = None
+            logger.info("[deep_scrape] Playwright browser shut down")
+
+    @classmethod
+    def warmup_sync(cls) -> None:
+        """Synchronous warmup wrapper for non-async contexts.
+
+        Provides a blocking interface for warming up the browser from
+        synchronous code paths (e.g., script entry points).
+        """
+        try:
+            asyncio.get_running_loop()
+            # Already in async context — can't block
+            logger.warning("[deep_scrape] warmup_sync called from async context, use warmup() instead")
+        except RuntimeError:
+            # No event loop — safe to create one
+            asyncio.run(cls.warmup())
+
+    async def _get_crawler(self) -> "AsyncWebCrawler":
+        """Get or create the persistent AsyncWebCrawler instance with recovery."""
+        if DeepScrapeTool._crawler is not None:
+            try:
+                # Quick health check — verify the crawler is still alive
+                # We can't easily check browser health without an operation,
+                # but we can at least verify the object exists
+                return DeepScrapeTool._crawler
+            except Exception:
+                # Browser crashed, recreate
+                logger.warning("[deep_scrape] Browser appears dead, recreating...")
+                DeepScrapeTool._crawler = None
+
+        async with DeepScrapeTool._crawler_lock:
+            # Double-check after acquiring lock
+            if DeepScrapeTool._crawler is not None:
+                return DeepScrapeTool._crawler
+
+            from crawl4ai import AsyncWebCrawler
+
+            browser_config = self._get_browser_config()
+            DeepScrapeTool._crawler = AsyncWebCrawler(config=browser_config)
+            await DeepScrapeTool._crawler.__aenter__()
+            return DeepScrapeTool._crawler
+
+    @staticmethod
+    def _get_browser_config() -> "BrowserConfig":
+        """Build BrowserConfig with optional low-memory optimizations.
+
+        Returns:
+            BrowserConfig instance configured based on PLAYWRIGHT_LOW_MEMORY env var.
+        """
+        from crawl4ai import BrowserConfig
+
+        browser_config = BrowserConfig(
+            headless=True,
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 "
+                "Safari/537.36"
+            ),
+        )
+
+        # Add memory-conscious flags for low-memory systems
+        if os.environ.get("PLAYWRIGHT_LOW_MEMORY", "false").lower() == "true":
+            logger.info("[deep_scrape] PLAYWRIGHT_LOW_MEMORY=true: enabling memory optimizations")
+            browser_config.extra_args = [
+                "--disable-dev-shm-usage",  # Avoid /dev/shm (often small on containers)
+                "--disable-gpu",  # Disable GPU acceleration
+                "--no-sandbox",  # Disable sandbox (use with caution)
+                "--disable-setuid-sandbox",  # Disable setuid sandbox
+                "--disable-background-timer-throttling",  # Disable background timer throttling
+                "--disable-backgrounding-occluded-windows",  # Disable backgrounding occluded windows
+                "--disable-renderer-backgrounding",  # Disable renderer backgrounding
+            ]
+
+        return browser_config
 
     @property
     def name(self) -> str:
@@ -194,6 +318,13 @@ class DeepScrapeTool(Tool):
 
     def _try_crawl4ai(self, url: str) -> DeepScrapeResult:
         """Try Crawl4AI Python library (local, headless browser)."""
+        if not self._crawl4ai_enabled:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error="Crawl4AI disabled via CRAWL4AI_ENABLED=false",
+            )
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -225,7 +356,7 @@ class DeepScrapeTool(Tool):
 
     async def _crawl4ai_async(self, url: str) -> DeepScrapeResult:
         """Async Crawl4AI extraction using v0.8.x API."""
-        from crawl4ai import AsyncWebCrawler, CrawlerRunConfig  # type: ignore
+        from crawl4ai import CrawlerRunConfig  # type: ignore
         from crawl4ai.content_filter_strategy import PruningContentFilter  # type: ignore
         from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator  # type: ignore
 
@@ -237,39 +368,60 @@ class DeepScrapeTool(Tool):
             )
         )
         run_config = CrawlerRunConfig(markdown_generator=md_generator)
-        async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url=url, config=run_config)
-            if not result.success:
-                return DeepScrapeResult(
-                    url=url,
-                    status=ExtractionStatus.ERROR,
-                    stage=ExtractionStage.CRAWL4AI,
-                    error=result.error_message or "Crawl4AI failed.",
-                )
-            fit = result.markdown.fit_markdown or ""
-            raw = result.markdown.raw_markdown or ""
-            # fit_markdown can be too aggressive on non-standard layouts — fall back
-            # to raw if it pruned more than 80% of the content
-            if fit and raw and len(fit) < len(raw) * 0.2:
-                content = raw
-            else:
-                content = fit or raw
-            if not content or len(content.strip()) < 100:
-                return DeepScrapeResult(
-                    url=url,
-                    status=ExtractionStatus.BLOCKED,
-                    stage=ExtractionStage.CRAWL4AI,
-                    error="Crawl4AI returned insufficient content (possibly blocked).",
-                )
-            title = result.metadata.get("title", "") if result.metadata else ""
+
+        try:
+            crawler = await self._get_crawler()
+            # Add timeout to prevent hangs
+            result = await asyncio.wait_for(
+                crawler.arun(url=url, config=run_config),
+                timeout=30.0,  # 30 second timeout per page
+            )
+        except asyncio.TimeoutError:
             return DeepScrapeResult(
                 url=url,
-                status=ExtractionStatus.SUCCESS,
+                status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
-                content=content,
-                title=title,
-                final_url=result.url,
+                error="Crawl4AI timeout after 30 seconds",
             )
+        except Exception as e:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error=f"Crawl4AI error: {str(e)}",
+            )
+
+        if not result.success:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error=result.error_message or "Crawl4AI failed.",
+            )
+        fit = result.markdown.fit_markdown or ""
+        raw = result.markdown.raw_markdown or ""
+        # fit_markdown can be too aggressive on non-standard layouts — fall back
+        # to raw if it pruned more than 80% of the content
+        if fit and raw and len(fit) < len(raw) * 0.2:
+            content = raw
+        else:
+            content = fit or raw
+        if not content or len(content.strip()) < 100:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.BLOCKED,
+                stage=ExtractionStage.CRAWL4AI,
+                error="Crawl4AI returned insufficient content (possibly blocked).",
+            )
+        title = result.metadata.get("title", "") if result.metadata else ""
+        return DeepScrapeResult(
+            url=url,
+            status=ExtractionStatus.SUCCESS,
+            stage=ExtractionStage.CRAWL4AI,
+            content=content,
+            title=title,
+            final_url=result.url,
+        )
 
     def _try_crawl4ai_sync_fallback(self, url: str) -> DeepScrapeResult:
         """Fallback when already inside an event loop — run in a thread."""

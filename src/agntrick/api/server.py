@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agntrick.api.middleware import RequestLoggingAndErrorMiddleware
 from agntrick.api.routes import agents, health, whatsapp
 from agntrick.config import get_config
+from agntrick.tools.deep_scrape import DeepScrapeTool
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.tenant_manager = TenantManager(base_path=config.storage.base_path)
 
+    # Warm up Playwright browser for DeepScrapeTool
+    try:
+        await DeepScrapeTool.warmup()
+        logger.info("Playwright browser warmed up successfully")
+    except Exception as e:
+        logger.warning("Failed to warm up Playwright browser: %s", e)
+
     yield
 
     # Clean up SSE connections
@@ -43,6 +51,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sse_queues.clear()
 
     app.state.tenant_manager.close_all()
+
+    # Clean up Playwright browser
+    await DeepScrapeTool.shutdown()
+    logger.info("Playwright browser shut down")
+
     logger.info("Shutting down agntrick API server")
 
 

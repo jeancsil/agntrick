@@ -52,7 +52,7 @@ logs/
 # Configuration files
 **/whatsapp.yaml
 .agntrick.yaml
-
+.agntrick-pids
 # Go compiled binaries
 gateway/gateway
 gateway/agntrick-gateway
@@ -70,4 +70,5 @@ storage/agntrick/
 MagicMock/
 
 # Claude Code local settings (user-specific)
+.claude/worktrees/
 .claude/settings.local.json
