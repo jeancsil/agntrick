@@ -99,6 +99,157 @@ class TestDeepScrapeTool:
         assert tool.name == "deep_scrape"
         assert "Extract clean text" in tool.description
 
+    def test_crawl4ai_enabled_default(self) -> None:
+        """Verify that Crawl4AI is enabled by default."""
+        tool = DeepScrapeTool()
+        assert tool._crawl4ai_enabled is True
+
+    def test_crawl4ai_enabled_via_env(self) -> None:
+        """Verify that Crawl4AI can be enabled via environment variable."""
+        import os
+
+        original_value = os.environ.get("CRAWL4AI_ENABLED")
+        try:
+            os.environ["CRAWL4AI_ENABLED"] = "true"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is True
+
+            os.environ["CRAWL4AI_ENABLED"] = "True"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is True
+
+            os.environ["CRAWL4AI_ENABLED"] = "TRUE"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is True
+        finally:
+            if original_value is None:
+                os.environ.pop("CRAWL4AI_ENABLED", None)
+            else:
+                os.environ["CRAWL4AI_ENABLED"] = original_value
+
+    def test_crawl4ai_disabled_via_env(self) -> None:
+        """Verify that Crawl4AI can be disabled via environment variable."""
+        import os
+
+        original_value = os.environ.get("CRAWL4AI_ENABLED")
+        try:
+            os.environ["CRAWL4AI_ENABLED"] = "false"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is False
+
+            os.environ["CRAWL4AI_ENABLED"] = "False"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is False
+
+            os.environ["CRAWL4AI_ENABLED"] = "FALSE"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is False
+
+            os.environ["CRAWL4AI_ENABLED"] = "0"
+            tool = DeepScrapeTool()
+            assert tool._crawl4ai_enabled is False
+        finally:
+            if original_value is None:
+                os.environ.pop("CRAWL4AI_ENABLED", None)
+            else:
+                os.environ["CRAWL4AI_ENABLED"] = original_value
+
+    def test_try_crawl4ai_when_disabled(self) -> None:
+        """Verify that _try_crawl4ai returns error when disabled."""
+        import os
+
+        original_value = os.environ.get("CRAWL4AI_ENABLED")
+        try:
+            os.environ["CRAWL4AI_ENABLED"] = "false"
+            tool = DeepScrapeTool()
+            result = tool._try_crawl4ai("https://example.com")
+
+            assert result.status == ExtractionStatus.ERROR
+            assert result.stage == ExtractionStage.CRAWL4AI
+            assert "Crawl4AI disabled via CRAWL4AI_ENABLED=false" in result.error
+        finally:
+            if original_value is None:
+                os.environ.pop("CRAWL4AI_ENABLED", None)
+            else:
+                os.environ["CRAWL4AI_ENABLED"] = original_value
+
+    @patch("agntrick.tools.deep_scrape.Firecrawl")
+    @patch.object(httpx, "get")
+    def test_pipeline_skips_stage1_when_disabled(
+        self,
+        mock_get: MagicMock,
+        mock_firecrawl_cls: MagicMock,
+    ) -> None:
+        """Verify that pipeline skips Stage 1 when Crawl4AI is disabled and falls back to Stage 2."""
+        import os
+
+        original_value = os.environ.get("CRAWL4AI_ENABLED")
+        original_firecrawl_key = os.environ.get("FIRECRAWL_API_KEY")
+
+        try:
+            # Disable Crawl4AI
+            os.environ["CRAWL4AI_ENABLED"] = "false"
+            os.environ["FIRECRAWL_API_KEY"] = "test-key"
+
+            # Mock Firecrawl to succeed
+            mock_app = MagicMock()
+            mock_app.scrape.return_value = {
+                "markdown": "Firecrawl content " + "x" * 200,
+                "metadata": {
+                    "title": "Firecrawl Article",
+                    "sourceURL": "https://example.com/article",
+                },
+            }
+            mock_firecrawl_cls.return_value = mock_app
+
+            tool = DeepScrapeTool()
+            result = tool.invoke("https://example.com/article")
+
+            # Should skip Stage 1 and use Stage 2 (Firecrawl)
+            assert "Firecrawl Article" in result
+            assert "firecrawl" in result
+
+            # Verify Firecrawl was called
+            mock_app.scrape.assert_called_once()
+
+            # Verify Archive.ph (Stage 3) was NOT called
+            mock_get.assert_not_called()
+        finally:
+            if original_value is None:
+                os.environ.pop("CRAWL4AI_ENABLED", None)
+            else:
+                os.environ["CRAWL4AI_ENABLED"] = original_value
+
+            if original_firecrawl_key is None:
+                os.environ.pop("FIRECRAWL_API_KEY", None)
+            else:
+                os.environ["FIRECRAWL_API_KEY"] = original_firecrawl_key
+
+    @patch("agntrick.tools.deep_scrape.asyncio")
+    def test_try_crawl4ai_when_enabled(
+        self,
+        mock_asyncio: MagicMock,
+    ) -> None:
+        """Verify that _try_crawl4ai proceeds normally when enabled."""
+        mock_asyncio.run.return_value = DeepScrapeResult(
+            url="https://example.com/article",
+            status=ExtractionStatus.SUCCESS,
+            stage=ExtractionStage.CRAWL4AI,
+            content="A" + "x" * 200,
+            title="Test Article",
+            final_url="https://example.com/article",
+        )
+
+        tool = DeepScrapeTool()
+        # Verify Crawl4AI is enabled by default
+        assert tool._crawl4ai_enabled is True
+
+        result = tool._try_crawl4ai("https://example.com/article")
+
+        assert result.status == ExtractionStatus.SUCCESS
+        assert result.stage == ExtractionStage.CRAWL4AI
+        assert result.title == "Test Article"
+
     def test_persistent_crawler_reuse(self) -> None:
         """Verify that _get_crawler() returns the same instance across calls."""
         import asyncio

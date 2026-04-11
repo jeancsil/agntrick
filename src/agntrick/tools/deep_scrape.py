@@ -153,6 +153,7 @@ class DeepScrapeTool(Tool):
     def __init__(self) -> None:
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
         self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
+        self._crawl4ai_enabled = os.environ.get("CRAWL4AI_ENABLED", "true").lower() == "true"
 
     @classmethod
     async def warmup(cls) -> None:
@@ -274,6 +275,13 @@ class DeepScrapeTool(Tool):
 
     def _try_crawl4ai(self, url: str) -> DeepScrapeResult:
         """Try Crawl4AI Python library (local, headless browser)."""
+        if not self._crawl4ai_enabled:
+            return DeepScrapeResult(
+                url=url,
+                status=ExtractionStatus.ERROR,
+                stage=ExtractionStage.CRAWL4AI,
+                error="Crawl4AI disabled via CRAWL4AI_ENABLED=false",
+            )
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
