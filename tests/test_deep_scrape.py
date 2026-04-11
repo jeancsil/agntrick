@@ -179,6 +179,126 @@ class TestDeepScrapeTool:
 
         asyncio.run(check_concurrent_warmup())
 
+    def test_shutdown_cleans_up_crawler(self) -> None:
+        """Verify that shutdown() properly cleans up the persistent browser instance."""
+        import asyncio
+
+        async def check_shutdown() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Warm up the crawler
+            await DeepScrapeTool.warmup()
+            assert DeepScrapeTool._crawler is not None
+
+            # Mock the __aexit__ method to verify it's called
+            original_crawler = DeepScrapeTool._crawler
+            with patch.object(original_crawler, "__aexit__", return_value=None) as mock_aexit:
+                await DeepScrapeTool.shutdown()
+
+                # Verify __aexit__ was called
+                mock_aexit.assert_called_once_with(None, None, None)
+
+            # Verify crawler is set to None
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_shutdown())
+
+    def test_shutdown_is_idempotent(self) -> None:
+        """Verify that shutdown() can be called multiple times safely."""
+        import asyncio
+
+        async def check_idempotent_shutdown() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Warm up the crawler
+            await DeepScrapeTool.warmup()
+            assert DeepScrapeTool._crawler is not None
+
+            # Call shutdown multiple times
+            await DeepScrapeTool.shutdown()
+            assert DeepScrapeTool._crawler is None
+
+            await DeepScrapeTool.shutdown()
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_idempotent_shutdown())
+
+    def test_shutdown_when_crawler_is_none(self) -> None:
+        """Verify that shutdown() handles the case when crawler is already None."""
+        import asyncio
+
+        async def check_shutdown_when_none() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Call shutdown when crawler is None
+            await DeepScrapeTool.shutdown()
+
+            # Should still be None and no error
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_shutdown_when_none())
+
+    def test_shutdown_thread_safety(self) -> None:
+        """Verify that shutdown() is thread-safe with double-check locking."""
+        import asyncio
+
+        async def check_concurrent_shutdown() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Warm up the crawler
+            await DeepScrapeTool.warmup()
+            assert DeepScrapeTool._crawler is not None
+
+            # Mock the __aexit__ method
+            original_crawler = DeepScrapeTool._crawler
+            with patch.object(original_crawler, "__aexit__", return_value=None) as mock_aexit:
+                # Call shutdown concurrently
+                tasks = [DeepScrapeTool.shutdown() for _ in range(5)]
+                await asyncio.gather(*tasks)
+
+                # Verify __aexit__ was called only once
+                mock_aexit.assert_called_once()
+
+            # Verify crawler is set to None
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_concurrent_shutdown())
+
+    def test_warmup_shutdown_cycle(self) -> None:
+        """Verify that warmup() and shutdown() can be cycled multiple times."""
+        import asyncio
+
+        async def check_cycle() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Cycle 1: warmup -> shutdown
+            await DeepScrapeTool.warmup()
+            assert DeepScrapeTool._crawler is not None
+            first_crawler = DeepScrapeTool._crawler
+
+            with patch.object(first_crawler, "__aexit__", return_value=None):
+                await DeepScrapeTool.shutdown()
+            assert DeepScrapeTool._crawler is None
+
+            # Cycle 2: warmup -> shutdown again
+            await DeepScrapeTool.warmup()
+            assert DeepScrapeTool._crawler is not None
+            second_crawler = DeepScrapeTool._crawler
+
+            # Verify a new crawler instance was created
+            assert second_crawler is not first_crawler
+
+            with patch.object(second_crawler, "__aexit__", return_value=None):
+                await DeepScrapeTool.shutdown()
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_cycle())
+
     def test_rejects_invalid_url(self) -> None:
         tool = DeepScrapeTool()
         result = tool.invoke("not-a-url")

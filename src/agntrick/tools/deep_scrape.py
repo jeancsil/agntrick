@@ -173,6 +173,23 @@ class DeepScrapeTool(Tool):
             await cls._crawler.__aenter__()
             logger.info("[deep_scrape] Playwright browser warmed up")
 
+    @classmethod
+    async def shutdown(cls) -> None:
+        """Clean up the persistent browser instance.
+
+        Call this during application shutdown.
+        """
+        if cls._crawler is None:
+            return
+
+        async with cls._crawler_lock:
+            if cls._crawler is None:
+                return
+
+            await cls._crawler.__aexit__(None, None, None)
+            cls._crawler = None
+            logger.info("[deep_scrape] Playwright browser shut down")
+
     async def _get_crawler(self) -> "AsyncWebCrawler":
         """Get or create the persistent AsyncWebCrawler instance."""
         if DeepScrapeTool._crawler is not None:
