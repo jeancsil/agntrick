@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 from firecrawl import Firecrawl  # type: ignore[import-untyped]
@@ -145,6 +145,10 @@ class DeepScrapeTool(Tool):
     Tries Crawl4AI first (local library, free), then Firecrawl API
     (credit-based), then Archive.ph (free archive) as a last resort.
     """
+
+    # Class-level state for persistent browser
+    _crawler: ClassVar["AsyncWebCrawler | None"] = None
+    _crawler_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(self) -> None:
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
