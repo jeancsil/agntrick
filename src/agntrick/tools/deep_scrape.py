@@ -190,6 +190,21 @@ class DeepScrapeTool(Tool):
             cls._crawler = None
             logger.info("[deep_scrape] Playwright browser shut down")
 
+    @classmethod
+    def warmup_sync(cls) -> None:
+        """Synchronous warmup wrapper for non-async contexts.
+
+        Provides a blocking interface for warming up the browser from
+        synchronous code paths (e.g., script entry points).
+        """
+        try:
+            asyncio.get_running_loop()
+            # Already in async context — can't block
+            logger.warning("[deep_scrape] warmup_sync called from async context, use warmup() instead")
+        except RuntimeError:
+            # No event loop — safe to create one
+            asyncio.run(cls.warmup())
+
     async def _get_crawler(self) -> "AsyncWebCrawler":
         """Get or create the persistent AsyncWebCrawler instance."""
         if DeepScrapeTool._crawler is not None:

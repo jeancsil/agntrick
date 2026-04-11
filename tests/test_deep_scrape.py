@@ -1,5 +1,7 @@
 """Tests for DeepScrapeTool — 3-stage web content extraction pipeline with DNS retry."""
 
+import logging
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -298,6 +300,73 @@ class TestDeepScrapeTool:
             assert DeepScrapeTool._crawler is None
 
         asyncio.run(check_cycle())
+
+    def test_warmup_sync_in_sync_context(self) -> None:
+        """Verify that warmup_sync() works from non-async context."""
+        # Reset class state
+        DeepScrapeTool._crawler = None
+
+        # Call warmup_sync from sync context
+        DeepScrapeTool.warmup_sync()
+
+        # Verify crawler is initialized
+        assert DeepScrapeTool._crawler is not None
+
+    def test_warmup_sync_is_idempotent(self) -> None:
+        """Verify that warmup_sync() can be called multiple times safely."""
+        # Reset class state
+        DeepScrapeTool._crawler = None
+
+        # Call warmup_sync twice
+        DeepScrapeTool.warmup_sync()
+        first_crawler = DeepScrapeTool._crawler
+
+        DeepScrapeTool.warmup_sync()
+        second_crawler = DeepScrapeTool._crawler
+
+        # Should be the same instance
+        assert first_crawler is second_crawler
+
+    def test_warmup_sync_in_async_context_logs_warning(self, caplog: Any) -> None:
+        """Verify that warmup_sync() logs a warning when called from async context."""
+        import asyncio
+
+        async def check_warning() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Call warmup_sync from within an async context
+            # This should log a warning and not block
+            with caplog.at_level(logging.WARNING):
+                DeepScrapeTool.warmup_sync()
+
+            # Verify warning was logged
+            assert any("warmup_sync called from async context" in record.message for record in caplog.records)
+
+            # Crawler should still be None (no warmup occurred)
+            assert DeepScrapeTool._crawler is None
+
+        asyncio.run(check_warning())
+
+    def test_warmup_sync_then_shutdown_sync(self) -> None:
+        """Verify that warmup_sync() and shutdown() can be used together."""
+        import asyncio
+
+        # Reset class state
+        DeepScrapeTool._crawler = None
+
+        # Warm up using sync method
+        DeepScrapeTool.warmup_sync()
+        assert DeepScrapeTool._crawler is not None
+
+        # Shutdown using async method
+        async def cleanup() -> None:
+            original_crawler = DeepScrapeTool._crawler
+            with patch.object(original_crawler, "__aexit__", return_value=None):
+                await DeepScrapeTool.shutdown()
+
+        asyncio.run(cleanup())
+        assert DeepScrapeTool._crawler is None
 
     def test_rejects_invalid_url(self) -> None:
         tool = DeepScrapeTool()
