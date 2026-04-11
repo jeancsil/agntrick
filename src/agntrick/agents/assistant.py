@@ -39,8 +39,10 @@ class AssistantAgent(AgentBase):
         return load_prompt("assistant")
 
     def local_tools(self) -> Sequence[Any]:
-        """Return local tools including agent invocation."""
-        return [AgentInvocationTool().to_langchain_tool()]
+        """Return local tools — agent invocation for delegation."""
+        return [
+            AgentInvocationTool().to_langchain_tool(),
+        ]
 
     def _create_graph(
         self,

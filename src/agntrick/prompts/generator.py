@@ -57,21 +57,26 @@ def generate_tools_section(
 
 
 def generate_system_prompt(
-    agent_name: str,
     manifest: ToolManifest,
     categories: list[str] | None = None,
+    base_prompt: str | None = None,
+    agent_name: str | None = None,
 ) -> str:
     """Generate system prompt with tool documentation.
 
     Args:
-        agent_name: Name of the agent (for base prompt).
         manifest: Tool manifest with all available tools.
         categories: Optional filter for specific tool categories.
+        base_prompt: Pre-loaded prompt string. If None, loads from agent_name.
+        agent_name: Name of the agent (fallback for loading base prompt).
 
     Returns:
         Complete system prompt with tool documentation.
     """
-    base_prompt = load_prompt(agent_name)
+    if base_prompt is None:
+        if agent_name is None:
+            raise ValueError("Either base_prompt or agent_name must be provided")
+        base_prompt = load_prompt(agent_name)
     tools_section = generate_tools_section(manifest, categories)
 
     if tools_section:

@@ -4,12 +4,43 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 from agntrick.interfaces.base import Tool
 from agntrick.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_langchain_httpx_cache() -> None:
+    """Clear langchain_openai's LRU-cached httpx clients.
+
+    ``langchain_openai.chat_models._client_utils`` caches async (and sync)
+    ``httpx`` clients with ``@lru_cache`` so that every ``ChatOpenAI``
+    instance reuses the same underlying ``httpx.AsyncClient``.  That
+    client's ``asyncio.locks.Event`` objects are bound to the event loop
+    that was active when the client was first *used*.  When a delegated
+    agent runs inside a brand-new event loop (created in
+    ``run_in_new_loop``), those bound locks cause::
+
+        RuntimeError: <asyncio.locks.Event> is bound to a different event loop
+
+    Calling this function before creating the delegated agent ensures a
+    fresh ``httpx.AsyncClient`` is created in the new loop.
+    """
+    try:
+        from langchain_openai.chat_models._client_utils import (
+            _cached_async_httpx_client,
+            _cached_sync_httpx_client,
+        )
+
+        _cached_async_httpx_client.cache_clear()
+        _cached_sync_httpx_client.cache_clear()
+    except ImportError:
+        # langchain_openai not installed — nothing to clear.
+        pass
+
 
 # Agents that can be delegated to (excludes assistant and ollama to prevent recursion)
 DELEGATABLE_AGENTS = [
@@ -19,7 +50,12 @@ DELEGATABLE_AGENTS = [
     "youtube",
     "committer",
     "github-pr-reviewer",
+    "paywall-remover",
 ]
+
+# Default timeout for agent invocations (seconds).
+# Override with AGENT_INVOCATION_TIMEOUT env var.
+_DEFAULT_AGENT_TIMEOUT = int(os.environ.get("AGENT_INVOCATION_TIMEOUT", "240"))
 
 
 class AgentInvocationTool(Tool):
@@ -33,7 +69,7 @@ class AgentInvocationTool(Tool):
         {
             "agent_name": "developer",
             "prompt": "Analyze the auth module...",
-            "timeout": 60  // optional, defaults to 60
+            "timeout": 120  // optional, defaults to 120 (override with AGENT_INVOCATION_TIMEOUT env var)
         }
 
     Returns:
@@ -58,12 +94,13 @@ Available agents:
 - youtube: Video transcript extraction and analysis
 - committer: Git commit message generation from code changes
 - github-pr-reviewer: GitHub PR review with inline comments
+- paywall-remover: Extract content from paywalled/blocked sites
 
 Input (JSON):
 {
     "agent_name": "developer",
     "prompt": "Your task with full context...",
-    "timeout": 60
+    "timeout": 120
 }
 
 Returns the agent's response or an error message."""
@@ -91,7 +128,7 @@ Returns the agent's response or an error message."""
 
         agent_name = data["agent_name"]
         prompt = data["prompt"]
-        timeout = data.get("timeout", 60)
+        timeout = data.get("timeout", _DEFAULT_AGENT_TIMEOUT)
 
         # Block self-delegation
         if agent_name == "ollama":
@@ -125,6 +162,7 @@ Returns the agent's response or an error message."""
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)
                         try:
+                            _clear_langchain_httpx_cache()
                             result[0] = new_loop.run_until_complete(
                                 self._invoke_agent_async(agent_cls, agent_name, prompt, timeout)
                             )
@@ -140,11 +178,15 @@ Returns the agent's response or an error message."""
                 if exception[0]:
                     raise exception[0]
                 if result[0] is None:
-                    return f"Error: Agent '{agent_name}' timed out after {timeout} seconds."
+                    return (
+                        f"Error: Agent '{agent_name}' timed out after"
+                        f" {timeout} seconds. DO NOT retry — the timeout is final."
+                    )
 
                 return result[0]
             except RuntimeError:
                 # No running loop, use asyncio.run()
+                _clear_langchain_httpx_cache()
                 return asyncio.run(self._invoke_agent_async(agent_cls, agent_name, prompt, timeout))
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}")
@@ -177,7 +219,10 @@ Returns the agent's response or an error message."""
             )
             return str(result)
         except asyncio.TimeoutError:
-            return f"Error: Agent timed out after {timeout} seconds. Try simplifying your request."
+            return (
+                f"Error: Agent timed out after {timeout} seconds."
+                " Try simplifying your request. DO NOT retry — the timeout is final."
+            )
         except Exception as e:
             logger.error(f"Async agent invocation failed: {e}")
             raise

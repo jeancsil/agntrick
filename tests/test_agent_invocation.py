@@ -109,3 +109,81 @@ class TestAgentInvocationTool:
 
         assert isinstance(lc_tool, StructuredTool)
         assert lc_tool.name == "invoke_agent"
+
+    def test_invoke_in_async_context_clears_httpx_cache(self):
+        """Running in a new loop should clear the langchain httpx LRU cache.
+
+        This verifies the fix for the 'bound to a different event loop' crash.
+        """
+        from agntrick.tools.agent_invocation import _clear_langchain_httpx_cache
+
+        mock_async_cache = MagicMock()
+        mock_sync_cache = MagicMock()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "langchain_openai": MagicMock(),
+                "langchain_openai.chat_models": MagicMock(),
+                "langchain_openai.chat_models._client_utils": MagicMock(
+                    _cached_async_httpx_client=mock_async_cache,
+                    _cached_sync_httpx_client=mock_sync_cache,
+                ),
+            },
+        ):
+            _clear_langchain_httpx_cache()
+            mock_async_cache.cache_clear.assert_called_once()
+            mock_sync_cache.cache_clear.assert_called_once()
+
+    def test_clear_httpx_cache_is_safe_without_langchain(self):
+        """_clear_langchain_httpx_cache should not crash if langchain is missing."""
+        from agntrick.tools.agent_invocation import _clear_langchain_httpx_cache
+
+        with patch.dict("sys.modules", {"langchain_openai.chat_models._client_utils": None}):
+            # Should not raise
+            _clear_langchain_httpx_cache()
+
+    def test_default_timeout_is_240(self):
+        """Default timeout should be 240 seconds."""
+        from agntrick.tools.agent_invocation import _DEFAULT_AGENT_TIMEOUT
+
+        assert _DEFAULT_AGENT_TIMEOUT == 240
+
+    def test_env_var_overrides_default_timeout(self):
+        """AGENT_INVOCATION_TIMEOUT env var should override default."""
+        import importlib
+
+        with patch.dict("os.environ", {"AGENT_INVOCATION_TIMEOUT": "300"}):
+            # Reimport to pick up the new env var
+            import agntrick.tools.agent_invocation as mod
+
+            importlib.reload(mod)
+            assert mod._DEFAULT_AGENT_TIMEOUT == 300
+
+        # Reload again to restore default
+        importlib.reload(mod)
+
+    def test_asyncio_run_path_clears_httpx_cache(self):
+        """The asyncio.run() fallback path should also clear httpx cache."""
+        tool = AgentInvocationTool()
+
+        input_json = json.dumps({"agent_name": "developer", "prompt": "Test prompt"})
+
+        with (
+            patch("agntrick.tools.agent_invocation.AgentRegistry") as mock_registry,
+            patch("agntrick.tools.agent_invocation._clear_langchain_httpx_cache") as mock_clear,
+        ):
+            mock_agent_cls = MagicMock()
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value="Agent response")
+            mock_agent_cls.return_value = mock_agent
+            mock_registry.get.return_value = mock_agent_cls
+            mock_registry.list_agents.return_value = ["developer"]
+            mock_registry.get_tool_categories.return_value = []
+
+            # Force the asyncio.run() path by making get_running_loop raise RuntimeError
+            with patch("asyncio.get_running_loop", side_effect=RuntimeError("no running loop")):
+                tool.invoke(input_json)
+
+            # Both paths should clear the cache
+            assert mock_clear.called

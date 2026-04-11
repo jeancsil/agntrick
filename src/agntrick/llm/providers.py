@@ -221,6 +221,7 @@ def _create_openai(model_name: str, temperature: float) -> Any:
         temperature=temperature,
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=SecretStr(openai_api_key) if openai_api_key else None,
+        max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "3")),
     )
 
 

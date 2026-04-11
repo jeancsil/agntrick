@@ -7,6 +7,7 @@ from .codebase_explorer import (
     FileOutlinerTool,
     StructureExplorerTool,
 )
+from .deep_scrape import DeepScrapeResult, DeepScrapeTool, ExtractionStage, ExtractionStatus
 from .example import CalculatorTool, WeatherTool
 from .git_command import GitCommandTool
 from .manifest import ToolInfo, ToolManifest, ToolManifestClient
@@ -31,6 +32,10 @@ __all__ = [
     "SyntaxValidator",
     "ValidationResult",
     "get_validator",
+    "DeepScrapeTool",
+    "DeepScrapeResult",
+    "ExtractionStage",
+    "ExtractionStatus",
     "YouTubeTranscriptCache",
     "YouTubeTranscriptTool",
 ]

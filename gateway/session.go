@@ -124,7 +124,7 @@ func (sm *SessionManager) StartSession(ctx context.Context, tenantID string) err
 			Msg("Created new device session")
 	}
 
-	client := whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", tenantID, true))
+	client := whatsmeow.NewClient(deviceStore, waLog.Stdout("Client", tenantID, os.Getenv("LOG_LEVEL") == "debug"))
 
 	handler := &EventHandler{
 		tenantID: tenantID,

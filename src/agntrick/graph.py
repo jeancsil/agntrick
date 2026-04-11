@@ -212,6 +212,7 @@ Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": nul
 Tool selection rules (CRITICAL):
 - News, current events, headlines → web_search
 - Specific URL to read → web_fetch
+- Paywalled or blocked URL → delegate to "paywall-remover"
 - API calls → curl_fetch
 - YouTube links → delegate to "youtube"
 - Code questions → delegate to "developer"
@@ -219,6 +220,8 @@ Tool selection rules (CRITICAL):
 URL handling rules (CRITICAL):
 - "news from a site" or "top news in X" → web_search (search for that site's news)
 - "read this URL" or "open this link" → web_fetch (fetch the specific URL)
+- Paywalled/blocked site (globo.com, wsj.com, nyt.com, etc.) or user says
+  "extract" or "remove paywall" → delegate to "paywall-remover"
 - If user mentions a site name/URL but asks for NEWS → web_search, NOT web_fetch
 
 For "tool_use": tool_plan = exact tool name, e.g. "web_search"
@@ -228,8 +231,13 @@ For "chat": tool_plan = null, skip_tools = true
 
 Examples:
 "What's happening in Brazil?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
-"What are the top news in g1.globo.com?" → {"intent": "tool_use", "tool_plan": "web_search", "skip_tools": false}
+"What are the top news in g1.globo.com?" → {"intent": "tool_use", \
+"tool_plan": "web_search", "skip_tools": false}
 "Read this article: https://..." → {"intent": "tool_use", "tool_plan": "web_fetch", "skip_tools": false}
+"Extract content from https://globo.com/..." → {"intent": "delegate", \
+"tool_plan": "paywall-remover", "skip_tools": false}
+"Remove paywall from https://wsj.com/..." → {"intent": "delegate", \
+"tool_plan": "paywall-remover", "skip_tools": false}
 "Compare React vs Vue" → {"intent": "research", \
 "tool_plan": "1. web_search React vs Vue 2026\\n2. web_fetch comparison article", \
 "skip_tools": false}
@@ -449,13 +457,13 @@ Maximum 5 tool calls allowed.
         guided_prompt += f"""
 
 ## DELEGATION
-Use the invoke_agent tool with these parameters:
-{tool_plan}
+Call the invoke_agent tool with input_str set to a JSON string like this:
+{{"agent_name": "{tool_plan}", "prompt": "<full task description with all context>"}}
 
-IMPORTANT: Include ALL relevant context from the conversation in the "prompt" field.
-The delegated agent has no memory — it only sees what you put in the prompt.
-
+The prompt field must contain everything the agent needs — it has no memory.
 Do NOT use any other tools. Just invoke the agent and return its result.
+If the agent returns an error or times out, respond to the user with the error.
+NEVER retry invoke_agent on failure — you only get ONE attempt.
 """
     elif tool_plan:
         guided_prompt += f"\n\n## TASK PLAN\n{tool_plan}"

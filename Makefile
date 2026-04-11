@@ -17,8 +17,9 @@ help: ## Show this help message
 
 ## -- Commands --
 
-install: ## Install all dependencies using uv
+install: ## Install all dependencies using uv + Playwright browser
 	@$(UV) sync
+	@$(UV) run playwright install chromium 2>/dev/null || echo "⚠ Playwright browser install skipped (optional for web extraction)"
 
 install-local: ## Install local packages in editable mode (for testing before publishing)
 	@$(UV) pip install -e .

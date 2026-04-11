@@ -6,6 +6,7 @@ from .github_pr_reviewer import GithubPrReviewerAgent
 from .learning import LearningAgent
 from .news import NewsAgent
 from .ollama import OllamaAgent
+from .paywall_remover import PaywallRemoverAgent
 from .youtube import YouTubeAgent
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "LearningAgent",
     "NewsAgent",
     "OllamaAgent",
+    "PaywallRemoverAgent",
     "YouTubeAgent",
 ]

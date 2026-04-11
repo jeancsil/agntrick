@@ -87,6 +87,15 @@ class MCPConfig:
 
 
 @dataclass
+class DeepScrapeConfig:
+    """Web content extraction configuration."""
+
+    firecrawl_api_key: str = ""
+    firecrawl_url: str = "https://api.firecrawl.dev/v2"
+    archive_ph_enabled: bool = True
+
+
+@dataclass
 class AgentsConfig:
     """Agent-specific configuration."""
 
@@ -166,6 +175,7 @@ class AgntrickConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     whatsapp: WhatsAppConfig = field(default_factory=WhatsAppConfig)
     agent_models: AgentModelConfig = field(default_factory=AgentModelConfig)
+    deep_scrape: DeepScrapeConfig = field(default_factory=DeepScrapeConfig)
 
     _config_path: str | None = field(default=None, init=False, repr=False)
 
@@ -205,6 +215,10 @@ class AgntrickConfig:
                 am_models[key] = value
         agent_models_config = AgentModelConfig(models=am_models, node_overrides=am_node_overrides)
 
+        # Parse deep_scrape section
+        ds_dict = config_dict.get("deep_scrape", {})
+        deep_scrape_config = DeepScrapeConfig(**ds_dict)
+
         return cls(
             llm=LLMConfig(**config_dict.get("llm", {})),
             logging=LoggingConfig(**config_dict.get("logging", {})),
@@ -217,6 +231,7 @@ class AgntrickConfig:
             storage=StorageConfig(**config_dict.get("storage", {})),
             whatsapp=WhatsAppConfig(tenants=tenants),
             agent_models=agent_models_config,
+            deep_scrape=deep_scrape_config,
         )
 
 

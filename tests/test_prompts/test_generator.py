@@ -70,10 +70,30 @@ class TestGenerateSystemPrompt:
         )
 
         result = generate_system_prompt(
-            agent_name="learning",
             manifest=manifest,
             categories=["web"],
+            agent_name="learning",
         )
 
         assert "expert educator" in result.lower()  # From base prompt
         assert "web_search" in result  # From tools section
+
+    def test_accepts_base_prompt_directly(self) -> None:
+        """Should use provided base_prompt instead of loading from agent_name."""
+        from agntrick.prompts.generator import generate_system_prompt
+        from agntrick.tools.manifest import ToolInfo, ToolManifest
+
+        manifest = ToolManifest(
+            tools=[
+                ToolInfo(name="web_search", category="web", description="Search"),
+            ]
+        )
+
+        result = generate_system_prompt(
+            manifest=manifest,
+            categories=["web"],
+            base_prompt="You are a custom agent.",
+        )
+
+        assert "custom agent" in result
+        assert "web_search" in result

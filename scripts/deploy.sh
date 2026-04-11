@@ -92,6 +92,34 @@ build() {
     cd "$AGNTRICK_DIR"
     uv sync
 
+    # DNS resolution check (non-fatal diagnostic)
+    echo "--- Checking DNS resolution ---"
+    if host api.firecrawl.dev >/dev/null 2>&1; then
+        echo "  DNS OK: api.firecrawl.dev resolves."
+    else
+        echo "WARNING: DNS resolution for api.firecrawl.dev failed."
+        echo "  Consider adding reliable DNS resolvers to /etc/resolv.conf:"
+        echo "    nameserver 8.8.8.8"
+        echo "    nameserver 1.1.1.1"
+    fi
+
+    # Install Playwright Chromium browser only if missing (needed by Crawl4AI Stage 1)
+    # Non-fatal: Stage 1 (Crawl4AI) fails gracefully; Stages 2-3 (Firecrawl, Archive.ph) still work.
+    # Override PLAYWRIGHT_BROWSERS_PATH to store browsers on a different disk (e.g. a mounted volume).
+    export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$AGNTRICK_DIR/.playwright-browsers}"
+    if ! ls "$PLAYWRIGHT_BROWSERS_PATH"/chromium* >/dev/null 2>&1; then
+        echo "--- Installing Playwright Chromium browser ---"
+        if uv run playwright install --with-deps chromium; then
+            echo "  Playwright Chromium installed successfully."
+        else
+            echo "WARNING: Playwright install failed. Stage 1 (Crawl4AI) will not work."
+            echo "  Stages 2 (Firecrawl) and 3 (Archive.ph) will still function."
+            echo "  Common fixes: increase disk space, check network connectivity."
+        fi
+    else
+        echo "--- Playwright Chromium already installed ---"
+    fi
+
     echo "--- Installing toolkit dependencies ---"
     cd "$TOOLKIT_DIR"
     uv sync
