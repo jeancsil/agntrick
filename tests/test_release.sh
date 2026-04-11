@@ -32,8 +32,8 @@ log_fail() {
 
 # Extract and define the validate_version function from release.sh
 validate_version() {
-    if [[ ! $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "ERROR: Invalid version format: $1 (expected X.Y.Z)"
+    if [[ ! $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
+        echo "ERROR: Invalid version format: $1 (expected X.Y.Z or X.Y.Z-prerelease)"
         return 1
     fi
     return 0
@@ -116,14 +116,14 @@ log_test "validate_version accepts valid edge case (999.999.999)"
     fi
 }
 
-# Test 8: validate_version rejects version with letters
-log_test "validate_version rejects version with letters (1.0.0-beta)"
+# Test 8: validate_version accepts pre-release versions
+log_test "validate_version accepts pre-release (1.0.0-beta)"
 {
     ERROR_OUTPUT=$(validate_version "1.0.0-beta" 2>&1)
-    if [[ "$ERROR_OUTPUT" == *"Invalid version format"* ]]; then
+    if [[ $? -eq 0 ]]; then
         log_pass
     else
-        log_fail "Expected 'Invalid version format' error, got: $ERROR_OUTPUT"
+        log_fail "Expected success, got: $ERROR_OUTPUT"
     fi
 }
 
@@ -198,7 +198,7 @@ log_test "release.sh script exists"
 # Test 15: script has required functions defined
 log_test "release.sh has all required functions"
 {
-    REQUIRED_FUNCTIONS=("validate_version" "check_clean" "check_gh" "update_version" "update_whatsapp_dependency" "run_tests" "create_release" "check_branch")
+    REQUIRED_FUNCTIONS=("validate_version" "check_clean" "check_gh" "update_version" "run_tests" "run_checks" "create_tag_and_release" "check_branch")
     MISSING=()
 
     for func in "${REQUIRED_FUNCTIONS[@]}"; do
