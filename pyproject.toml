@@ -114,7 +114,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-agntrick = ["prompts/*.md"]
+agntrick = ["prompts/*.md", "config.example.yaml"]
 
 [tool.pytest.ini_options]
 addopts = "-ra -q --import-mode=importlib"
