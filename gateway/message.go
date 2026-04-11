@@ -66,8 +66,8 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 	// Use chat JID for sending responses (like the old code used chat_jid for self-messages)
 	targetJID := msg.Info.Chat
 
-	// Start persistent typing indicator that re-sends composing presence every 3 seconds.
-	// WhatsApp auto-expires typing indicators after ~3-5 seconds, so we must refresh
+	// Start persistent typing indicator that re-sends composing presence every 5 seconds.
+	// WhatsApp auto-expires typing indicators after ~5 seconds, so we must refresh
 	// to keep the indicator visible during long LLM processing (90+ seconds).
 	typingCtx, cancelTyping := context.WithCancel(context.Background())
 	defer cancelTyping()
@@ -80,9 +80,9 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 		logger.Info().Msg("Typing indicator started")
 	}
 
-	// Background goroutine refreshes the typing indicator every 3 seconds.
+	// Background goroutine refreshes the typing indicator every 5 seconds.
 	go func() {
-		ticker := time.NewTicker(3 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
 		for {

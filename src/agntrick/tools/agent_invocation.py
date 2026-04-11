@@ -55,7 +55,7 @@ DELEGATABLE_AGENTS = [
 
 # Default timeout for agent invocations (seconds).
 # Override with AGENT_INVOCATION_TIMEOUT env var.
-_DEFAULT_AGENT_TIMEOUT = int(os.environ.get("AGENT_INVOCATION_TIMEOUT", "120"))
+_DEFAULT_AGENT_TIMEOUT = int(os.environ.get("AGENT_INVOCATION_TIMEOUT", "240"))
 
 
 class AgentInvocationTool(Tool):
@@ -178,7 +178,10 @@ Returns the agent's response or an error message."""
                 if exception[0]:
                     raise exception[0]
                 if result[0] is None:
-                    return f"Error: Agent '{agent_name}' timed out after {timeout} seconds."
+                    return (
+                        f"Error: Agent '{agent_name}' timed out after"
+                        f" {timeout} seconds. DO NOT retry — the timeout is final."
+                    )
 
                 return result[0]
             except RuntimeError:
@@ -216,7 +219,10 @@ Returns the agent's response or an error message."""
             )
             return str(result)
         except asyncio.TimeoutError:
-            return f"Error: Agent timed out after {timeout} seconds. Try simplifying your request."
+            return (
+                f"Error: Agent timed out after {timeout} seconds."
+                " Try simplifying your request. DO NOT retry — the timeout is final."
+            )
         except Exception as e:
             logger.error(f"Async agent invocation failed: {e}")
             raise

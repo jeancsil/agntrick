@@ -143,11 +143,11 @@ class TestAgentInvocationTool:
             # Should not raise
             _clear_langchain_httpx_cache()
 
-    def test_default_timeout_is_120(self):
-        """Default timeout should be 120 seconds."""
+    def test_default_timeout_is_240(self):
+        """Default timeout should be 240 seconds."""
         from agntrick.tools.agent_invocation import _DEFAULT_AGENT_TIMEOUT
 
-        assert _DEFAULT_AGENT_TIMEOUT == 120
+        assert _DEFAULT_AGENT_TIMEOUT == 240
 
     def test_env_var_overrides_default_timeout(self):
         """AGENT_INVOCATION_TIMEOUT env var should override default."""
