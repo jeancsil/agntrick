@@ -154,6 +154,81 @@ class TestDeepScrapeTool:
             else:
                 os.environ["CRAWL4AI_ENABLED"] = original_value
 
+    def test_playwright_low_memory_default(self) -> None:
+        """Verify that low-memory mode is disabled by default."""
+        import os
+
+        original_value = os.environ.get("PLAYWRIGHT_LOW_MEMORY")
+        try:
+            # Ensure the variable is unset
+            os.environ.pop("PLAYWRIGHT_LOW_MEMORY", None)
+
+            browser_config = DeepScrapeTool._get_browser_config()
+
+            # Verify basic config
+            assert browser_config.headless is True
+            assert browser_config.user_agent is not None
+
+            # Verify no extra_args (low-memory disabled)
+            assert browser_config.extra_args is None or len(browser_config.extra_args) == 0
+        finally:
+            if original_value is not None:
+                os.environ["PLAYWRIGHT_LOW_MEMORY"] = original_value
+
+    def test_playwright_low_memory_enabled(self) -> None:
+        """Verify that low-memory mode adds memory optimization flags."""
+        import os
+
+        original_value = os.environ.get("PLAYWRIGHT_LOW_MEMORY")
+        try:
+            os.environ["PLAYWRIGHT_LOW_MEMORY"] = "true"
+
+            browser_config = DeepScrapeTool._get_browser_config()
+
+            # Verify basic config
+            assert browser_config.headless is True
+            assert browser_config.user_agent is not None
+
+            # Verify extra_args contains low-memory flags
+            assert browser_config.extra_args is not None
+            assert len(browser_config.extra_args) > 0
+            assert "--disable-dev-shm-usage" in browser_config.extra_args
+            assert "--disable-gpu" in browser_config.extra_args
+            assert "--no-sandbox" in browser_config.extra_args
+            assert "--disable-setuid-sandbox" in browser_config.extra_args
+            assert "--disable-background-timer-throttling" in browser_config.extra_args
+            assert "--disable-backgrounding-occluded-windows" in browser_config.extra_args
+            assert "--disable-renderer-backgrounding" in browser_config.extra_args
+        finally:
+            if original_value is None:
+                os.environ.pop("PLAYWRIGHT_LOW_MEMORY", None)
+            else:
+                os.environ["PLAYWRIGHT_LOW_MEMORY"] = original_value
+
+    def test_playwright_low_memory_case_insensitive(self) -> None:
+        """Verify that PLAYWRIGHT_LOW_MEMORY is case-insensitive."""
+        import os
+
+        original_value = os.environ.get("PLAYWRIGHT_LOW_MEMORY")
+        try:
+            for value in ["true", "True", "TRUE", "TrUe"]:
+                os.environ["PLAYWRIGHT_LOW_MEMORY"] = value
+
+                browser_config = DeepScrapeTool._get_browser_config()
+                assert browser_config.extra_args is not None
+                assert "--disable-dev-shm-usage" in browser_config.extra_args
+
+            for value in ["false", "False", "FALSE", "0", "no"]:
+                os.environ["PLAYWRIGHT_LOW_MEMORY"] = value
+
+                browser_config = DeepScrapeTool._get_browser_config()
+                assert browser_config.extra_args is None or len(browser_config.extra_args) == 0
+        finally:
+            if original_value is None:
+                os.environ.pop("PLAYWRIGHT_LOW_MEMORY", None)
+            else:
+                os.environ["PLAYWRIGHT_LOW_MEMORY"] = original_value
+
     def test_try_crawl4ai_when_disabled(self) -> None:
         """Verify that _try_crawl4ai returns error when disabled."""
         import os

@@ -24,7 +24,7 @@ from firecrawl import Firecrawl  # type: ignore[import-untyped]
 from agntrick.interfaces.base import Tool
 
 if TYPE_CHECKING:
-    from crawl4ai import AsyncWebCrawler
+    from crawl4ai import AsyncWebCrawler, BrowserConfig
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,8 @@ class DeepScrapeTool(Tool):
 
             from crawl4ai import AsyncWebCrawler
 
-            cls._crawler = AsyncWebCrawler()
+            browser_config = cls._get_browser_config()
+            cls._crawler = AsyncWebCrawler(config=browser_config)
             await cls._crawler.__aenter__()
             logger.info("[deep_scrape] Playwright browser warmed up")
 
@@ -218,9 +219,43 @@ class DeepScrapeTool(Tool):
 
             from crawl4ai import AsyncWebCrawler
 
-            DeepScrapeTool._crawler = AsyncWebCrawler()
+            browser_config = self._get_browser_config()
+            DeepScrapeTool._crawler = AsyncWebCrawler(config=browser_config)
             await DeepScrapeTool._crawler.__aenter__()
             return DeepScrapeTool._crawler
+
+    @staticmethod
+    def _get_browser_config() -> "BrowserConfig":
+        """Build BrowserConfig with optional low-memory optimizations.
+
+        Returns:
+            BrowserConfig instance configured based on PLAYWRIGHT_LOW_MEMORY env var.
+        """
+        from crawl4ai import BrowserConfig
+
+        browser_config = BrowserConfig(
+            headless=True,
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 "
+                "Safari/537.36"
+            ),
+        )
+
+        # Add memory-conscious flags for low-memory systems
+        if os.environ.get("PLAYWRIGHT_LOW_MEMORY", "false").lower() == "true":
+            logger.info("[deep_scrape] PLAYWRIGHT_LOW_MEMORY=true: enabling memory optimizations")
+            browser_config.extra_args = [
+                "--disable-dev-shm-usage",  # Avoid /dev/shm (often small on containers)
+                "--disable-gpu",  # Disable GPU acceleration
+                "--no-sandbox",  # Disable sandbox (use with caution)
+                "--disable-setuid-sandbox",  # Disable setuid sandbox
+                "--disable-background-timer-throttling",  # Disable background timer throttling
+                "--disable-backgrounding-occluded-windows",  # Disable backgrounding occluded windows
+                "--disable-renderer-backgrounding",  # Disable renderer backgrounding
+            ]
+
+        return browser_config
 
     @property
     def name(self) -> str:
