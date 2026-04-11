@@ -154,6 +154,22 @@ class DeepScrapeTool(Tool):
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
         self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
 
+    async def _get_crawler(self) -> "AsyncWebCrawler":
+        """Get or create the persistent AsyncWebCrawler instance."""
+        if DeepScrapeTool._crawler is not None:
+            return DeepScrapeTool._crawler
+
+        async with DeepScrapeTool._crawler_lock:
+            # Double-check after acquiring lock
+            if DeepScrapeTool._crawler is not None:
+                return DeepScrapeTool._crawler
+
+            from crawl4ai import AsyncWebCrawler
+
+            DeepScrapeTool._crawler = AsyncWebCrawler()
+            await DeepScrapeTool._crawler.__aenter__()
+            return DeepScrapeTool._crawler
+
     @property
     def name(self) -> str:
         return "deep_scrape"
