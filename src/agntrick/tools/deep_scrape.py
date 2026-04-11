@@ -16,13 +16,22 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import httpx
 from firecrawl import Firecrawl  # type: ignore[import-untyped]
 
 from agntrick.interfaces.base import Tool
 
+if TYPE_CHECKING:
+    from crawl4ai import AsyncWebCrawler
+
 logger = logging.getLogger(__name__)
+
+# Module-level persistent crawler instance
+_crawler_instance: "AsyncWebCrawler | None" = None
+_crawler_lock = asyncio.Lock()
+_crawler_initialized = False
 
 # Patterns that indicate transient DNS or tunnel connection failures.
 _DNS_ERROR_PATTERNS = (
