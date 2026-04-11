@@ -116,6 +116,69 @@ class TestDeepScrapeTool:
         # Run the async test
         asyncio.run(check_reuse())
 
+    def test_warmup_prelaunches_browser(self) -> None:
+        """Verify that warmup() pre-launches the Playwright browser."""
+        import asyncio
+
+        async def check_warmup() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Call warmup
+            await DeepScrapeTool.warmup()
+
+            # Verify crawler is initialized
+            assert DeepScrapeTool._crawler is not None
+
+            # Verify it's the same instance when accessed via _get_crawler
+            tool = DeepScrapeTool()
+            crawler = await tool._get_crawler()
+            assert crawler is DeepScrapeTool._crawler
+
+        asyncio.run(check_warmup())
+
+    def test_warmup_is_idempotent(self) -> None:
+        """Verify that warmup() can be called multiple times safely."""
+        import asyncio
+
+        async def check_idempotent() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Call warmup twice
+            await DeepScrapeTool.warmup()
+            first_crawler = DeepScrapeTool._crawler
+
+            await DeepScrapeTool.warmup()
+            second_crawler = DeepScrapeTool._crawler
+
+            # Should be the same instance
+            assert first_crawler is second_crawler
+
+        asyncio.run(check_idempotent())
+
+    def test_warmup_thread_safety(self) -> None:
+        """Verify that warmup() is thread-safe with double-check locking."""
+        import asyncio
+
+        async def check_concurrent_warmup() -> None:
+            # Reset class state
+            DeepScrapeTool._crawler = None
+
+            # Call warmup concurrently
+            tasks = [DeepScrapeTool.warmup() for _ in range(5)]
+            await asyncio.gather(*tasks)
+
+            # Verify only one crawler was created
+            assert DeepScrapeTool._crawler is not None
+
+            # All instances should get the same crawler
+            tool = DeepScrapeTool()
+            crawler = await tool._get_crawler()
+            assert crawler is DeepScrapeTool._crawler
+
+        asyncio.run(check_concurrent_warmup())
+
     def test_rejects_invalid_url(self) -> None:
         tool = DeepScrapeTool()
         result = tool.invoke("not-a-url")

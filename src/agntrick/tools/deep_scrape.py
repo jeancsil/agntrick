@@ -154,6 +154,25 @@ class DeepScrapeTool(Tool):
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
         self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
 
+    @classmethod
+    async def warmup(cls) -> None:
+        """Pre-launch the Playwright browser for faster first request.
+
+        Call this during application startup to eliminate cold-start latency.
+        """
+        if cls._crawler is not None:
+            return  # Already warmed
+
+        async with cls._crawler_lock:
+            if cls._crawler is not None:
+                return
+
+            from crawl4ai import AsyncWebCrawler
+
+            cls._crawler = AsyncWebCrawler()
+            await cls._crawler.__aenter__()
+            logger.info("[deep_scrape] Playwright browser warmed up")
+
     async def _get_crawler(self) -> "AsyncWebCrawler":
         """Get or create the persistent AsyncWebCrawler instance."""
         if DeepScrapeTool._crawler is not None:
