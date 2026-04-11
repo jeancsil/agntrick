@@ -167,6 +167,7 @@ start_all() {
     done
     if curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
         echo "API ready (PID $API_PID)"
+        echo "  (warming up Playwright browser in background...)"
     else
         echo "WARNING: API not responding after 30s"
     fi
