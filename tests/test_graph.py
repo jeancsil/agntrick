@@ -1896,7 +1896,7 @@ class TestSummarizeNode:
         call_args = mock_model.ainvoke.call_args[0][0]
         prompt_text = str(call_args[0].content)
         assert "F1 news" in prompt_text, "Prompt should include existing summary"
-        assert "Extend" in prompt_text, "Prompt should ask to extend, not recreate"
+        assert "updating" in prompt_text, "Prompt should ask to update existing summary"
 
         assert "chess" in result["context"]["running_summary"]
 
@@ -1983,3 +1983,70 @@ class TestSummarizeNode:
         result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
         assert "context" in result
         assert "running_summary" in result["context"]
+
+    @pytest.mark.asyncio
+    async def test_filters_meta_responses(self) -> None:
+        """AI meta-responses about capabilities should be excluded from summarization."""
+        from agntrick.graph import summarize_node
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="- User asked about F1\n- Discussed weather"))
+
+        msgs = [
+            HumanMessage(content="Tell me about F1" + " detail" * 200, id="m-0"),
+            AIMessage(
+                content="I don't have access to previous messages, but I can see all 20 messages in this thread."
+                + " detail" * 200,
+                id="m-1",
+            ),
+            AIMessage(content="F1 results: Verstappen won" + " detail" * 200, id="m-2"),
+            HumanMessage(content="New question"),
+        ]
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+
+        # The prompt sent to LLM should NOT contain the meta-response
+        call_args = mock_model.ainvoke.call_args[0][0]
+        prompt_text = str(call_args[0].content)
+        assert "I don't have access to previous" not in prompt_text
+        assert "F1 results" in prompt_text
+
+    @pytest.mark.asyncio
+    async def test_all_meta_responses_skips_summarization(self) -> None:
+        """If all old messages are meta-responses, skip summarization entirely."""
+        from agntrick.graph import summarize_node
+
+        mock_model = AsyncMock()
+        msgs = [
+            AIMessage(
+                content="I don't have a specific number of messages. My context window is quite large."
+                + " detail" * 200,
+                id="m-0",
+            ),
+            AIMessage(
+                content="I can 'remember' many turns. I don't have a permanent long-term memory." + " detail" * 200,
+                id="m-1",
+            ),
+            HumanMessage(content="New question"),
+        ]
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+        # Model should NOT be called — all old messages were filtered
+        mock_model.ainvoke.assert_not_called()
+        assert result == {}

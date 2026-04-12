@@ -94,7 +94,7 @@ uv run <command>              # run in venv
 ```
 src/agntrick/
 ├── agent.py              # AgentBase — shared base class for all agents
-├── graph.py              # 3-node StateGraph (Router → Executor → Responder)
+├── graph.py              # 4-node StateGraph (Summarize → Router → Executor → Responder)
 ├── chat_cli.py           # Local chat CLI with MCP subprocess management
 ├── cli.py                # Typer CLI entry point (list, info, run, chat, serve)
 ├── config.py             # YAML config loading + AgntrickConfig model
@@ -213,6 +213,7 @@ flowchart TD
     end
 
     subgraph Exec["Graph Execution <small>(graph.py)</small>"]
+        SUMMARIZE["Summarize node<br/>Compress old messages"]
         ROUTER["Router node<br/>Classify intent"]
         EXEC["Executor node<br/>Run tools / sub-agents"]
         RESP["Responder node<br/>Format for WhatsApp"]
@@ -221,7 +222,8 @@ flowchart TD
     CLI --> REG
     API --> REG
     CHAT --> REG
-    GRAPH_CREATE --> ROUTER
+    GRAPH_CREATE --> SUMMARIZE
+    SUMMARIZE --> ROUTER
     ROUTER -->|"chat"| RESP
     ROUTER -->|"tool_use / research / delegate"| EXEC
     EXEC -->|"agent_invocation<br/>:::blocking"| EXEC
@@ -231,10 +233,14 @@ flowchart TD
     classDef blocking fill:#ff6b6b,stroke:#c0392b,color:#fff
 ```
 
-### Graph Detail (3-Node StateGraph)
+### Graph Detail (4-Node StateGraph)
 
 ```mermaid
 flowchart LR
+    SUMMARIZE["<b>Summarize</b><br/>Token threshold check<br/><small>No-op for short conversations<br/>Compresses to ~128 token summary</small>"]
+
+    SUMMARIZE --> ROUTER
+
     ROUTER["<b>Router</b><br/>LLM classifies intent<br/><small>sliding window: last 5 msgs</small>"]
 
     ROUTER -->|"chat"| RESP

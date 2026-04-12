@@ -286,7 +286,7 @@ class AgentState(TypedDict, total=False):
 
 
 # Token threshold above which summarization is triggered.
-_SUMMARIZE_TOKEN_THRESHOLD = 500
+_SUMMARIZE_TOKEN_THRESHOLD = 1500
 
 # Number of most-recent messages to keep unsummarized.
 _SUMMARIZE_KEEP_RECENT = 2
@@ -329,10 +329,16 @@ async def summarize_node(
     """
     messages = state.get("messages", [])
     if not messages:
+        logger.debug("[summarize] no messages, skipping")
         return {}
 
     token_count = count_tokens_approximately(messages)
     if token_count < max_tokens:
+        logger.debug(
+            "[summarize] below threshold (%d < %d tokens), skipping",
+            token_count,
+            max_tokens,
+        )
         return {}
 
     # Split messages: old ones to summarize vs recent to keep
@@ -340,6 +346,35 @@ async def summarize_node(
     old_messages = messages[:split_index]
 
     if not old_messages:
+        logger.debug("[summarize] no old messages to compress, skipping")
+        return {}
+
+    # Filter out AI meta-responses (self-referential messages about capabilities)
+    _META_PATTERNS = (
+        "i don't have access to previous",
+        "i can see all",
+        "my context window",
+        "i don't have a permanent",
+        "i don't have a specific number",
+        'i can "remember"',
+        "tokens i can process",
+    )
+
+    def _is_meta_response(msg: BaseMessage) -> bool:
+        if not isinstance(msg, AIMessage):
+            return False
+        content_lower = str(msg.content).lower()
+        return any(p in content_lower for p in _META_PATTERNS)
+
+    filtered_messages = [m for m in old_messages if not _is_meta_response(m)]
+    if len(filtered_messages) < len(old_messages):
+        logger.info(
+            "[summarize] filtered %d meta-responses from %d old messages",
+            len(old_messages) - len(filtered_messages),
+            len(old_messages),
+        )
+    if not filtered_messages:
+        logger.info("[summarize] all old messages were meta-responses, skipping")
         return {}
 
     # Build summarization prompt
@@ -351,20 +386,31 @@ async def summarize_node(
         logger.info("[summarize] TTL expired, clearing stale summary")
         existing_summary = None
 
-    # Build the prompt to LLM
-    old_content = "\n".join(f"{type(m).__name__}: {str(m.content)[:500]}" for m in old_messages)
+    # Build the content to summarize (using filtered messages)
+    old_content = "\n".join(f"{type(m).__name__}: {str(m.content)[:500]}" for m in filtered_messages)
 
     if existing_summary:
         prompt = (
-            f"Extend this conversation summary with the new messages below. "
-            f"Keep it concise (max {summary_max_tokens} tokens).\n\n"
-            f"Existing summary: {existing_summary}\n\n"
+            f"You are updating a conversation summary. Add the key information "
+            f"from the new messages below to the existing summary.\n\n"
+            f"Rules:\n"
+            f"- Output ONLY the updated summary, nothing else\n"
+            f"- Keep it under {summary_max_tokens} tokens\n"
+            f"- Focus on: topics discussed, facts learned, user preferences, "
+            f"decisions made, actions taken\n"
+            f"- Do NOT include meta-commentary about your capabilities\n\n"
+            f"Existing summary:\n{existing_summary}\n\n"
             f"New messages:\n{old_content}"
         )
     else:
         prompt = (
-            f"Summarize this conversation concisely (max {summary_max_tokens} tokens). "
-            f"Focus on topics, user preferences, and key facts.\n\n"
+            f"Summarize this conversation in bullet points.\n\n"
+            f"Rules:\n"
+            f"- Output ONLY the summary, nothing else\n"
+            f"- Keep it under {summary_max_tokens} tokens\n"
+            f"- Include: topics discussed, facts learned, user preferences, "
+            f"decisions made, actions taken\n"
+            f"- Do NOT include meta-commentary about AI capabilities\n\n"
             f"Messages:\n{old_content}"
         )
 
@@ -376,7 +422,7 @@ async def summarize_node(
         logger.warning("[summarize] LLM summarization failed: %s", e)
         return {}
 
-    # Build RemoveMessage directives for old messages
+    # Build RemoveMessage directives for ALL old messages (including filtered ones)
     removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
 
     logger.info(
