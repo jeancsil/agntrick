@@ -286,6 +286,13 @@ def _is_glm_model(model_name: str) -> bool:
     return name_lower.startswith("glm")
 
 
+def _cache_and_return(cache_key: tuple[str, float, str], model: Any) -> Any:
+    """Store a model instance in the cache and return it."""
+    with _MODEL_CACHE_LOCK:
+        _MODEL_CACHE[cache_key] = model
+    return model
+
+
 def _create_model(model_name: str, temperature: float) -> Any:
     """Create the appropriate LLM model instance based on the detected provider.
 
@@ -315,8 +322,6 @@ def _create_model(model_name: str, temperature: float) -> Any:
     )
 
     # Smart routing: if model looks like Ollama AND OLLAMA_BASE_URL is set, use Ollama
-    # This handles cases where OPENAI_MODEL_NAME is set to a local model name
-    # but only if Ollama is actually configured (OLLAMA_BASE_URL is set)
     ollama_base_url = os.getenv("OLLAMA_BASE_URL")
     openai_base_url = os.getenv("OPENAI_BASE_URL")
 
@@ -326,10 +331,7 @@ def _create_model(model_name: str, temperature: float) -> Any:
     looks_like_ollama = _looks_like_ollama_model(model_name)
     if provider == "openai" and ollama_base_url and looks_like_ollama and not is_custom_openai_endpoint:
         logger.info(f"Model '{model_name}' looks like an Ollama model - routing to Ollama at {ollama_base_url}")
-        model = _create_ollama(model_name, temperature)
-        with _MODEL_CACHE_LOCK:
-            _MODEL_CACHE[cache_key] = model
-        return model
+        return _cache_and_return(cache_key, _create_ollama(model_name, temperature))
 
     # Check for z.ai GLM models: if model starts with "glm" and OPENAI_BASE_URL is set
     # to a non-OpenAI endpoint (like z.ai), route to the custom endpoint
@@ -338,21 +340,12 @@ def _create_model(model_name: str, temperature: float) -> Any:
             f"Model '{model_name}' is a GLM model on OpenAI provider - "
             f"routing to OpenAI-compatible API at {openai_base_url}"
         )
-        model = _create_openai(model_name, temperature)
-        with _MODEL_CACHE_LOCK:
-            _MODEL_CACHE[cache_key] = model
-        return model
+        return _cache_and_return(cache_key, _create_openai(model_name, temperature))
 
     # Default to the provider's factory
     factory = _FACTORIES.get(provider)
     if factory:
-        model = factory(model_name, temperature)
-        with _MODEL_CACHE_LOCK:
-            _MODEL_CACHE[cache_key] = model
-        return model
+        return _cache_and_return(cache_key, factory(model_name, temperature))
 
     # Fallback to OpenAI
-    model = _create_openai(model_name, temperature)
-    with _MODEL_CACHE_LOCK:
-        _MODEL_CACHE[cache_key] = model
-    return model
+    return _cache_and_return(cache_key, _create_openai(model_name, temperature))

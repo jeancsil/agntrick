@@ -11,36 +11,20 @@ from agntrick.tools.deep_scrape import (
 )
 
 
-class TestCrawl4AITimeout:
-    """Tests for Crawl4AI timeout configuration."""
+class TestTimeoutDefaults:
+    """Tests for timeout default values at import time."""
 
     def test_default_crawl4ai_timeout_is_15(self):
         """Default Crawl4AI timeout should be 15 seconds."""
-        # Import fresh to verify the default
         from agntrick.tools.deep_scrape import _CRAWL4AI_TIMEOUT
 
         assert _CRAWL4AI_TIMEOUT == 15.0
-
-    def test_crawl4ai_timeout_env_var_is_respected(self):
-        """CRAWL4AI_TIMEOUT env var should be used when set."""
-        # Verify the env var mechanism by checking the module reads it
-        with patch.dict(os.environ, {"CRAWL4AI_TIMEOUT": "20"}):
-            assert float(os.environ.get("CRAWL4AI_TIMEOUT", "15")) == 20.0
-
-
-class TestFirecrawlTimeout:
-    """Tests for Firecrawl timeout configuration."""
 
     def test_default_firecrawl_timeout_is_30(self):
         """Default Firecrawl timeout should be 30 seconds."""
         from agntrick.tools.deep_scrape import _FIRECRAWL_TIMEOUT
 
         assert _FIRECRAWL_TIMEOUT == 30.0
-
-    def test_firecrawl_timeout_env_var_is_respected(self):
-        """FIRECRAWL_TIMEOUT env var should be used when set."""
-        with patch.dict(os.environ, {"FIRECRAWL_TIMEOUT": "45"}):
-            assert float(os.environ.get("FIRECRAWL_TIMEOUT", "30")) == 45.0
 
 
 class TestCrawl4AIFallback:
@@ -71,9 +55,7 @@ class TestCrawl4AIFallback:
 
             result = tool._extract("https://example.com")
 
-            # Crawl4AI was attempted first
             mock_c4ai.assert_called_once()
-            # Firecrawl was called as fallback
             mock_fc.assert_called_once()
             assert result.status == ExtractionStatus.SUCCESS
             assert result.stage == ExtractionStage.FIRECRAWL

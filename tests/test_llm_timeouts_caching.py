@@ -1,5 +1,6 @@
 """Tests for LLM request timeout and model instance caching."""
 
+import os
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -89,14 +90,11 @@ class TestModelCaching:
 class TestRequestTimeout:
     """Tests for LLM request timeout configuration."""
 
+    @patch.dict("os.environ", {}, clear=False)
     def test_default_request_timeout_is_60(self):
         """Default request timeout should be 60 seconds."""
-        with patch.dict("os.environ", {}, clear=False):
-            # Remove OPENAI_REQUEST_TIMEOUT if set
-            import os
-
-            os.environ.pop("OPENAI_REQUEST_TIMEOUT", None)
-            assert _get_request_timeout() == 60
+        os.environ.pop("OPENAI_REQUEST_TIMEOUT", None)
+        assert _get_request_timeout() == 60
 
     @patch.dict("os.environ", {"OPENAI_REQUEST_TIMEOUT": "30"})
     def test_request_timeout_from_env_var(self):

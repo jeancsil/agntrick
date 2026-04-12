@@ -8,9 +8,14 @@ from typing import Any
 
 from agntrick.config import AgntrickConfig
 
-# Suppress third-party dependency warnings at import time (e.g. requests urllib3 mismatch).
+# Suppress requests library dependency version mismatch warnings at import time.
 # This must happen before any code imports requests transitively.
-warnings.filterwarnings("ignore", message=".*urllib3.*", category=DeprecationWarning)
+try:
+    from requests import RequestsDependencyWarning  # type: ignore[attr-defined]
+
+    warnings.filterwarnings("ignore", category=RequestsDependencyWarning)
+except ImportError:
+    pass
 
 
 class PIIFilter(logging.Filter):

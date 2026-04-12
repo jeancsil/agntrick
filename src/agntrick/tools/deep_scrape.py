@@ -476,9 +476,6 @@ class DeepScrapeTool(Tool):
             try:
                 result = future.result(timeout=_FIRECRAWL_TIMEOUT)
             except concurrent.futures.TimeoutError:
-                # Don't wait for the background thread — let it finish in the background.
-                # The underlying HTTP call will complete on its own socket timeout.
-                pool.shutdown(wait=False)
                 return DeepScrapeResult(
                     url=url,
                     status=ExtractionStatus.ERROR,
