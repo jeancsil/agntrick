@@ -2,10 +2,15 @@
 
 import logging
 import re
+import warnings
 from pathlib import Path
 from typing import Any
 
 from agntrick.config import AgntrickConfig
+
+# Suppress third-party dependency warnings at import time (e.g. requests urllib3 mismatch).
+# This must happen before any code imports requests transitively.
+warnings.filterwarnings("ignore", message=".*urllib3.*", category=DeprecationWarning)
 
 
 class PIIFilter(logging.Filter):
