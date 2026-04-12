@@ -13,6 +13,7 @@ from typing import Any, Callable, Coroutine, Sequence
 from langchain.agents import create_agent
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
@@ -281,6 +282,117 @@ class AgentState(TypedDict, total=False):
     tool_plan: str | None
     progress: list[str]
     final_response: str | None
+    context: dict[str, Any]
+
+
+# Token threshold above which summarization is triggered.
+_SUMMARIZE_TOKEN_THRESHOLD = 500
+
+# Number of most-recent messages to keep unsummarized.
+_SUMMARIZE_KEEP_RECENT = 2
+
+# Maximum tokens for the summary output.
+_SUMMARY_MAX_TOKENS = 128
+
+# Hours after which a running summary is considered stale and cleared.
+_SUMMARY_TTL_HOURS = 24
+
+
+async def summarize_node(
+    state: AgentState,
+    config: RunnableConfig,
+    *,
+    model: Any,
+    max_tokens: int = _SUMMARIZE_TOKEN_THRESHOLD,
+    keep_recent: int = _SUMMARIZE_KEEP_RECENT,
+    summary_max_tokens: int = _SUMMARY_MAX_TOKENS,
+    ttl_hours: int = _SUMMARY_TTL_HOURS,
+) -> dict:
+    """Compress old conversation messages into a running summary.
+
+    Checks token count of messages in state. If below threshold, returns
+    empty dict (no-op). If above, uses the LLM to summarize older messages
+    into a compact running summary stored in ``state["context"]``.
+
+    Args:
+        state: Current graph state with messages and optional context.
+        config: LangGraph runnable config.
+        model: LLM model for summarization.
+        max_tokens: Token threshold to trigger summarization.
+        keep_recent: Number of recent messages to keep unsummarized.
+        summary_max_tokens: Max tokens for the summary LLM output.
+        ttl_hours: Hours before a summary is considered stale.
+
+    Returns:
+        Dict with updated context and optional RemoveMessage directives.
+        Empty dict if no summarization needed (no-op).
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        return {}
+
+    token_count = count_tokens_approximately(messages)
+    if token_count < max_tokens:
+        return {}
+
+    # Split messages: old ones to summarize vs recent to keep
+    split_index = max(0, len(messages) - keep_recent)
+    old_messages = messages[:split_index]
+
+    if not old_messages:
+        return {}
+
+    # Build summarization prompt
+    existing_summary = state.get("context", {}).get("running_summary")
+    summary_age = state.get("context", {}).get("summary_updated_at", 0.0)
+
+    # TTL check: clear stale summary
+    if existing_summary and (time.time() - summary_age) > ttl_hours * 3600:
+        logger.info("[summarize] TTL expired, clearing stale summary")
+        existing_summary = None
+
+    # Build the prompt to LLM
+    old_content = "\n".join(f"{type(m).__name__}: {str(m.content)[:500]}" for m in old_messages)
+
+    if existing_summary:
+        prompt = (
+            f"Extend this conversation summary with the new messages below. "
+            f"Keep it concise (max {summary_max_tokens} tokens).\n\n"
+            f"Existing summary: {existing_summary}\n\n"
+            f"New messages:\n{old_content}"
+        )
+    else:
+        prompt = (
+            f"Summarize this conversation concisely (max {summary_max_tokens} tokens). "
+            f"Focus on topics, user preferences, and key facts.\n\n"
+            f"Messages:\n{old_content}"
+        )
+
+    # Call LLM for summarization
+    try:
+        response = await model.ainvoke([HumanMessage(content=prompt)])
+        new_summary = str(response.content).strip()
+    except Exception as e:
+        logger.warning("[summarize] LLM summarization failed: %s", e)
+        return {}
+
+    # Build RemoveMessage directives for old messages
+    removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+
+    logger.info(
+        "[summarize] compressed %d messages (%d tokens) into %d-char summary",
+        len(old_messages),
+        token_count,
+        len(new_summary),
+    )
+
+    return {
+        "messages": removes,
+        "context": {
+            "running_summary": new_summary,
+            "summary_updated_at": time.time(),
+        },
+    }
 
 
 def _parse_router_response(content: str) -> dict[str, Any]:
@@ -411,6 +523,14 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         len(context_window),
         query_preview,
     )
+
+    # Inject running summary as context prefix if available
+    summary = state.get("context", {}).get("running_summary")
+    if summary:
+        context_window = [
+            SystemMessage(content=f"Previous conversation summary: {summary}"),
+            *context_window,
+        ]
 
     response = await _log_llm_call(
         model,
@@ -595,7 +715,14 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
             len(msgs),
             [type(m).__name__ for m in msgs],
         )
-        safe_msgs = _safe_invoke_messages(RESPONDER_PROMPT, msgs)
+
+        # Inject running summary as context if available
+        prompt = RESPONDER_PROMPT
+        summary = state.get("context", {}).get("running_summary")
+        if summary:
+            prompt = f"Previous conversation summary: {summary}\n\n{RESPONDER_PROMPT}"
+
+        safe_msgs = _safe_invoke_messages(prompt, msgs)
         try:
             response = await _log_llm_call(model, safe_msgs, node="responder-chat")
         except Exception as e:
@@ -670,6 +797,9 @@ def create_assistant_graph(
     _executor_model = executor_model or model
     _responder_model = responder_model or model
 
+    async def _summarize(state: AgentState, config: RunnableConfig) -> dict:
+        return await summarize_node(state, config, model=model)
+
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
         return await router_node(state, config, model=_router_model)
 
@@ -687,10 +817,12 @@ def create_assistant_graph(
         return await responder_node(state, config, model=_responder_model)
 
     graph = StateGraph(AgentState)
+    graph.add_node("summarize", _summarize)
     graph.add_node("router", _router)
     graph.add_node("executor", _executor)
     graph.add_node("responder", _responder)
-    graph.set_entry_point("router")
+    graph.set_entry_point("summarize")
+    graph.add_edge("summarize", "router")
     graph.add_conditional_edges(
         "router",
         route_decision,

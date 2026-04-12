@@ -1,5 +1,6 @@
 """Tests for the 3-node assistant StateGraph."""
 
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,6 +13,7 @@ from agntrick.graph import (
     executor_node,
     responder_node,
     route_decision,
+    summarize_node,
 )
 
 
@@ -98,6 +100,18 @@ class TestAgentState:
         }
         assert state["intent"] == "chat"
         assert state["tool_plan"] is None
+
+    def test_state_accepts_context_field(self) -> None:
+        """AgentState should accept an optional context dict."""
+        state: AgentState = {
+            "messages": [],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+            "context": {"running_summary": "User asked about F1.", "summary_updated_at": 1712900000.0},
+        }
+        assert state["context"]["running_summary"] == "User asked about F1."
 
 
 class TestParseRouterResponse:
@@ -216,6 +230,41 @@ class TestRouterNode:
         assert result["intent"] == "tool_use"
         assert "web_search" in result["tool_plan"]
 
+    @pytest.mark.asyncio
+    async def test_router_injects_summary_as_context(self) -> None:
+        """Router should prepend summary as SystemMessage when context has one."""
+        from agntrick.graph import router_node
+
+        captured_messages: list[list[BaseMessage]] = []
+
+        async def capture_invoke(messages: list[BaseMessage]) -> AIMessage:
+            captured_messages.append(messages)
+            return AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = capture_invoke
+
+        state: AgentState = {
+            "messages": [HumanMessage(content="follow up question")],
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+            "context": {
+                "running_summary": "User previously asked about F1 news and got results.",
+                "summary_updated_at": time.time(),
+            },
+        }
+
+        await router_node(state, {}, model=mock_model)
+
+        sent = captured_messages[0]
+        # Should contain a SystemMessage with the summary
+        system_msgs = [m for m in sent if isinstance(m, SystemMessage)]
+        summary_msgs = [m for m in system_msgs if "Previous conversation summary" in str(m.content)]
+        assert len(summary_msgs) == 1, f"Expected 1 summary SystemMessage, got {len(summary_msgs)}"
+        assert "F1 news" in str(summary_msgs[0].content)
+
 
 class TestExecutorMiddleware:
     """Tests for executor sub-agent middleware configuration."""
@@ -327,6 +376,35 @@ class TestGraphIntegration:
     Verifies that message isolation, tool filtering, and middleware
     all work together through the real graph execution path.
     """
+
+    @pytest.mark.asyncio
+    async def test_graph_has_summarize_node(self) -> None:
+        """Graph should compile with summarize as the entry point."""
+        from agntrick.graph import create_assistant_graph
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
+        )
+
+        graph = create_assistant_graph(
+            model=mock_model,
+            tools=[],
+            system_prompt="You are a test assistant.",
+        )
+
+        # Graph should compile and have ainvoke
+        assert graph is not None
+
+        # Invoke should work end-to-end (summarize no-op → router → responder)
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content="Hi")]},
+            config={"configurable": {"thread_id": "test-summarize-node"}},
+        )
+        assert result.get("final_response") is not None
 
     @pytest.mark.asyncio
     async def test_chat_intent_skips_executor(self) -> None:
@@ -1426,6 +1504,46 @@ class TestResponderChatWindow:
         assert "Latest question" in human_contents, f"Window should include latest message, got: {human_contents}"
         assert "Recent question" in human_contents, f"Window should include recent messages, got: {human_contents}"
 
+    @pytest.mark.asyncio
+    async def test_chat_intent_injects_summary(self) -> None:
+        """Responder for chat should prepend summary when available."""
+        from agntrick.graph import responder_node
+
+        captured_messages: list[list[BaseMessage]] = []
+
+        async def capture_invoke(messages: list[BaseMessage]) -> AIMessage:
+            captured_messages.append(messages)
+            return AIMessage(content="Response")
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = capture_invoke
+
+        state: AgentState = {
+            "messages": [
+                HumanMessage(content="And what about Paris?"),
+            ],
+            "intent": "chat",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+            "context": {
+                "running_summary": "User asked about F1 and Tokyo weather.",
+                "summary_updated_at": time.time(),
+            },
+        }
+
+        await responder_node(state, {}, model=mock_model)
+
+        sent = captured_messages[0]
+        # The summary is injected into the SystemMessage content (not a separate message)
+        # because _safe_invoke_messages filters non-Human/AI messages.
+        system_msgs = [m for m in sent if isinstance(m, SystemMessage)]
+        assert len(system_msgs) >= 1, "Expected at least 1 SystemMessage"
+        assert "F1" in str(system_msgs[0].content), (
+            f"SystemMessage should contain summary context, got: {system_msgs[0].content[:200]}"
+        )
+        assert "Previous conversation summary" in str(system_msgs[0].content)
+
 
 class TestBudgetWindowMessages:
     """Tests for _budget_window_messages — character-budget-based windowing."""
@@ -1667,3 +1785,201 @@ class TestResponderStatePruning:
         removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
         removed_ids = {r.id for r in removes}
         assert removed_ids == {f"id-{i}" for i in range(5)}
+
+
+class TestSummarizeNode:
+    """Tests for summarize_node — conversation history compression."""
+
+    @pytest.mark.asyncio
+    async def test_noop_below_threshold(self) -> None:
+        """Messages under token threshold should return empty dict (no-op)."""
+        mock_model = AsyncMock()
+        state: AgentState = {
+            "messages": [HumanMessage(content="hello")],
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await summarize_node(state, {}, model=mock_model)
+
+        # No-op: model should NOT be called, empty dict returned
+        mock_model.ainvoke.assert_not_called()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_noop_with_empty_messages(self) -> None:
+        """Empty messages should return empty dict (no-op)."""
+        mock_model = AsyncMock()
+        state: AgentState = {
+            "messages": [],
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await summarize_node(state, {}, model=mock_model)
+        mock_model.ainvoke.assert_not_called()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_summarizes_above_threshold(self) -> None:
+        """Messages above threshold should be summarized and old ones removed."""
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="User asked about F1 news and weather in Tokyo."))
+
+        # Build messages with IDs so RemoveMessage can target them
+        msgs = [
+            HumanMessage(content="What's the F1 news?" + " detail" * 200, id="msg-0"),
+            AIMessage(content="Here are the F1 results..." + " detail" * 200, id="msg-1"),
+            HumanMessage(content="And the weather in Tokyo?" + " detail" * 200, id="msg-2"),
+            AIMessage(content="Tokyo is 22°C sunny." + " detail" * 200, id="msg-3"),
+            HumanMessage(content="What about Paris?", id="msg-4"),
+        ]
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=2)
+
+        # Model should have been called to summarize
+        mock_model.ainvoke.assert_called_once()
+
+        # Should return RemoveMessage for old messages (all except last 2)
+        removes = [m for m in result.get("messages", []) if isinstance(m, RemoveMessage)]
+        assert len(removes) == 3, f"Expected 3 RemoveMessage (msg-0,1,2), got {len(removes)}"
+        removed_ids = {r.id for r in removes}
+        assert "msg-0" in removed_ids
+        assert "msg-1" in removed_ids
+        assert "msg-2" in removed_ids
+
+        # Context should have running_summary
+        assert "context" in result
+        assert "running_summary" in result["context"]
+        assert "F1" in result["context"]["running_summary"]
+        assert "summary_updated_at" in result["context"]
+
+    @pytest.mark.asyncio
+    async def test_extends_existing_summary(self) -> None:
+        """Should extend an existing summary rather than recreate from scratch."""
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Extended: User also asked about chess."))
+
+        msgs = [
+            HumanMessage(content="Tell me about chess openings" + " detail" * 200, id="old-0"),
+            AIMessage(content="Here are chess openings..." + " detail" * 200, id="old-1"),
+            HumanMessage(content="New question"),
+        ]
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+            "context": {
+                "running_summary": "User asked about F1 news.",
+                "summary_updated_at": time.time(),
+            },
+        }
+
+        result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+
+        # The prompt sent to LLM should mention the existing summary
+        call_args = mock_model.ainvoke.call_args[0][0]
+        prompt_text = str(call_args[0].content)
+        assert "F1 news" in prompt_text, "Prompt should include existing summary"
+        assert "Extend" in prompt_text, "Prompt should ask to extend, not recreate"
+
+        assert "chess" in result["context"]["running_summary"]
+
+    @pytest.mark.asyncio
+    async def test_ttl_expires_stale_summary(self) -> None:
+        """Summary older than TTL should be cleared, summarization starts fresh."""
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Fresh summary about chess."))
+
+        msgs = [
+            HumanMessage(content="Chess question" + " detail" * 200, id="m-0"),
+            AIMessage(content="Chess answer" + " detail" * 200, id="m-1"),
+            HumanMessage(content="New question"),
+        ]
+
+        # Summary is 48 hours old (TTL default is 24h)
+        stale_time = time.time() - (48 * 3600)
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+            "context": {
+                "running_summary": "Stale summary about old topics.",
+                "summary_updated_at": stale_time,
+            },
+        }
+
+        await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+
+        # The prompt should NOT mention the stale summary
+        call_args = mock_model.ainvoke.call_args[0][0]
+        prompt_text = str(call_args[0].content)
+        assert "Stale summary" not in prompt_text, "Stale summary should not be used"
+        assert "Summarize" in prompt_text, "Should start fresh with 'Summarize'"
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_graceful_degradation(self) -> None:
+        """When summarization LLM fails, should return empty dict (no crash)."""
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(side_effect=RuntimeError("API timeout"))
+
+        msgs = [
+            HumanMessage(content="Long message" + " detail" * 200, id="m-0"),
+            AIMessage(content="Long response" + " detail" * 200, id="m-1"),
+            HumanMessage(content="New question"),
+        ]
+
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        # Should NOT raise — graceful degradation
+        result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+        assert result == {}, "Should return empty dict on LLM failure"
+
+    @pytest.mark.asyncio
+    async def test_context_missing_defaults_to_empty(self) -> None:
+        """Missing context field should default to empty dict gracefully."""
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Summary of the conversation."))
+
+        msgs = [
+            HumanMessage(content="Big message" + " detail" * 200, id="m-0"),
+            AIMessage(content="Big answer" + " detail" * 200, id="m-1"),
+            HumanMessage(content="New question"),
+        ]
+
+        # No context field at all
+        state: AgentState = {
+            "messages": msgs,
+            "intent": "",
+            "tool_plan": None,
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await summarize_node(state, {}, model=mock_model, max_tokens=10, keep_recent=1)
+        assert "context" in result
+        assert "running_summary" in result["context"]
