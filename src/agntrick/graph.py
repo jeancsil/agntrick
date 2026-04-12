@@ -27,13 +27,14 @@ ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 # Maximum chars of message content to send to the LLM to avoid 400 errors
 _MAX_MESSAGE_CHARS = 15_000
 
-# Number of recent messages the router sees for context (follow-up understanding)
-_ROUTER_CONTEXT_WINDOW = 5
+# Character budget for router context (~1K tokens — router only classifies intent)
+_ROUTER_CONTEXT_BUDGET = 4_000
 
-# Maximum number of recent messages the responder sees for chat intent.
-# Matches _ROUTER_CONTEXT_WINDOW — enough for follow-up understanding
-# without wasting tokens on stale context.
-_RESPONDER_CHAT_WINDOW = 5
+# Character budget for responder chat context (~2K tokens — responder needs richer context)
+_RESPONDER_CHAT_BUDGET = 8_000
+
+# Hard ceiling on number of messages in window (prevents 100+ tiny messages)
+_MAX_WINDOW_MESSAGES = 20
 
 # Maximum messages retained in checkpointer state.
 # Prunes the oldest messages when exceeded — prevents unbounded token waste.
@@ -126,22 +127,38 @@ def _truncate_messages(
     return messages
 
 
-def _window_messages(
+def _budget_window_messages(
     messages: list[BaseMessage],
-    max_messages: int,
+    max_chars: int,
+    max_messages: int = _MAX_WINDOW_MESSAGES,
 ) -> list[BaseMessage]:
-    """Keep only the most recent messages within a window.
+    """Keep messages within a cumulative character budget.
+
+    Walks backward from the most recent message, accumulating character count
+    until the budget is exceeded. Always includes at least the last message.
 
     Args:
         messages: Full message history.
-        max_messages: Maximum number of messages to keep.
+        max_chars: Maximum cumulative character budget.
+        max_messages: Hard ceiling on message count (prevents many tiny messages).
 
     Returns:
-        List of the most recent messages (up to max_messages).
+        List of messages fitting within budget (up to max_messages).
     """
-    if len(messages) <= max_messages:
+    if not messages:
         return messages
-    return messages[-max_messages:]
+    total_chars = 0
+    count = 0
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        msg_chars = len(str(msg.content))
+        if count > 0 and total_chars + msg_chars > max_chars:
+            break
+        if count >= max_messages:
+            break
+        total_chars += msg_chars
+        count += 1
+    return messages[-count:] if count > 0 else messages[-1:]
 
 
 def _build_prune_removes(
@@ -384,9 +401,9 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
 
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
-    # Send a sliding window of recent messages so the router can understand
+    # Send a budget-based window of recent messages so the router can understand
     # follow-up questions (e.g. "yes", "and in Paris?") that need context.
-    context_window = state["messages"][-_ROUTER_CONTEXT_WINDOW:]
+    context_window = _budget_window_messages(state["messages"], _ROUTER_CONTEXT_BUDGET)
     last_message = state["messages"][-1]
     query_preview = str(last_message.content)[:200]
     logger.info(
@@ -572,7 +589,7 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
 
     if state.get("intent") == "chat":
-        msgs = _window_messages(state["messages"], _RESPONDER_CHAT_WINDOW)
+        msgs = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         logger.debug(
             "[responder] chat intent: %d messages, types=%s",
             len(msgs),

@@ -174,7 +174,7 @@ start_all() {
 
     # 3. Gateway
     echo "Starting Gateway..."
-    nohup "$AGNTRICK_DIR/gateway/agntrick-gateway" >> "$GATEWAY_LOG" 2>&1 &
+    LOG_LEVEL=info nohup "$AGNTRICK_DIR/gateway/agntrick-gateway" >> "$GATEWAY_LOG" 2>&1 &
     GW_PID=$!
     disown $GW_PID
     echo "Gateway started (PID $GW_PID)"

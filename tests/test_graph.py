@@ -1370,10 +1370,11 @@ class TestResponderChatWindow:
         mock_model.ainvoke = capture_invoke
 
         # Build a long conversation: 20 exchange pairs = 40 messages
+        # Each message is ~500 chars to exceed the 8K budget (20 pairs × 1000 chars = 20K chars)
         long_history: list[Any] = []
         for i in range(20):
-            long_history.append(HumanMessage(content=f"Question {i}"))
-            long_history.append(AIMessage(content=f"Answer {i}"))
+            long_history.append(HumanMessage(content=f"Question {i}: " + "x" * 500))
+            long_history.append(AIMessage(content=f"Answer {i}: " + "y" * 500))
 
         state: AgentState = {
             "messages": long_history,
@@ -1424,6 +1425,95 @@ class TestResponderChatWindow:
         human_contents = [m.content for m in sent_messages if isinstance(m, HumanMessage)]
         assert "Latest question" in human_contents, f"Window should include latest message, got: {human_contents}"
         assert "Recent question" in human_contents, f"Window should include recent messages, got: {human_contents}"
+
+
+class TestBudgetWindowMessages:
+    """Tests for _budget_window_messages — character-budget-based windowing."""
+
+    def test_empty_returns_empty(self) -> None:
+        """Empty message list should return empty list."""
+        from agntrick.graph import _budget_window_messages
+
+        assert _budget_window_messages([], 1000) == []
+
+    def test_single_msg_within_budget(self) -> None:
+        """Single message within budget should return that message."""
+        from agntrick.graph import _budget_window_messages
+
+        msgs = [HumanMessage(content="Hello")]
+        result = _budget_window_messages(msgs, 1000)
+        assert len(result) == 1
+        assert result[0].content == "Hello"
+
+    def test_single_msg_exceeds_budget_still_returned(self) -> None:
+        """Single message exceeding budget should still be returned (guarantee)."""
+        from agntrick.graph import _budget_window_messages
+
+        msgs = [HumanMessage(content="x" * 5000)]
+        result = _budget_window_messages(msgs, 1000)
+        assert len(result) == 1
+        assert result[0].content == "x" * 5000
+
+    def test_truncates_when_budget_exceeded(self) -> None:
+        """Should truncate when cumulative budget is exceeded."""
+        from agntrick.graph import _budget_window_messages
+
+        msgs = [
+            HumanMessage(content="a" * 1000),
+            AIMessage(content="b" * 500),
+            HumanMessage(content="c" * 600),
+        ]
+        result = _budget_window_messages(msgs, 1500)
+        # Should include last message (600) + second-to-last (500) = 1100 budget
+        # First message (1000) would exceed budget: 1100 + 1000 = 2100 > 1500
+        assert len(result) == 2
+        assert result[0].content == "b" * 500
+        assert result[1].content == "c" * 600
+
+    def test_preserves_order(self) -> None:
+        """Should preserve original message order (most recent last)."""
+        from agntrick.graph import _budget_window_messages
+
+        msgs = [
+            HumanMessage(content="first"),
+            AIMessage(content="second"),
+            HumanMessage(content="third"),
+        ]
+        result = _budget_window_messages(msgs, 10000)
+        assert len(result) == 3
+        assert result[0].content == "first"
+        assert result[1].content == "second"
+        assert result[2].content == "third"
+
+    def test_hard_ceiling_on_count(self) -> None:
+        """Should enforce max_messages ceiling even if budget allows more."""
+        from agntrick.graph import _budget_window_messages
+
+        # 30 tiny messages, each 10 chars = 300 total (well under 10K budget)
+        # But max_messages=20 should cap at 20
+        msgs = [HumanMessage(content=f"msg{i}") for i in range(30)]
+        result = _budget_window_messages(msgs, 10000, max_messages=20)
+        assert len(result) == 20
+        # Should be the 20 most recent
+        assert result[0].content == "msg10"
+        assert result[-1].content == "msg29"
+
+    def test_mixed_human_ai_messages(self) -> None:
+        """Should handle mixed HumanMessage and AIMessage correctly."""
+        from agntrick.graph import _budget_window_messages
+
+        msgs = [
+            HumanMessage(content="Q1"),
+            AIMessage(content="A1"),
+            HumanMessage(content="Q2"),
+            AIMessage(content="A2"),
+        ]
+        result = _budget_window_messages(msgs, 100)
+        assert len(result) == 4
+        assert isinstance(result[0], HumanMessage)
+        assert isinstance(result[1], AIMessage)
+        assert isinstance(result[2], HumanMessage)
+        assert isinstance(result[3], AIMessage)
 
 
 class TestBuildPruneRemoves:

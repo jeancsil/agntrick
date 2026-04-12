@@ -81,6 +81,65 @@ cd gateway && go run .
 2. Scan with WhatsApp (Settings > Linked Devices)
 3. Send yourself a message to test
 
+### Option 3: pip install
+
+```bash
+pip install agntrick
+agntrick init   # Interactive setup wizard
+```
+
+The init wizard walks you through everything:
+
+```
+╭─────────────────── Agntrick Setup ───────────────────╮
+│ Welcome to Agntrick!                                 │
+│ This wizard will set up your configuration.          │
+│ Press Enter to accept defaults shown in brackets.    │
+╰──────────────────────────────────────────────────────╯
+
+ LLM provider (z.ai, openai, anthropic, google, ollama, openrouter) [z.ai]: openai
+ Model name [gpt-4o-mini]:
+ Temperature (0.0 = deterministic, 1.0 = creative) [0.1]:
+ API key (will be written to .env): sk-••••••••••••
+ Write credentials to .env? [Y/n]: Y
+ Wrote OPENAI_API_KEY to .env
+
+ Set up WhatsApp integration? (requires Go gateway binary) [y/N]: y
+ Tenant ID (a short name, e.g. 'personal') [personal]:
+ WhatsApp phone number (international format, e.g. +5511999999999): +5511999999999
+ Default agent (assistant, developer, learning, news) [assistant]:
+
+ Config written to ~/.agntrick.yaml
+```
+
+Then start chatting:
+
+```bash
+agntrick list                    # list available agents
+agntrick chat "Hello!"           # chat with the assistant
+```
+
+#### WhatsApp Gateway (optional)
+
+Download the pre-built binary for your platform from [GitHub Releases](https://github.com/jeancsil/agntrick/releases/latest):
+
+```bash
+# Linux (amd64)
+curl -L -o agntrick-gateway https://github.com/jeancsil/agntrick/releases/latest/download/agntrick-gateway-linux-amd64
+chmod +x agntrick-gateway
+
+# macOS (Apple Silicon)
+curl -L -o agntrick-gateway https://github.com/jeancsil/agntrick/releases/latest/download/agntrick-gateway-darwin-arm64
+chmod +x agntrick-gateway
+
+# Start both services
+agntrick serve                   # Python API on port 8000
+./agntrick-gateway               # Go gateway (other terminal)
+
+# Scan the QR code to link your WhatsApp
+open http://localhost:8000/api/v1/whatsapp/qr/personal/page
+```
+
 ---
 
 ## ⚙️ Configuration
