@@ -38,24 +38,26 @@ class PIIFilter(logging.Filter):
         return text
 
 
-class HttpxLogFilter(logging.Filter):
-    """Suppresses httpx logging format errors from third-party library."""
+class ThirdPartyLogFilter(logging.Filter):
+    """Suppresses logging format errors from third-party libraries.
+
+    Handles known format mismatches:
+    - openai._base_client: uses %f with string timeout arg on retry logs
+    - httpx: uses %d with string status code arg
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Filter out malformed httpx log records."""
-        # Check for the problematic httpx log format
-        if hasattr(record, "name") and "httpx" in record.name:
-            try:
-                # Test if the format string works
-                if record.args and len(record.args) >= 4:
-                    # httpx format: 'HTTP Request: %s %s "%s %d %s"'
-                    # If this fails, suppress the log
-                    record.msg % record.args if isinstance(record.msg, str) else str(record.msg)
-                return True
-            except (TypeError, ValueError):
-                # Format error - suppress this log record
-                return False
-        return True
+        """Filter out malformed log records from third-party libraries."""
+        if not record.args or not isinstance(record.msg, str):
+            return True
+        try:
+            # Test if the format string works with the provided args
+            record.msg % record.args
+            return True
+        except (TypeError, ValueError):
+            # Format mismatch — suppress this log record to avoid
+            # "Logging error" tracebacks from third-party libraries.
+            return False
 
 
 class TenantLogAdapter(logging.LoggerAdapter):
@@ -103,7 +105,7 @@ def setup_logging(config: AgntrickConfig) -> None:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.addFilter(PIIFilter())
-    console_handler.addFilter(HttpxLogFilter())
+    console_handler.addFilter(ThirdPartyLogFilter())
     root_logger.addHandler(console_handler)
 
     # Determine log directory
