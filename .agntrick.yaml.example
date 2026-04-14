@@ -75,6 +75,20 @@ agents:
   # Path to file containing system prompt template
   # system_prompt_file: "./my_custom_prompt.txt"
 
+# Per-Agent Model Configuration
+# Assign different LLM models to specific agents
+agent_models:
+  # Map agent names to model names
+  # assistant: "claude-sonnet-4-6"
+  # developer: "claude-haiku-4-5-20251001"
+  # committer: "gpt-4o-mini"
+
+  # Optional: Override models for specific graph nodes (router, executor, responder)
+  # This is useful for using cheaper/faster models for classification/responder nodes
+  # assistant_nodes:
+  #   router: "claude-haiku-4-5-20251001"
+  #   responder: "claude-haiku-4-5-20251001"
+
 # Circuit Breaker Configuration (via environment variables)
 # Controls behavior when toolbox is unavailable
 #   MANIFEST_CB_FAILURE_THRESHOLD=5    # Open circuit after N failures
