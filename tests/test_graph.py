@@ -1714,11 +1714,11 @@ class TestResponderStatePruning:
         removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
         ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
         assert len(ai_msgs) == 1, "Should still add 1 AIMessage for chat"
-        assert len(removes) == 10, f"Should prune 10 oldest (30 - 20), got {len(removes)}"
+        assert len(removes) == 20, f"Should prune 20 oldest (30 - 10), got {len(removes)}"
 
     @pytest.mark.asyncio
     async def test_tool_use_intent_prunes_old_messages(self) -> None:
-        """Tool_use intent with 30 messages should prune 10 oldest."""
+        """Tool_use intent with 30 messages should prune 20 oldest (limit=10)."""
         msgs: list[Any] = []
         for i in range(15):
             msgs.append(HumanMessage(content=f"Q{i}", id=f"h-{i}"))
@@ -1739,7 +1739,7 @@ class TestResponderStatePruning:
         removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
         ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
         assert len(ai_msgs) == 0, "Tool_use should not add AI messages"
-        assert len(removes) == 10, f"Should prune 10 oldest, got {len(removes)}"
+        assert len(removes) == 20, f"Should prune 20 oldest (30 - 10), got {len(removes)}"
 
     @pytest.mark.asyncio
     async def test_short_history_no_pruning(self) -> None:
@@ -1784,7 +1784,7 @@ class TestResponderStatePruning:
         result = await responder_node(state, {}, model=mock_model)
         removes = [m for m in result["messages"] if isinstance(m, RemoveMessage)]
         removed_ids = {r.id for r in removes}
-        assert removed_ids == {f"id-{i}" for i in range(5)}
+        assert removed_ids == {f"id-{i}" for i in range(15)}
 
 
 class TestSummarizeNode:
