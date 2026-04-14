@@ -614,19 +614,21 @@ async def executor_node(
 
     guided_prompt = system_prompt
     if tool_plan and intent == "tool_use":
-        guided_prompt += f"""
-
-## TOOL USE — CALL ONCE AND RESPOND
-
-The router determined this query needs: {tool_plan}
-You have ONE tool available: {tool_plan}. Call it once, then respond to the user.
-
-RULES:
-- Call {tool_plan} exactly once
-- If it returns ANY data → respond to the user with that data. STOP.
-- If it returns an error → respond explaining the issue. STOP.
-- NEVER say "unable to retrieve" if the tool returned data
-"""
+        # Use a focused minimal prompt for tool_use — the full assistant.md
+        # system prompt contradicts "call once" with "Maximum 2-3 tool calls"
+        # (assistant.md line 37), causing the model to ignore the limit.
+        # A standalone prompt eliminates the contradiction entirely.
+        guided_prompt = (
+            "You are a helpful assistant. Answer the user's question using the tool below.\n\n"
+            f"## YOUR TASK\n"
+            f"Call `{tool_plan}` exactly ONCE, then respond to the user immediately.\n\n"
+            f"## STRICT RULES\n"
+            f"- You may call `{tool_plan}` exactly ONE time. No exceptions.\n"
+            f"- After the tool returns data, respond to the user with that data. Do NOT call the tool again.\n"
+            f"- After the tool returns an error, explain the issue. Do NOT call the tool again.\n"
+            f"- NEVER say 'unable to retrieve' if the tool returned data.\n"
+            f"- Respond in the same language as the user.\n"
+        )
     elif tool_plan and intent == "research":
         guided_prompt += f"""
 
