@@ -689,8 +689,19 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
         await progress_callback("Searching for information...")
 
     try:
+        # For tool_use, include a few recent messages so follow-up queries
+        # like "what about the score now?" retain context about which game.
+        # For other intents, use the original single-message isolation.
+        if intent == "tool_use":
+            # Budget 2K chars / 4 messages — enough for the last exchange
+            executor_msgs = _budget_window_messages(state["messages"], 2_000, max_messages=4)
+            # Filter to types the sub-agent can handle (no ToolMessage etc.)
+            executor_msgs = [m for m in executor_msgs if isinstance(m, (HumanMessage, AIMessage))]
+        else:
+            executor_msgs = _truncate_messages(state["messages"])
+
         result = await sub_agent.ainvoke(
-            {"messages": _truncate_messages(state["messages"])},  # type: ignore[arg-type]
+            {"messages": executor_msgs},  # type: ignore[arg-type]
             config={"configurable": {"thread_id": f"executor-{uuid.uuid4().hex}"}},
         )
     except Exception as e:

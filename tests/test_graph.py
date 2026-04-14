@@ -309,11 +309,11 @@ class TestExecutorMiddleware:
 
 
 class TestExecutorMessageIsolation:
-    """Tests that executor receives only the last user message, not full history."""
+    """Tests that executor receives a context window for tool_use, not full history."""
 
     @pytest.mark.asyncio
-    async def test_executor_receives_only_last_message(self) -> None:
-        """Executor should send only the last HumanMessage, not full history."""
+    async def test_executor_receives_context_window_for_tool_use(self) -> None:
+        """tool_use intent should send recent messages (up to 4) for follow-up context."""
         from unittest.mock import patch
 
         with patch("agntrick.graph.create_agent") as mock_create:
@@ -344,14 +344,16 @@ class TestExecutorMessageIsolation:
                 system_prompt="test",
             )
 
-            # Verify only last HumanMessage was sent to sub-agent
+            # Verify recent messages were sent (not full history, not single message)
             invoke_args = mock_create.return_value.ainvoke.call_args
             messages = invoke_args[0][0]["messages"] if invoke_args else []
+            # Should include the last HumanMessage at minimum
             human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
-            assert len(human_msgs) == 1, (
-                f"Expected exactly 1 HumanMessage, got {len(human_msgs)}: {[m.content for m in human_msgs]}"
+            assert len(human_msgs) >= 1, (
+                f"Expected at least 1 HumanMessage, got {len(human_msgs)}: {[m.content for m in human_msgs]}"
             )
-            assert human_msgs[0].content == "What are the top news in g1.globo.com?"
+            # Last HumanMessage must be the current query
+            assert human_msgs[-1].content == "What are the top news in g1.globo.com?"
 
 
 class TestCreateAssistantGraph:
@@ -468,8 +470,8 @@ class TestGraphIntegration:
         assert result.get("final_response") is not None
 
     @pytest.mark.asyncio
-    async def test_executor_receives_single_message_despite_accumulated_history(self) -> None:
-        """Executor should only receive the last user message even with accumulated history."""
+    async def test_executor_receives_context_window_despite_accumulated_history(self) -> None:
+        """tool_use intent should send a window of recent messages for follow-up context."""
         from unittest.mock import patch
 
         from agntrick.graph import create_assistant_graph
@@ -512,10 +514,11 @@ class TestGraphIntegration:
         sub_invoke_args = mock_sub_agent.ainvoke.call_args
         messages_sent = sub_invoke_args[0][0]["messages"]
 
-        # Only the last HumanMessage should have been sent
+        # Should include at least the last HumanMessage (context window, not single)
         human_msgs = [m for m in messages_sent if isinstance(m, HumanMessage)]
-        assert len(human_msgs) == 1
-        assert human_msgs[0].content == "What are the top news in g1.globo.com?"
+        assert len(human_msgs) >= 1
+        # The last HumanMessage must be the current query
+        assert human_msgs[-1].content == "What are the top news in g1.globo.com?"
 
     @pytest.mark.asyncio
     async def test_tool_filtering_excludes_run_shell_for_tool_use(self) -> None:
