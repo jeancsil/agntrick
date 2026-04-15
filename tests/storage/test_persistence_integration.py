@@ -91,7 +91,9 @@ async def test_different_threads_isolation(db):
             resp_a = await agent_a.run("What is my favorite color?")
             resp_b = await agent_b.run("What is my favorite color?")
 
-            assert "Blue" in str(resp_a)
-            assert "Red" in str(resp_b)
-            assert "Red" not in str(resp_a)
-            assert "Blue" not in str(resp_b)
+            resp_a_str = str(resp_a).lower()
+            resp_b_str = str(resp_b).lower()
+            assert "blue" in resp_a_str
+            assert "red" in resp_b_str
+            assert "red" not in resp_a_str
+            assert "blue" not in resp_b_str
