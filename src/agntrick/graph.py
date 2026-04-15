@@ -13,6 +13,7 @@ from typing import Any, Callable, Coroutine, Sequence
 from langchain.agents import create_agent
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
@@ -27,22 +28,24 @@ ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 # Maximum chars of message content to send to the LLM to avoid 400 errors
 _MAX_MESSAGE_CHARS = 15_000
 
-# Number of recent messages the router sees for context (follow-up understanding)
-_ROUTER_CONTEXT_WINDOW = 5
+# Character budget for router context (~1K tokens — router only classifies intent)
+_ROUTER_CONTEXT_BUDGET = 4_000
 
-# Maximum number of recent messages the responder sees for chat intent.
-# Matches _ROUTER_CONTEXT_WINDOW — enough for follow-up understanding
-# without wasting tokens on stale context.
-_RESPONDER_CHAT_WINDOW = 5
+# Character budget for responder chat context (~2K tokens — responder needs richer context)
+_RESPONDER_CHAT_BUDGET = 8_000
+
+# Hard ceiling on number of messages in window (prevents 100+ tiny messages)
+_MAX_WINDOW_MESSAGES = 20
 
 # Maximum messages retained in checkpointer state.
 # Prunes the oldest messages when exceeded — prevents unbounded token waste.
-# Set to 4x the window size (20 = 4 × 5) for multi-turn follow-up context.
-_MAX_STATE_MESSAGES = 20
+# Lowered to 10 (from 20) to keep context tight for WhatsApp where
+# RemoveMessage doesn't persist in AsyncSqliteSaver.
+_MAX_STATE_MESSAGES = 10
 
 # Intent-specific tool call limits to prevent tool usage spirals.
 _INTENT_TOOL_LIMITS: dict[str, int] = {
-    "tool_use": 2,  # 1 primary + 1 fallback
+    "tool_use": 1,  # single call — speed > perfection for WhatsApp
     "research": 5,  # multi-step research
     "delegate": 1,  # single agent invocation
 }
@@ -126,22 +129,38 @@ def _truncate_messages(
     return messages
 
 
-def _window_messages(
+def _budget_window_messages(
     messages: list[BaseMessage],
-    max_messages: int,
+    max_chars: int,
+    max_messages: int = _MAX_WINDOW_MESSAGES,
 ) -> list[BaseMessage]:
-    """Keep only the most recent messages within a window.
+    """Keep messages within a cumulative character budget.
+
+    Walks backward from the most recent message, accumulating character count
+    until the budget is exceeded. Always includes at least the last message.
 
     Args:
         messages: Full message history.
-        max_messages: Maximum number of messages to keep.
+        max_chars: Maximum cumulative character budget.
+        max_messages: Hard ceiling on message count (prevents many tiny messages).
 
     Returns:
-        List of the most recent messages (up to max_messages).
+        List of messages fitting within budget (up to max_messages).
     """
-    if len(messages) <= max_messages:
+    if not messages:
         return messages
-    return messages[-max_messages:]
+    total_chars = 0
+    count = 0
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        msg_chars = len(str(msg.content))
+        if count > 0 and total_chars + msg_chars > max_chars:
+            break
+        if count >= max_messages:
+            break
+        total_chars += msg_chars
+        count += 1
+    return messages[-count:] if count > 0 else messages[-1:]
 
 
 def _build_prune_removes(
@@ -264,6 +283,165 @@ class AgentState(TypedDict, total=False):
     tool_plan: str | None
     progress: list[str]
     final_response: str | None
+    context: dict[str, Any]
+
+
+# Token threshold above which summarization is triggered.
+# 500 tokens ≈ 10-12 short WhatsApp messages — triggers early compression
+# before context bloats and slows every LLM call.
+_SUMMARIZE_TOKEN_THRESHOLD = 500
+
+# Number of most-recent messages to keep unsummarized.
+_SUMMARIZE_KEEP_RECENT = 2
+
+# Maximum tokens for the summary output.
+_SUMMARY_MAX_TOKENS = 128
+
+# Hours after which a running summary is considered stale and cleared.
+_SUMMARY_TTL_HOURS = 24
+
+
+async def summarize_node(
+    state: AgentState,
+    config: RunnableConfig,
+    *,
+    model: Any,
+    max_tokens: int = _SUMMARIZE_TOKEN_THRESHOLD,
+    keep_recent: int = _SUMMARIZE_KEEP_RECENT,
+    summary_max_tokens: int = _SUMMARY_MAX_TOKENS,
+    ttl_hours: int = _SUMMARY_TTL_HOURS,
+) -> dict:
+    """Compress old conversation messages into a running summary.
+
+    Checks token count of messages in state. If below threshold, returns
+    empty dict (no-op). If above, uses the LLM to summarize older messages
+    into a compact running summary stored in ``state["context"]``.
+
+    Args:
+        state: Current graph state with messages and optional context.
+        config: LangGraph runnable config.
+        model: LLM model for summarization.
+        max_tokens: Token threshold to trigger summarization.
+        keep_recent: Number of recent messages to keep unsummarized.
+        summary_max_tokens: Max tokens for the summary LLM output.
+        ttl_hours: Hours before a summary is considered stale.
+
+    Returns:
+        Dict with updated context and optional RemoveMessage directives.
+        Empty dict if no summarization needed (no-op).
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        logger.debug("[summarize] no messages, skipping")
+        return {}
+
+    token_count = count_tokens_approximately(messages)
+    if token_count < max_tokens:
+        logger.debug(
+            "[summarize] below threshold (%d < %d tokens), skipping",
+            token_count,
+            max_tokens,
+        )
+        return {}
+
+    # Split messages: old ones to summarize vs recent to keep
+    split_index = max(0, len(messages) - keep_recent)
+    old_messages = messages[:split_index]
+
+    if not old_messages:
+        logger.debug("[summarize] no old messages to compress, skipping")
+        return {}
+
+    # Filter out AI meta-responses (self-referential messages about capabilities)
+    _META_PATTERNS = (
+        "i don't have access to previous",
+        "i can see all",
+        "my context window",
+        "i don't have a permanent",
+        "i don't have a specific number",
+        'i can "remember"',
+        "tokens i can process",
+    )
+
+    def _is_meta_response(msg: BaseMessage) -> bool:
+        if not isinstance(msg, AIMessage):
+            return False
+        content_lower = str(msg.content).lower()
+        return any(p in content_lower for p in _META_PATTERNS)
+
+    filtered_messages = [m for m in old_messages if not _is_meta_response(m)]
+    if len(filtered_messages) < len(old_messages):
+        logger.info(
+            "[summarize] filtered %d meta-responses from %d old messages",
+            len(old_messages) - len(filtered_messages),
+            len(old_messages),
+        )
+    if not filtered_messages:
+        logger.info("[summarize] all old messages were meta-responses, skipping")
+        return {}
+
+    # Build summarization prompt
+    existing_summary = state.get("context", {}).get("running_summary")
+    summary_age = state.get("context", {}).get("summary_updated_at", 0.0)
+
+    # TTL check: clear stale summary
+    if existing_summary and (time.time() - summary_age) > ttl_hours * 3600:
+        logger.info("[summarize] TTL expired, clearing stale summary")
+        existing_summary = None
+
+    # Build the content to summarize (using filtered messages)
+    old_content = "\n".join(f"{type(m).__name__}: {str(m.content)[:500]}" for m in filtered_messages)
+
+    if existing_summary:
+        prompt = (
+            f"You are updating a conversation summary. Add the key information "
+            f"from the new messages below to the existing summary.\n\n"
+            f"Rules:\n"
+            f"- Output ONLY the updated summary, nothing else\n"
+            f"- Keep it under {summary_max_tokens} tokens\n"
+            f"- Focus on: topics discussed, facts learned, user preferences, "
+            f"decisions made, actions taken\n"
+            f"- Do NOT include meta-commentary about your capabilities\n\n"
+            f"Existing summary:\n{existing_summary}\n\n"
+            f"New messages:\n{old_content}"
+        )
+    else:
+        prompt = (
+            f"Summarize this conversation in bullet points.\n\n"
+            f"Rules:\n"
+            f"- Output ONLY the summary, nothing else\n"
+            f"- Keep it under {summary_max_tokens} tokens\n"
+            f"- Include: topics discussed, facts learned, user preferences, "
+            f"decisions made, actions taken\n"
+            f"- Do NOT include meta-commentary about AI capabilities\n\n"
+            f"Messages:\n{old_content}"
+        )
+
+    # Call LLM for summarization
+    try:
+        response = await model.ainvoke([HumanMessage(content=prompt)])
+        new_summary = str(response.content).strip()
+    except Exception as e:
+        logger.warning("[summarize] LLM summarization failed: %s", e)
+        return {}
+
+    # Build RemoveMessage directives for ALL old messages (including filtered ones)
+    removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+
+    logger.info(
+        "[summarize] compressed %d messages (%d tokens) into %d-char summary",
+        len(old_messages),
+        token_count,
+        len(new_summary),
+    )
+
+    return {
+        "messages": removes,
+        "context": {
+            "running_summary": new_summary,
+            "summary_updated_at": time.time(),
+        },
+    }
 
 
 def _parse_router_response(content: str) -> dict[str, Any]:
@@ -384,9 +562,9 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
 
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. Single fast LLM call."""
-    # Send a sliding window of recent messages so the router can understand
+    # Send a budget-based window of recent messages so the router can understand
     # follow-up questions (e.g. "yes", "and in Paris?") that need context.
-    context_window = state["messages"][-_ROUTER_CONTEXT_WINDOW:]
+    context_window = _budget_window_messages(state["messages"], _ROUTER_CONTEXT_BUDGET)
     last_message = state["messages"][-1]
     query_preview = str(last_message.content)[:200]
     logger.info(
@@ -394,6 +572,14 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         len(context_window),
         query_preview,
     )
+
+    # Inject running summary as context prefix if available
+    summary = state.get("context", {}).get("running_summary")
+    if summary:
+        context_window = [
+            SystemMessage(content=f"Previous conversation summary: {summary}"),
+            *context_window,
+        ]
 
     response = await _log_llm_call(
         model,
@@ -428,19 +614,21 @@ async def executor_node(
 
     guided_prompt = system_prompt
     if tool_plan and intent == "tool_use":
-        guided_prompt += f"""
-
-## TOOL USE — CALL ONCE AND RESPOND
-
-The router determined this query needs: {tool_plan}
-You have ONE tool available: {tool_plan}. Call it once, then respond to the user.
-
-RULES:
-- Call {tool_plan} exactly once
-- If it returns ANY data → respond to the user with that data. STOP.
-- If it returns an error → respond explaining the issue. STOP.
-- NEVER say "unable to retrieve" if the tool returned data
-"""
+        # Use a focused minimal prompt for tool_use — the full assistant.md
+        # system prompt contradicts "call once" with "Maximum 2-3 tool calls"
+        # (assistant.md line 37), causing the model to ignore the limit.
+        # A standalone prompt eliminates the contradiction entirely.
+        guided_prompt = (
+            "You are a helpful assistant. Answer the user's question using the tool below.\n\n"
+            f"## YOUR TASK\n"
+            f"Call `{tool_plan}` exactly ONCE, then respond to the user immediately.\n\n"
+            f"## STRICT RULES\n"
+            f"- You may call `{tool_plan}` exactly ONE time. No exceptions.\n"
+            f"- After the tool returns data, respond to the user with that data. Do NOT call the tool again.\n"
+            f"- After the tool returns an error, explain the issue. Do NOT call the tool again.\n"
+            f"- NEVER say 'unable to retrieve' if the tool returned data.\n"
+            f"- Respond in the same language as the user.\n"
+        )
     elif tool_plan and intent == "research":
         guided_prompt += f"""
 
@@ -501,8 +689,19 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
         await progress_callback("Searching for information...")
 
     try:
+        # For tool_use, include a few recent messages so follow-up queries
+        # like "what about the score now?" retain context about which game.
+        # For other intents, use the original single-message isolation.
+        if intent == "tool_use":
+            # Budget 2K chars / 4 messages — enough for the last exchange
+            executor_msgs = _budget_window_messages(state["messages"], 2_000, max_messages=4)
+            # Filter to types the sub-agent can handle (no ToolMessage etc.)
+            executor_msgs = [m for m in executor_msgs if isinstance(m, (HumanMessage, AIMessage))]
+        else:
+            executor_msgs = _truncate_messages(state["messages"])
+
         result = await sub_agent.ainvoke(
-            {"messages": _truncate_messages(state["messages"])},  # type: ignore[arg-type]
+            {"messages": executor_msgs},  # type: ignore[arg-type]
             config={"configurable": {"thread_id": f"executor-{uuid.uuid4().hex}"}},
         )
     except Exception as e:
@@ -572,13 +771,20 @@ async def responder_node(state: AgentState, config: RunnableConfig, *, model: An
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
 
     if state.get("intent") == "chat":
-        msgs = _window_messages(state["messages"], _RESPONDER_CHAT_WINDOW)
+        msgs = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         logger.debug(
             "[responder] chat intent: %d messages, types=%s",
             len(msgs),
             [type(m).__name__ for m in msgs],
         )
-        safe_msgs = _safe_invoke_messages(RESPONDER_PROMPT, msgs)
+
+        # Inject running summary as context if available
+        prompt = RESPONDER_PROMPT
+        summary = state.get("context", {}).get("running_summary")
+        if summary:
+            prompt = f"Previous conversation summary: {summary}\n\n{RESPONDER_PROMPT}"
+
+        safe_msgs = _safe_invoke_messages(prompt, msgs)
         try:
             response = await _log_llm_call(model, safe_msgs, node="responder-chat")
         except Exception as e:
@@ -653,6 +859,9 @@ def create_assistant_graph(
     _executor_model = executor_model or model
     _responder_model = responder_model or model
 
+    async def _summarize(state: AgentState, config: RunnableConfig) -> dict:
+        return await summarize_node(state, config, model=model)
+
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
         return await router_node(state, config, model=_router_model)
 
@@ -670,10 +879,12 @@ def create_assistant_graph(
         return await responder_node(state, config, model=_responder_model)
 
     graph = StateGraph(AgentState)
+    graph.add_node("summarize", _summarize)
     graph.add_node("router", _router)
     graph.add_node("executor", _executor)
     graph.add_node("responder", _responder)
-    graph.set_entry_point("router")
+    graph.set_entry_point("summarize")
+    graph.add_edge("summarize", "router")
     graph.add_conditional_edges(
         "router",
         route_decision,

@@ -44,6 +44,8 @@ is_prerelease() {
     [[ "$1" == *"-"* ]]
 }
 
+SKIP_GATEWAY="${SKIP_GATEWAY:-}"
+
 check_branch() {
     local current_branch
     current_branch=$(git branch --show-current)
@@ -94,6 +96,19 @@ run_tests() {
     make test
 }
 
+build_gateway() {
+    if [[ "${SKIP_GATEWAY:-}" == "1" ]]; then
+        log_warn "Skipping gateway build (SKIP_GATEWAY=1)"
+        return
+    fi
+    if ! command -v go &>/dev/null; then
+        log_warn "Go not installed, skipping gateway build"
+        return
+    fi
+    log_info "Building gateway binaries..."
+    bash "$(git rev-parse --show-toplevel)/scripts/build-gateway.sh" "v$version"
+}
+
 create_tag_and_release() {
     local version="$1"
     local tag="v$version"
@@ -121,6 +136,9 @@ Released $(date +%Y-%m-%d)."
 
     gh release create "$tag" --title "$tag" --notes "$notes" $prerelease
 
+    # Build and upload gateway binaries
+    build_gateway
+
     if is_prerelease "$version"; then
         log_info "Pre-release published. GitHub Actions will publish to TestPyPI."
     else
@@ -139,7 +157,11 @@ main() {
     $0 1.0.0-alpha
     $0 1.0.0-beta.1
     $0 1.0.0-rc.2
-    $0 1.0.0"
+    $0 1.0.0
+  Environment:
+    SKIP_GATEWAY=1     Skip gateway binary build
+    SKIP_TESTS=1       Skip test execution
+    FORCE_RELEASE=1    Bypass branch check"
     fi
 
     validate_version "$version"

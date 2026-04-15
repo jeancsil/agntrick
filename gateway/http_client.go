@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -32,7 +33,7 @@ func NewHTTPClient(baseURL string, apiKey string) *HTTPClient {
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 0, // No timeout for SSE streams
+			Timeout: 5 * time.Minute, // Fail fast on rate-limited or stuck LLM calls
 		},
 	}
 }

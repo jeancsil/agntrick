@@ -98,27 +98,49 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 		}
 	}()
 
-	// Send progress messages at 30s, 70s, 120s while waiting for the LLM response.
+	// Send progress messages at 90s, 180s, 300s while waiting for the LLM response.
+	// The first message is sent normally; subsequent ones edit the same message.
 	progressCtx, cancelProgress := context.WithCancel(context.Background())
 	defer cancelProgress()
 
 	go func() {
-		messages := []struct {
+		type progressStep struct {
 			delay   time.Duration
 			message string
-		}{
-			{30 * time.Second, "⏳ Still thinking..."},
-			{70 * time.Second, "⏳ Almost there, processing your request..."},
-			{120 * time.Second, "⏳ This is taking a bit longer than usual, hang tight..."},
+		}
+		steps := []progressStep{
+			{90 * time.Second, "⏳ Thinking..."},
+			{180 * time.Second, "⏳ Still working on it..."},
+			{300 * time.Second, "⏳ Almost there..."},
 		}
 
-		for _, m := range messages {
+		var progressMsgID types.MessageID
+
+		for _, step := range steps {
 			select {
-			case <-time.After(m.delay):
-				if err := sendResponseToWhatsApp(eh, m.message, targetJID); err != nil {
-					logger.Debug().Err(err).Msg("Failed to send progress message")
+			case <-time.After(step.delay):
+				if progressMsgID == "" {
+					// First message: send new
+					resp, sendErr := eh.session.SendMessage(context.Background(), targetJID, &waE2E.Message{
+						Conversation: proto.String(step.message),
+					})
+					if sendErr != nil {
+						logger.Debug().Err(sendErr).Msg("Failed to send progress message")
+						continue
+					}
+					progressMsgID = resp.ID
+					logger.Info().Str("progress", step.message).Msg("Sent progress message")
 				} else {
-					logger.Info().Str("progress", m.message).Msg("Sent progress message")
+					// Subsequent messages: edit the previous one
+					editedMsg := eh.session.BuildEdit(targetJID, progressMsgID, &waE2E.Message{
+						Conversation: proto.String(step.message),
+					})
+					_, err := eh.session.SendMessage(context.Background(), targetJID, editedMsg)
+					if err != nil {
+						logger.Debug().Err(err).Msg("Failed to edit progress message")
+					} else {
+						logger.Info().Str("progress", step.message).Msg("Edited progress message")
+					}
 				}
 			case <-progressCtx.Done():
 				return

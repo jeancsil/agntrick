@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from typing import Any, Callable, Literal
 
 from dotenv import load_dotenv
@@ -120,6 +121,26 @@ def get_default_model() -> str:
 # Registry of LLM provider factories
 _FACTORIES: dict[Provider, Callable[[str, float], Any]] = {}
 
+# Model instance cache to avoid repeated initialization.
+# Key: (model_name, temperature, provider_key)
+_MODEL_CACHE: dict[tuple[str, float, str], Any] = {}
+_MODEL_CACHE_LOCK = threading.Lock()
+
+# Default request timeout for LLM API calls (seconds).
+_DEFAULT_REQUEST_TIMEOUT = 60
+
+
+def _get_request_timeout() -> int:
+    """Get the request timeout from env var with safe fallback.
+
+    Returns:
+        Timeout in seconds, defaults to _DEFAULT_REQUEST_TIMEOUT.
+    """
+    try:
+        return int(os.getenv("OPENAI_REQUEST_TIMEOUT", str(_DEFAULT_REQUEST_TIMEOUT)))
+    except (ValueError, TypeError):
+        return _DEFAULT_REQUEST_TIMEOUT
+
 
 def register_provider(provider: Provider) -> Callable:
     """Decorator to register an LLM factory."""
@@ -222,6 +243,7 @@ def _create_openai(model_name: str, temperature: float) -> Any:
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=SecretStr(openai_api_key) if openai_api_key else None,
         max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "3")),
+        timeout=_get_request_timeout(),
     )
 
 
@@ -264,8 +286,18 @@ def _is_glm_model(model_name: str) -> bool:
     return name_lower.startswith("glm")
 
 
+def _cache_and_return(cache_key: tuple[str, float, str], model: Any) -> Any:
+    """Store a model instance in the cache and return it."""
+    with _MODEL_CACHE_LOCK:
+        _MODEL_CACHE[cache_key] = model
+    return model
+
+
 def _create_model(model_name: str, temperature: float) -> Any:
     """Create the appropriate LLM model instance based on the detected provider.
+
+    Uses a cache keyed by (model_name, temperature, provider) to avoid
+    re-initializing the same model on every call.
 
     Args:
         model_name: Name of the model to use.
@@ -276,6 +308,12 @@ def _create_model(model_name: str, temperature: float) -> Any:
     """
     provider = detect_provider()
 
+    # Check cache first (thread-safe read)
+    cache_key = (model_name, temperature, provider)
+    with _MODEL_CACHE_LOCK:
+        if cache_key in _MODEL_CACHE:
+            return _MODEL_CACHE[cache_key]
+
     # Debug logging to trace model creation
     logger.debug(
         f"Creating model: name='{model_name}', provider='{provider}', "
@@ -284,8 +322,6 @@ def _create_model(model_name: str, temperature: float) -> Any:
     )
 
     # Smart routing: if model looks like Ollama AND OLLAMA_BASE_URL is set, use Ollama
-    # This handles cases where OPENAI_MODEL_NAME is set to a local model name
-    # but only if Ollama is actually configured (OLLAMA_BASE_URL is set)
     ollama_base_url = os.getenv("OLLAMA_BASE_URL")
     openai_base_url = os.getenv("OPENAI_BASE_URL")
 
@@ -295,7 +331,7 @@ def _create_model(model_name: str, temperature: float) -> Any:
     looks_like_ollama = _looks_like_ollama_model(model_name)
     if provider == "openai" and ollama_base_url and looks_like_ollama and not is_custom_openai_endpoint:
         logger.info(f"Model '{model_name}' looks like an Ollama model - routing to Ollama at {ollama_base_url}")
-        return _create_ollama(model_name, temperature)
+        return _cache_and_return(cache_key, _create_ollama(model_name, temperature))
 
     # Check for z.ai GLM models: if model starts with "glm" and OPENAI_BASE_URL is set
     # to a non-OpenAI endpoint (like z.ai), route to the custom endpoint
@@ -304,12 +340,12 @@ def _create_model(model_name: str, temperature: float) -> Any:
             f"Model '{model_name}' is a GLM model on OpenAI provider - "
             f"routing to OpenAI-compatible API at {openai_base_url}"
         )
-        return _create_openai(model_name, temperature)
+        return _cache_and_return(cache_key, _create_openai(model_name, temperature))
 
     # Default to the provider's factory
     factory = _FACTORIES.get(provider)
     if factory:
-        return factory(model_name, temperature)
+        return _cache_and_return(cache_key, factory(model_name, temperature))
 
     # Fallback to OpenAI
-    return _create_openai(model_name, temperature)
+    return _cache_and_return(cache_key, _create_openai(model_name, temperature))

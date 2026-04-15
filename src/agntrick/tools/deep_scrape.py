@@ -9,6 +9,7 @@ Stage 3: Archive.ph (free, archived snapshots — last resort)
 """
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 import re
@@ -45,6 +46,10 @@ _DNS_ERROR_PATTERNS = (
 
 _MAX_DNS_RETRIES = 1  # One retry after initial attempt (2 total attempts)
 _DNS_RETRY_DELAY_SECONDS = 2.0
+
+# Configurable timeouts (seconds) — override via environment variables
+_CRAWL4AI_TIMEOUT = float(os.environ.get("CRAWL4AI_TIMEOUT", "15"))
+_FIRECRAWL_TIMEOUT = float(os.environ.get("FIRECRAWL_TIMEOUT", "30"))
 
 
 class ExtractionStage(str, Enum):
@@ -374,14 +379,14 @@ class DeepScrapeTool(Tool):
             # Add timeout to prevent hangs
             result = await asyncio.wait_for(
                 crawler.arun(url=url, config=run_config),
-                timeout=30.0,  # 30 second timeout per page
+                timeout=_CRAWL4AI_TIMEOUT,
             )
         except asyncio.TimeoutError:
             return DeepScrapeResult(
                 url=url,
                 status=ExtractionStatus.ERROR,
                 stage=ExtractionStage.CRAWL4AI,
-                error="Crawl4AI timeout after 30 seconds",
+                error=f"Crawl4AI timeout after {_CRAWL4AI_TIMEOUT:.0f} seconds",
             )
         except Exception as e:
             return DeepScrapeResult(
@@ -425,8 +430,6 @@ class DeepScrapeTool(Tool):
 
     def _try_crawl4ai_sync_fallback(self, url: str) -> DeepScrapeResult:
         """Fallback when already inside an event loop — run in a thread."""
-        import concurrent.futures
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(asyncio.run, self._crawl4ai_async(url))
             try:
@@ -467,7 +470,20 @@ class DeepScrapeTool(Tool):
         """
         try:
             app = Firecrawl(api_key=self._firecrawl_api_key, api_url=self._firecrawl_url)
-            result = app.scrape(url, formats=["markdown"], only_main_content=True)
+
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = pool.submit(lambda: app.scrape(url, formats=["markdown"], only_main_content=True))
+            try:
+                result = future.result(timeout=_FIRECRAWL_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                return DeepScrapeResult(
+                    url=url,
+                    status=ExtractionStatus.ERROR,
+                    stage=ExtractionStage.FIRECRAWL,
+                    error=f"Firecrawl timeout after {_FIRECRAWL_TIMEOUT:.0f} seconds",
+                )
+            finally:
+                pool.shutdown(wait=False)
             content = result.get("markdown", "") if isinstance(result, dict) else str(result)
             if not content or len(content.strip()) < 100:
                 return DeepScrapeResult(

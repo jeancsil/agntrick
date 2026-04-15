@@ -421,16 +421,19 @@ async def whatsapp_webhook(
                 provider = MCPProvider(server_names=allowed_mcp)
                 async with provider.tool_session() as mcp_tools:
                     agent = agent_cls(initial_mcp_tools=mcp_tools, **agent_kwargs)  # type: ignore[call-arg]
-                    result = await agent.run(message)
+                    result = await asyncio.wait_for(agent.run(message), timeout=300)
             else:
                 agent = agent_cls(**agent_kwargs)  # type: ignore[call-arg]
-                result = await agent.run(message)
+                result = await asyncio.wait_for(agent.run(message), timeout=300)
 
             # Tool errors are returned as strings prefixed with "Tool error:"
             # Return them as successful responses so the user gets feedback on WhatsApp.
             tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
             return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
 
+    except asyncio.TimeoutError:
+        tenant_logger.error("Agent timed out after 300s for tenant %s", tenant_id)
+        raise HTTPException(status_code=504, detail="Agent response timed out. Please try again.")
     except Exception as e:
         # Recursively unwrap nested ExceptionGroups to find the root cause
         def _unwrap_exception_group(exc: BaseException, depth: int = 0) -> str:

@@ -698,7 +698,7 @@ class TestTimeoutProtection:
 
             assert result.status == ExtractionStatus.ERROR
             assert result.stage == ExtractionStage.CRAWL4AI
-            assert "timeout after 30 seconds" in result.error.lower()
+            assert "timeout after" in result.error.lower() and "seconds" in result.error.lower()
 
         asyncio.run(check_timeout())
 
@@ -778,11 +778,11 @@ class TestTimeoutProtection:
         async def check_timeout_value() -> None:
             await tool._crawl4ai_async("https://example.com")
 
-            # Verify wait_for was called with timeout=30.0
+            # Verify wait_for was called with the configured timeout
             mock_wait_for.assert_called_once()
             call_kwargs = mock_wait_for.call_args[1]
             assert "timeout" in call_kwargs
-            assert call_kwargs["timeout"] == 30.0
+            assert call_kwargs["timeout"] == 15.0
 
         asyncio.run(check_timeout_value())
 

@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 
 from agntrick.chat_cli import chat_command
+from agntrick.cli_init import init_command
 from agntrick.config import get_config
 from agntrick.mcp import MCPConnectionError, MCPProvider
 from agntrick.registry import AgentRegistry
@@ -232,6 +233,9 @@ def show_config() -> None:
         console.print(f"\n[dim]Config file: {config._config_path}[/dim]")
     else:
         console.print("\n[dim]Config file: not found (using defaults)[/dim]")
+
+
+app.command(name="init")(init_command)
 
 
 def create_agent_command(agent_name: str) -> Callable[[str, int], None]:
