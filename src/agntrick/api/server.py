@@ -1,5 +1,6 @@
 """FastAPI application factory and server."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -13,6 +14,35 @@ from agntrick.config import get_config
 from agntrick.tools.deep_scrape import DeepScrapeTool
 
 logger = logging.getLogger(__name__)
+
+
+async def _check_mcp_health(app: FastAPI) -> None:
+    """Periodically check MCP health and evict unhealthy agents.
+
+    Checks toolbox /health endpoint every 60 seconds. If unhealthy,
+    evicts all agents from pool to force fresh connections on next request.
+    """
+    import httpx
+
+    config = get_config()
+    toolbox_url = config.mcp.toolbox_url or "http://localhost:8080"
+    pool = app.state.agent_pool
+
+    while True:
+        await asyncio.sleep(60)  # Check every 60s
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{toolbox_url}/health", timeout=5)
+                if resp.status_code != 200:
+                    logger.warning("Toolbox health check failed, evicting all agents")
+                    for key in list(pool._agents.keys()):
+                        tenant_id, agent_name = key.split(":", 1)
+                        await pool.evict(tenant_id, agent_name)
+        except Exception as e:
+            logger.warning(f"MCP health check failed: {e}, evicting all agents")
+            for key in list(pool._agents.keys()):
+                tenant_id, agent_name = key.split(":", 1)
+                await pool.evict(tenant_id, agent_name)
 
 
 @asynccontextmanager
@@ -47,7 +77,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("Failed to warm up Playwright browser: %s", e)
 
+    # Start MCP health check task
+    app.state._health_task = asyncio.create_task(_check_mcp_health(app))
+    logger.info("MCP health check task started")
+
     yield
+
+    # Cancel MCP health check task
+    if hasattr(app.state, "_health_task"):
+        app.state._health_task.cancel()
+        logger.info("MCP health check task cancelled")
 
     # Clean up SSE connections
     from agntrick.api.routes.whatsapp import sse_queues
