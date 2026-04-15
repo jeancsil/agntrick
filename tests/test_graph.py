@@ -10,8 +10,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, Remove
 from agntrick.graph import (
     AgentState,
     _parse_router_response,
-    executor_node,
-    responder_node,
+    agent_node,
     route_decision,
     summarize_node,
 )

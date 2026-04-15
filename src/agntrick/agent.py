@@ -176,14 +176,13 @@ class AgentBase(Agent):
         """Resolve per-node model instances for graph nodes.
 
         Returns:
-            Dict mapping node names ("router", "executor", "responder") to
-            model instances. Only includes nodes that have explicit node-level
-            overrides configured (not the agent-level fallback).
+            Dict mapping node names ("router", "agent") to model instances.
+            Only includes nodes that have explicit overrides configured.
         """
         config = get_config()
         node_map = config.agent_models.node_overrides.get(self._agent_name, {})
         overrides: dict[str, Any] = {}
-        for node in ("router", "executor", "responder"):
+        for node in ("router", "agent"):
             node_model_name = node_map.get(node)
             if node_model_name:
                 overrides[node] = _create_model(node_model_name, config.llm.temperature)

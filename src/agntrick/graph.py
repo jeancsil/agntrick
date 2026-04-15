@@ -1,6 +1,7 @@
 """3-node StateGraph for intelligent assistant routing.
 
-Router → Executor → Responder with conditional skip for simple chat.
+Summarize → Router → Agent with template WhatsApp formatting.
+Chat intent: Router responds directly (1 LLM call).
 """
 
 import json
@@ -594,7 +595,7 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
 
 
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
-    """Classify intent and decide strategy. Single fast LLM call."""
+    """Classify intent and decide strategy. For chat, respond directly."""
     # Send a budget-based window of recent messages so the router can understand
     # follow-up questions (e.g. "yes", "and in Paris?") that need context.
     context_window = _budget_window_messages(state["messages"], _ROUTER_CONTEXT_BUDGET)
@@ -623,13 +624,23 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     intent = parsed.get("intent", "chat")
     tool_plan = parsed.get("tool_plan")
     logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
+
+    # Chat fast-path: respond directly with formatted output
+    if intent == "chat":
+        formatted = _format_for_whatsapp(str(response.content))
+        return {
+            "intent": intent,
+            "tool_plan": tool_plan,
+            "final_response": formatted,
+        }
+
     return {
         "intent": intent,
         "tool_plan": tool_plan,
     }
 
 
-async def executor_node(
+async def agent_node(
     state: AgentState,
     config: RunnableConfig,
     *,
@@ -638,7 +649,7 @@ async def executor_node(
     system_prompt: str,
     progress_callback: ProgressCallback = None,
 ) -> dict:
-    """Execute tool calls guided by the router's plan."""
+    """Execute tool calls guided by the router's plan and format for WhatsApp."""
     if progress_callback:
         await progress_callback("Analyzing your request...")
 
@@ -782,85 +793,25 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
                 id=final_msg.id,
             )
 
-    return {"messages": [final_msg]}
+    # Format for WhatsApp via template (no LLM call)
+    content = str(final_msg.content) if isinstance(final_msg, AIMessage) else str(final_msg.content)
+    formatted = _format_for_whatsapp(content)
+    logger.info(f"[agent] final_response len={len(formatted)} preview={formatted[:300]}")
 
-
-async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
-    """Format the final response for WhatsApp.
-
-    For chat intent: the responder IS the response node (router classified
-    no tools needed), so it returns its AIMessage in ``messages`` to persist
-    in the conversation state.
-
-    For tool_use/research/delegate intents: the executor already added its
-    AIMessage to state. The responder only formats it for WhatsApp output
-    via ``final_response`` — it must NOT append another AIMessage to state,
-    as that would create a duplicate and bloat the conversation history.
-
-    Uses _safe_invoke_messages to ensure the GLM API always receives
-    a valid message sequence (SystemMessage + at least one HumanMessage).
-    """
-    # Compute pruning once — applies to all return paths.
+    # Prune old messages
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
-
-    if state.get("intent") == "chat":
-        msgs = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
-        logger.debug(
-            "[responder] chat intent: %d messages, types=%s",
-            len(msgs),
-            [type(m).__name__ for m in msgs],
-        )
-
-        # Inject running summary as context if available
-        prompt = RESPONDER_PROMPT
-        summary = state.get("context", {}).get("running_summary")
-        if summary:
-            prompt = f"Previous conversation summary: {summary}\n\n{RESPONDER_PROMPT}"
-
-        safe_msgs = _safe_invoke_messages(prompt, msgs)
-        try:
-            response = await _log_llm_call(model, safe_msgs, node="responder-chat")
-        except Exception as e:
-            logger.warning(f"Responder LLM call failed for chat: {e}")
-            # Fallback: return the last message content directly
-            last = state["messages"][-1] if state["messages"] else None
-            return {
-                "final_response": str(last.content) if last else "Sorry, please try again.",
-                "messages": removes,
-            }
-        return {"final_response": str(response.content), "messages": [response] + removes}
-
-    # tool_use / research / delegate intent — format executor output
-    last_msg = state["messages"][-1]
-    content = str(last_msg.content)
-    logger.info(f"[responder] intent={state.get('intent')}, executor output len={len(content)} preview={content[:200]}")
-    if len(content) > _MAX_MESSAGE_CHARS:
-        content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
-
-    safe_msgs = _safe_invoke_messages(
-        RESPONDER_PROMPT,
-        [HumanMessage(content=f"Format this response for WhatsApp:\n\n{content}")],
-    )
-    try:
-        response = await _log_llm_call(model, safe_msgs, node="responder-tool")
-    except Exception as e:
-        logger.warning(f"Responder LLM call failed for tool_use: {e}")
-        # Fallback: return raw content, truncated for WhatsApp
-        return {
-            "final_response": content[:4096],
-            "messages": removes,
-        }
-
-    final = str(response.content)
-    logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
-    return {"final_response": final, "messages": removes}
+    return {"final_response": formatted, "messages": [final_msg] + removes}
 
 
 def route_decision(state: AgentState) -> str:
-    """Decide next node after Router."""
+    """Decide next node after Router.
+
+    For chat intent: respond directly (router sets final_response).
+    For other intents: route to agent node.
+    """
     if state.get("intent") == "chat":
-        return "responder"
-    return "executor"
+        return "responder"  # END — router already set final_response
+    return "agent"
 
 
 def create_assistant_graph(
@@ -870,27 +821,27 @@ def create_assistant_graph(
     checkpointer: Any | None = None,
     progress_callback: ProgressCallback = None,
     router_model: Any | None = None,
-    executor_model: Any | None = None,
-    responder_model: Any | None = None,
+    agent_model: Any | None = None,
 ) -> Any:
     """Create the 3-node assistant StateGraph.
 
+    Summarize → Router → Agent (with template WhatsApp formatting)
+    Chat intent: Router responds directly (1 LLM call).
+
     Args:
-        model: Primary LLM model instance (used for executor if executor_model not set).
-        tools: Sequence of tools available to the executor.
+        model: Primary LLM model instance.
+        tools: Sequence of tools available to the agent.
         system_prompt: Base system prompt for the agent.
         checkpointer: Optional checkpointer for persistent memory.
         progress_callback: Optional async callback for progress updates.
         router_model: Optional model override for the router node.
-        executor_model: Optional model override for the executor node.
-        responder_model: Optional model override for the responder node.
+        agent_model: Optional model override for the agent node.
 
     Returns:
         Compiled StateGraph ready for ainvoke().
     """
     _router_model = router_model or model
-    _executor_model = executor_model or model
-    _responder_model = responder_model or model
+    _agent_model = agent_model or model
 
     async def _summarize(state: AgentState, config: RunnableConfig) -> dict:
         return await summarize_node(state, config, model=model)
@@ -898,32 +849,26 @@ def create_assistant_graph(
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
         return await router_node(state, config, model=_router_model)
 
-    async def _executor(state: AgentState, config: RunnableConfig) -> dict:
-        return await executor_node(
+    async def _agent(state: AgentState, config: RunnableConfig) -> dict:
+        return await agent_node(
             state,
             config,
-            model=_executor_model,
+            model=_agent_model,
             tools=tools,
             system_prompt=system_prompt,
             progress_callback=progress_callback,
         )
 
-    async def _responder(state: AgentState, config: RunnableConfig) -> dict:
-        return await responder_node(state, config, model=_responder_model)
-
     graph = StateGraph(AgentState)
     graph.add_node("summarize", _summarize)
     graph.add_node("router", _router)
-    graph.add_node("executor", _executor)
-    graph.add_node("responder", _responder)
+    graph.add_node("agent", _agent)
     graph.set_entry_point("summarize")
     graph.add_edge("summarize", "router")
     graph.add_conditional_edges(
         "router",
         route_decision,
-        {"executor": "executor", "responder": "responder"},
+        {"agent": "agent", "responder": END},
     )
-    graph.add_edge("executor", "responder")
-    graph.add_edge("responder", END)
-
+    graph.add_edge("agent", END)
     return graph.compile(checkpointer=checkpointer or InMemorySaver())
