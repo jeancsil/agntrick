@@ -2053,3 +2053,43 @@ class TestSummarizeNode:
         # Model should NOT be called — all old messages were filtered
         mock_model.ainvoke.assert_not_called()
         assert result == {}
+
+
+class TestFormatForWhatsApp:
+    """Tests for template-based WhatsApp formatting (replaces responder LLM)."""
+
+    def test_truncates_to_4096_chars(self) -> None:
+        from agntrick.graph import _format_for_whatsapp
+
+        long_text = "A" * 10_000
+        result = _format_for_whatsapp(long_text)
+        assert len(result) <= 4096
+        assert result.endswith("...")
+
+    def test_strips_xml_tool_artifacts(self) -> None:
+        from agntrick.graph import _format_for_whatsapp
+
+        text = 'Here is the result.\n<web_search query="barcelona"/>'
+        result = _format_for_whatsapp(text)
+        assert "<web_search" not in result
+        assert "Here is the result." in result
+
+    def test_strips_raw_json_blocks(self) -> None:
+        from agntrick.graph import _format_for_whatsapp
+
+        text = 'The score is 2-1.\n{"type": "text", "text": "extra data"}'
+        result = _format_for_whatsapp(text)
+        assert '{"type":' not in result
+        assert "The score is 2-1." in result
+
+    def test_passes_short_text_unchanged(self) -> None:
+        from agntrick.graph import _format_for_whatsapp
+
+        text = "Hello! The weather is nice today."
+        result = _format_for_whatsapp(text)
+        assert result == text
+
+    def test_handles_empty_string(self) -> None:
+        from agntrick.graph import _format_for_whatsapp
+
+        assert _format_for_whatsapp("") == ""

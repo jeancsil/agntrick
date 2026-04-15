@@ -87,6 +87,39 @@ def _sanitize_ai_content(content: str) -> str:
     return cleaned
 
 
+_WHATSAPP_CHAR_LIMIT = 4096
+
+# Regex to strip raw JSON content blocks from tool output
+_JSON_BLOCK_RE = re.compile(r"\n?\{[^{}]*\}(?=\n|$)", re.MULTILINE)
+
+
+def _format_for_whatsapp(content: str) -> str:
+    """Format agent output for WhatsApp without an LLM call.
+
+    Strips tool artifacts, raw JSON, and truncates to WhatsApp char limit.
+
+    Args:
+        content: Raw agent response text.
+
+    Returns:
+        WhatsApp-friendly formatted string (max 4096 chars).
+    """
+    if not content:
+        return content
+
+    # Strip XML tool artifacts
+    cleaned = _sanitize_ai_content(content)
+
+    # Strip raw JSON content blocks (e.g., {"type": "text", "text": "..."})
+    cleaned = _JSON_BLOCK_RE.sub("", cleaned).strip()
+
+    # Truncate to WhatsApp limit
+    if len(cleaned) > _WHATSAPP_CHAR_LIMIT:
+        cleaned = cleaned[: _WHATSAPP_CHAR_LIMIT - 3] + "..."
+
+    return cleaned
+
+
 async def _log_llm_call(
     model: Any,
     messages: list,
