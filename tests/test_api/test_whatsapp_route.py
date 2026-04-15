@@ -128,16 +128,15 @@ class TestWhatsAppStatusEndpoints:
 class TestWhatsAppMCPInjection:
     """Tests that the WhatsApp webhook injects MCP tools into agents."""
 
-    @patch("agntrick.api.routes.whatsapp.MCPProvider")
     @patch("agntrick.api.routes.whatsapp.AgentRegistry")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_webhook_injects_mcp_tools_into_agent(
         self,
         mock_config: MagicMock,
         mock_registry_cls: MagicMock,
-        mock_mcp_cls: MagicMock,
     ) -> None:
-        """WhatsApp webhook should pass MCP tools and tool_categories to agent."""
+        """WhatsApp webhook should pass mcp_server_names and tool_categories to agent."""
+        from agntrick.api.pool import TenantAgentPool
         from agntrick.api.routes.whatsapp import get_whatsapp_registry
         from agntrick.api.server import create_app
 
@@ -151,6 +150,7 @@ class TestWhatsAppMCPInjection:
             auth=MagicMock(api_keys={"test-key": "test-tenant"}),
             llm=MagicMock(model="gpt-4", temperature=0.7),
             whatsapp=MagicMock(tenants=[mock_tenant]),
+            storage=MagicMock(base_path=None),
         )
 
         # Set up WhatsApp registry mock via dependency override
@@ -177,14 +177,9 @@ class TestWhatsAppMCPInjection:
         mock_registry_cls.get_mcp_servers.return_value = ["toolbox"]
         mock_registry_cls.get_tool_categories.return_value = ["web", "hackernews"]
 
-        # Set up MCP provider mock
-        fake_tool = MagicMock(name="web_search")
-        mock_provider_instance = MagicMock()
-        mock_provider_instance.tool_session.return_value.__aenter__ = AsyncMock(return_value=[fake_tool])
-        mock_provider_instance.tool_session.return_value.__aexit__ = AsyncMock(return_value=False)
-        mock_mcp_cls.return_value = mock_provider_instance
-
         app = create_app()
+        # Initialize agent pool (normally done in lifespan)
+        app.state.agent_pool = TenantAgentPool(max_size=10)
         app.dependency_overrides[get_whatsapp_registry] = lambda: mock_registry_instance
         client = TestClient(app)
 
@@ -195,28 +190,25 @@ class TestWhatsAppMCPInjection:
         )
 
         assert response.status_code == 200
-        # Verify MCPProvider was created with the agent's registered servers
-        mock_mcp_cls.assert_called_once_with(server_names=["toolbox"])
-        # Verify agent constructor received MCP tools and tool_categories
+        # Verify agent constructor received mcp_server_names and tool_categories
         assert len(constructor_calls) == 1
         args = constructor_calls[0]
-        assert args.get("initial_mcp_tools") == [fake_tool]
+        assert args.get("mcp_server_names") == ["toolbox"]
         assert args.get("tool_categories") == ["web", "hackernews"]
 
 
 class TestWhatsAppMemoryPersistence:
     """Tests that the WhatsApp webhook uses persistent memory."""
 
-    @patch("agntrick.api.routes.whatsapp.MCPProvider")
     @patch("agntrick.api.routes.whatsapp.AgentRegistry")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_webhook_passes_checkpointer_and_thread_id(
         self,
         mock_config: MagicMock,
         mock_registry_cls: MagicMock,
-        mock_mcp_cls: MagicMock,
     ) -> None:
         """Webhook should pass a checkpointer and scoped thread_id to the agent."""
+        from agntrick.api.pool import TenantAgentPool
         from agntrick.api.routes.whatsapp import get_whatsapp_registry
         from agntrick.api.server import create_app
 
@@ -252,9 +244,9 @@ class TestWhatsAppMemoryPersistence:
         mock_registry_cls.get_mcp_servers.return_value = []
         mock_registry_cls.get_tool_categories.return_value = ["web"]
 
-        mock_mcp_cls.return_value = MagicMock()
-
         app = create_app()
+        # Initialize agent pool (normally done in lifespan)
+        app.state.agent_pool = TenantAgentPool(max_size=10)
         app.dependency_overrides[get_whatsapp_registry] = lambda: mock_registry_instance
         client = TestClient(app)
 
@@ -271,5 +263,7 @@ class TestWhatsAppMemoryPersistence:
         # Verify thread_id is scoped per tenant + phone
         assert args["thread_id"] == "whatsapp:tenant-1:+5511999999999"
 
-        # Verify checkpointer is not None (it's an AsyncSqliteSaver)
-        assert args["checkpointer"] is not None
+        # Verify checkpointer was created by the pool and passed to agent
+        assert args.get("checkpointer") is not None
+        # db_path was consumed by the pool to create the checkpointer
+        assert args.get("db_path") is None  # Pool pops it

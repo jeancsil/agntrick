@@ -34,6 +34,8 @@ def mock_tenant_configs():
 @pytest.fixture
 def authed_client(mock_tenant_configs) -> TestClient:
     """Create a test client with a pre-configured API key and mocked deps."""
+    from agntrick.api.pool import TenantAgentPool
+
     config = get_config(force_reload=True)
 
     # Clear existing and set new api_keys
@@ -43,6 +45,9 @@ def authed_client(mock_tenant_configs) -> TestClient:
     # Add WhatsApp tenant configs - convert fixture to actual list
     config.whatsapp.tenants = list(mock_tenant_configs)
     app = create_app()
+
+    # Initialize agent pool (normally done in lifespan)
+    app.state.agent_pool = TenantAgentPool(max_size=10)
 
     # Override dependencies - don't override verify_api_key since webhook doesn't use it
     mock_db = MagicMock()
@@ -65,6 +70,7 @@ async def test_e2e_whatsapp_pipeline_success(authed_client: TestClient, monkeypa
     mock_agent_response = "Mock agent response: Hello! I'm your personal developer assistant."
     mock_agent = MagicMock()
     mock_agent.run = AsyncMock(return_value=mock_agent_response)
+    mock_agent._ensure_initialized = AsyncMock(return_value=None)
 
     mock_agent_class = MagicMock(return_value=mock_agent)
 
@@ -76,6 +82,14 @@ async def test_e2e_whatsapp_pipeline_success(authed_client: TestClient, monkeypa
     monkeypatch.setattr(
         "agntrick.api.routes.whatsapp.AgentRegistry.get",
         lambda name: mock_agent_class if name == "developer" else None,
+    )
+    monkeypatch.setattr(
+        "agntrick.api.routes.whatsapp.AgentRegistry.get_mcp_servers",
+        lambda name: [],
+    )
+    monkeypatch.setattr(
+        "agntrick.api.routes.whatsapp.AgentRegistry.get_tool_categories",
+        lambda name: [],
     )
 
     # Mock WhatsApp registry to return the correct tenant
@@ -116,8 +130,10 @@ async def test_e2e_whatsapp_pipeline_success(authed_client: TestClient, monkeypa
     assert data["tenant_id"] == "personal"
     assert data["response"] == mock_agent_response
 
-    # Verify agent was called with the correct message
-    mock_agent.run.assert_called_once_with("Hello, world!")
+    # Verify agent was called with the correct message and config
+    mock_agent.run.assert_called_once_with(
+        "Hello, world!", config={"configurable": {"thread_id": "whatsapp:personal:+34611111111"}}
+    )
 
 
 @pytest.mark.asyncio
@@ -130,10 +146,12 @@ async def test_e2e_whatsapp_pipeline_multiple_agents(authed_client: TestClient, 
 
     mock_dev_agent = MagicMock()
     mock_dev_agent.run = AsyncMock(return_value=dev_response)
+    mock_dev_agent._ensure_initialized = AsyncMock(return_value=None)
     mock_dev_agent_class = MagicMock(return_value=mock_dev_agent)
 
     mock_chef_agent = MagicMock()
     mock_chef_agent.run = AsyncMock(return_value=chef_response)
+    mock_chef_agent._ensure_initialized = AsyncMock(return_value=None)
     mock_chef_agent_class = MagicMock(return_value=mock_chef_agent)
 
     # Patch AgentRegistry
@@ -151,6 +169,14 @@ async def test_e2e_whatsapp_pipeline_multiple_agents(authed_client: TestClient, 
     monkeypatch.setattr(
         "agntrick.api.routes.whatsapp.AgentRegistry.get",
         mock_get_agent,
+    )
+    monkeypatch.setattr(
+        "agntrick.api.routes.whatsapp.AgentRegistry.get_mcp_servers",
+        lambda name: [],
+    )
+    monkeypatch.setattr(
+        "agntrick.api.routes.whatsapp.AgentRegistry.get_tool_categories",
+        lambda name: [],
     )
 
     # Mock WhatsApp registry
@@ -203,13 +229,17 @@ async def test_e2e_whatsapp_pipeline_multiple_agents(authed_client: TestClient, 
     data_personal = response_personal.json()
     assert data_personal["tenant_id"] == "personal"
     assert data_personal["response"] == dev_response
-    mock_dev_agent.run.assert_called_once_with("How do I Python?")
+    mock_dev_agent.run.assert_called_once_with(
+        "How do I Python?", config={"configurable": {"thread_id": "whatsapp:personal:+34611111111"}}
+    )
 
     assert response_work.status_code == 200
     data_work = response_work.json()
     assert data_work["tenant_id"] == "work"
     assert data_work["response"] == chef_response
-    mock_chef_agent.run.assert_called_once_with("Recipe for pasta?")
+    mock_chef_agent.run.assert_called_once_with(
+        "Recipe for pasta?", config={"configurable": {"thread_id": "whatsapp:work:+34633333333"}}
+    )
 
 
 @pytest.mark.asyncio

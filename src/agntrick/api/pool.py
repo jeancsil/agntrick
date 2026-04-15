@@ -77,6 +77,26 @@ class TenantAgentPool:
         Returns:
             Initialized agent with MCP tools loaded.
         """
+        # Extract db_path from agent_kwargs for checkpointer creation
+        db_path = agent_kwargs.pop("db_path", None)
+
+        if db_path:
+            # Create persistent AsyncSqliteSaver for this agent instance
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            # Create the saver context manager
+            saver_ctx = AsyncSqliteSaver.from_conn_string(db_path)
+            # Enter the context manager to initialize the connection
+            checkpointer = await saver_ctx.__aenter__()
+            # Store the context manager for cleanup when agent is evicted
+            agent_kwargs["_checkpointer_ctx"] = saver_ctx
+            agent_kwargs["checkpointer"] = checkpointer
+        elif "checkpointer" not in agent_kwargs:
+            # Create a default in-memory checkpointer if none provided
+            from langgraph.checkpoint.memory import InMemorySaver
+
+            agent_kwargs["checkpointer"] = InMemorySaver()
+
         agent: AgentBase = agent_cls(**agent_kwargs)
         # Trigger lazy initialization (MCP connection, graph compilation)
         await agent._ensure_initialized()
@@ -101,6 +121,14 @@ class TenantAgentPool:
     async def _safe_cleanup(agent: AgentBase, key: str) -> None:
         """Safely clean up an evicted agent."""
         try:
+            # Clean up checkpointer context manager if it exists
+            if hasattr(agent, "_checkpointer_ctx"):
+                try:
+                    await agent._checkpointer_ctx.__aexit__(None, None, None)
+                except Exception as e:
+                    logger.warning(f"[pool] checkpointer cleanup failed for {key}: {e}")
+
+            # Clean up agent if it has a cleanup method
             if hasattr(agent, "cleanup"):
                 await agent.cleanup()  # type: ignore[attr-defined]
         except Exception as e:

@@ -301,6 +301,7 @@ class TestSendChatMessage:
         mock_agent_response = "Mock agent response: Hello from assistant!"
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_agent_response)
+        mock_agent._ensure_initialized = AsyncMock(return_value=None)
         mock_agent_class = MagicMock(return_value=mock_agent)
 
         # Patch AgentRegistry methods
@@ -335,7 +336,9 @@ class TestSendChatMessage:
         assert result["tenant_id"] == "test"
 
         # Verify agent was called with correct message
-        mock_agent.run.assert_called_once_with("Hello, test!")
+        mock_agent.run.assert_called_once_with(
+            "Hello, test!", config={"configurable": {"thread_id": "whatsapp:test:+1555000000"}}
+        )
 
     def test_uses_custom_agent_when_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """send_chat_message should use the custom agent when agent_name is provided."""
@@ -359,6 +362,7 @@ class TestSendChatMessage:
         mock_agent_response = "Mock chef response: Let's cook!"
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_agent_response)
+        mock_agent._ensure_initialized = AsyncMock(return_value=None)
         mock_agent_class = MagicMock(return_value=mock_agent)
 
         # Track which agent name was requested
@@ -403,7 +407,9 @@ class TestSendChatMessage:
         assert "chef" in requested_agents
 
         # Verify agent was called with correct message
-        mock_agent.run.assert_called_once_with("Recipe please")
+        mock_agent.run.assert_called_once_with(
+            "Recipe please", config={"configurable": {"thread_id": "whatsapp:test:+1555000000"}}
+        )
 
     def test_raises_runtime_error_on_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """send_chat_message should raise RuntimeError when response is not 200."""

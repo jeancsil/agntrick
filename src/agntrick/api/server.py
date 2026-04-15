@@ -29,9 +29,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     model = get_default_model()
     logger.info("LLM: provider=%s model=%s", provider, model)
 
+    from agntrick.api.pool import TenantAgentPool
+    from agntrick.registry import AgentRegistry
     from agntrick.storage.tenant_manager import TenantManager
 
     app.state.tenant_manager = TenantManager(base_path=config.storage.base_path)
+
+    # Discover agents and initialize pool
+    AgentRegistry.discover_agents()
+    app.state.agent_pool = TenantAgentPool(max_size=10)
+    logger.info("Agent pool initialized (max_size=10)")
 
     # Warm up Playwright browser for DeepScrapeTool
     try:
@@ -49,6 +56,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for queue in queues:
             await queue.put({"type": "shutdown", "data": "{}"})
     sse_queues.clear()
+
+    # Evict all pooled agents
+    pool = getattr(app.state, "agent_pool", None)
+    if pool:
+        for key in list(pool._agents.keys()):
+            tenant_id, agent_name = key.split(":", 1)
+            await pool.evict(tenant_id, agent_name)
 
     app.state.tenant_manager.close_all()
 

@@ -124,6 +124,8 @@ class TestWhatsAppRegistry:
     @pytest.fixture
     def authed_client(self, mock_tenant_configs) -> TestClient:
         """Create a test client with a pre-configured API key and mocked deps."""
+        from agntrick.api.pool import TenantAgentPool
+
         config = get_config(force_reload=True)
 
         # Clear existing and set new api_keys
@@ -133,6 +135,9 @@ class TestWhatsAppRegistry:
         # Add WhatsApp tenant configs - convert fixture to actual list
         config.whatsapp.tenants = list(mock_tenant_configs)
         app = create_app()
+
+        # Initialize agent pool (normally done in lifespan)
+        app.state.agent_pool = TenantAgentPool(max_size=10)
 
         # Override dependencies - don't override verify_api_key since webhook doesn't use it
         mock_db = MagicMock()
@@ -162,6 +167,7 @@ class TestWhatsAppRegistry:
         mock_agent_response = "Mock agent response to your message"
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_agent_response)
+        mock_agent._ensure_initialized = AsyncMock(return_value=None)
 
         mock_agent_class = MagicMock(return_value=mock_agent)
 
@@ -173,6 +179,14 @@ class TestWhatsAppRegistry:
         monkeypatch.setattr(
             "agntrick.api.routes.whatsapp.AgentRegistry.get",
             lambda name: mock_agent_class if name == "developer" else None,
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_mcp_servers",
+            lambda name: [],
+        )
+        monkeypatch.setattr(
+            "agntrick.api.routes.whatsapp.AgentRegistry.get_tool_categories",
+            lambda name: [],
         )
 
         # Mock WhatsApp registry to return the correct tenant
