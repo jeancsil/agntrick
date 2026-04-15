@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.12, LangGraph, LangChain, FastAPI, AsyncSqliteSaver, MCP (SSE)
 
+**Model routing:** glm-4.7 for router classification + chat responses (cheaper, faster). glm-5.1 for agent execution (tool_use, research, delegate — needs quality).
+
 **Spec:** `docs/superpowers/specs/2026-04-15-sub15s-response-architecture-design.md`
 
 ---
@@ -849,6 +851,7 @@ git commit -m "feat: wire TenantAgentPool into webhook handler, discover agents 
 
 Makes the pool use persistent MCP connections instead of per-request reconnection.
 
+### Task 7: Persistent MCP connections in pool `[Model: haiku]`
 ### Task 7: Persistent MCP connections in pool `[Model: haiku]`
 
 **Files:**
