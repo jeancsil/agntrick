@@ -8,9 +8,23 @@
 
 **Tech Stack:** Python 3.12, LangGraph, LangChain, FastAPI, AsyncSqliteSaver, MCP (SSE)
 
-**Model routing:** glm-4.7 for router classification + chat responses (cheaper, faster). glm-5.1 for agent execution (tool_use, research, delegate — needs quality).
-
 **Spec:** `docs/superpowers/specs/2026-04-15-sub15s-response-architecture-design.md`
+
+---
+
+## Subagent Model Tier Guidance
+
+When executing this plan's tasks via subagents (e.g., using `superpowers:subagent-driven-development`), use the following Claude Code model tiers to balance cost and capability:
+
+| Model Tier | Use For | Examples |
+|------------|---------|----------|
+| **haiku** (glm-4.7) | Simple, repetitive tasks | Writing tests, simple file edits, formatting, commits |
+| **sonnet** (glm-5.1) | Moderate complexity | Graph refactors, adding new functions, class changes |
+| **opus** (claude-opus-4-6) | Complex, multi-file tasks | Architecture design, cross-file refactors, tricky debugging |
+
+**Rationale:** Haiku is fastest/cheapest for straightforward work like test generation. Sonnet balances quality and cost for most implementation tasks. Reserve opus for tasks requiring deep reasoning or complex coordination.
+
+Each task below includes a `[Model: ...]` tag indicating the recommended tier.
 
 ---
 
@@ -32,7 +46,7 @@
 
 Removes the responder LLM call. Independent of all other changes.
 
-### Task 1: Implement `_format_for_whatsapp()` function
+### Task 1: Implement `_format_for_whatsapp()` function `[Model: haiku]`
 
 **Files:**
 - Modify: `src/agntrick/graph.py` (add after `_sanitize_ai_content`, around line 87)
@@ -149,7 +163,7 @@ git commit -m "feat: add _format_for_whatsapp template function (replaces respon
 
 Replaces the 4-node graph (Summarize → Router → Executor → Responder) with a 3-node graph (Summarize → Router → Agent). The router gets a chat fast-path.
 
-### Task 2: Rename executor_node → agent_node and add WhatsApp formatting
+### Task 2: Rename executor_node → agent_node and add WhatsApp formatting `[Model: sonnet]`
 
 **Files:**
 - Modify: `src/agntrick/graph.py` — rename `executor_node` to `agent_node`, apply `_format_for_whatsapp()` at the end, remove `responder_node`
@@ -342,7 +356,7 @@ git add src/agntrick/graph.py tests/test_graph.py
 git commit -m "refactor: 3-node graph (summarize → router → agent) with template formatting"
 ```
 
-### Task 3: Update assistant.py for model routing
+### Task 3: Update assistant.py for model routing `[Model: sonnet]`
 
 **Files:**
 - Modify: `src/agntrick/agents/assistant.py`
@@ -401,7 +415,7 @@ git add src/agntrick/agents/assistant.py src/agntrick/agent.py
 git commit -m "refactor: update model routing for 3-node graph (router=glm-4.7, agent=glm-5.1)"
 ```
 
-### Task 4: Update DO config for model routing
+### Task 4: Update DO config for model routing `[Model: haiku]`
 
 **Files:** No code change — config update on droplet
 
@@ -423,7 +437,7 @@ This ensures glm-4.7 handles the cheap router work (~2s) while glm-5.1 handles t
 
 Creates `TenantAgentPool` to reuse agent instances across requests.
 
-### Task 5: Implement TenantAgentPool
+### Task 5: Implement TenantAgentPool `[Model: sonnet]`
 
 **Files:**
 - Create: `src/agntrick/api/pool.py`
@@ -688,7 +702,7 @@ git add src/agntrick/api/pool.py tests/test_pool.py
 git commit -m "feat: add TenantAgentPool for reusing agent instances across requests"
 ```
 
-### Task 6: Wire agent pool into webhook handler
+### Task 6: Wire agent pool into webhook handler `[Model: sonnet]`
 
 **Files:**
 - Modify: `src/agntrick/api/routes/whatsapp.py`
@@ -835,7 +849,7 @@ git commit -m "feat: wire TenantAgentPool into webhook handler, discover agents 
 
 Makes the pool use persistent MCP connections instead of per-request reconnection.
 
-### Task 7: Persistent MCP connections in pool
+### Task 7: Persistent MCP connections in pool `[Model: haiku]`
 
 **Files:**
 - Modify: `src/agntrick/api/pool.py`
