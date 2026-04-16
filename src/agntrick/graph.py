@@ -1,7 +1,7 @@
 """3-node StateGraph for intelligent assistant routing.
 
 Summarize → Router → Agent with template WhatsApp formatting.
-Chat intent: Router responds directly (1 LLM call).
+All intents (including chat) route through agent node for response generation.
 """
 
 import json
@@ -90,9 +90,6 @@ def _sanitize_ai_content(content: str) -> str:
 
 _WHATSAPP_CHAR_LIMIT = 4096
 
-# Regex to strip raw JSON content blocks from tool output
-_JSON_BLOCK_RE = re.compile(r"\n?\{[^{}]*\}(?=\n|$)", re.MULTILINE)
-
 
 def _format_for_whatsapp(content: str) -> str:
     """Format agent output for WhatsApp without an LLM call.
@@ -110,9 +107,6 @@ def _format_for_whatsapp(content: str) -> str:
 
     # Strip XML tool artifacts
     cleaned = _sanitize_ai_content(content)
-
-    # Strip raw JSON content blocks (e.g., {"type": "text", "text": "..."})
-    cleaned = _JSON_BLOCK_RE.sub("", cleaned).strip()
 
     # Truncate to WhatsApp limit
     if len(cleaned) > _WHATSAPP_CHAR_LIMIT:
@@ -296,17 +290,6 @@ Examples:
 "skip_tools": false}
 "Good morning" → {"intent": "chat", "tool_plan": null, "skip_tools": true}
 """
-
-RESPONDER_PROMPT = """You are formatting a response for WhatsApp. Take the assistant's response and:
-
-1. Make it concise and mobile-friendly (under 4096 characters)
-2. Use simple markdown: **bold**, bullet points, numbered lists
-3. Strip internal tool artifacts, raw JSON, or verbose technical output
-4. Keep structure (headers, bullet points) for complex answers
-5. If content is very long, truncate with a "message continued" hint
-6. Always respond in the same language as the user
-
-Output only the formatted response, nothing else."""
 
 
 class AgentState(TypedDict, total=False):
@@ -625,15 +608,6 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     tool_plan = parsed.get("tool_plan")
     logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
 
-    # Chat fast-path: respond directly with formatted output
-    if intent == "chat":
-        formatted = _format_for_whatsapp(str(response.content))
-        return {
-            "intent": intent,
-            "tool_plan": tool_plan,
-            "final_response": formatted,
-        }
-
     return {
         "intent": intent,
         "tool_plan": tool_plan,
@@ -650,11 +624,22 @@ async def agent_node(
     progress_callback: ProgressCallback = None,
 ) -> dict:
     """Execute tool calls guided by the router's plan and format for WhatsApp."""
+    intent = state.get("intent", "tool_use")
+
+    # Chat fast-path: respond conversationally, no tools needed.
+    # Uses the full system prompt and conversation context for a natural reply.
+    if intent == "chat":
+        messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
+        safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        response = await _log_llm_call(model, safe_msgs, node="chat")
+        formatted = _format_for_whatsapp(str(response.content))
+        removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        return {"final_response": formatted, "messages": [response] + removes}
+
     if progress_callback:
         await progress_callback("Analyzing your request...")
 
     tool_plan = state.get("tool_plan")
-    intent = state.get("intent", "tool_use")
 
     guided_prompt = system_prompt
     if tool_plan and intent == "tool_use":
@@ -803,17 +788,6 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
     return {"final_response": formatted, "messages": [final_msg] + removes}
 
 
-def route_decision(state: AgentState) -> str:
-    """Decide next node after Router.
-
-    For chat intent: respond directly (router sets final_response).
-    For other intents: route to agent node.
-    """
-    if state.get("intent") == "chat":
-        return "responder"  # END — router already set final_response
-    return "agent"
-
-
 def create_assistant_graph(
     model: Any,
     tools: Sequence[Any],
@@ -825,8 +799,9 @@ def create_assistant_graph(
 ) -> Any:
     """Create the 3-node assistant StateGraph.
 
-    Summarize → Router → Agent (with template WhatsApp formatting)
-    Chat intent: Router responds directly (1 LLM call).
+    Summarize → Router → Agent (with template WhatsApp formatting).
+    Chat intent: agent node responds directly via model (no tools).
+    Tool intents: agent node runs sub-agent with filtered tools.
 
     Args:
         model: Primary LLM model instance.
@@ -865,10 +840,6 @@ def create_assistant_graph(
     graph.add_node("agent", _agent)
     graph.set_entry_point("summarize")
     graph.add_edge("summarize", "router")
-    graph.add_conditional_edges(
-        "router",
-        route_decision,
-        {"agent": "agent", "responder": END},
-    )
+    graph.add_edge("router", "agent")
     graph.add_edge("agent", END)
     return graph.compile(checkpointer=checkpointer or InMemorySaver())

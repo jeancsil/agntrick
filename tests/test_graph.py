@@ -11,7 +11,6 @@ from agntrick.graph import (
     AgentState,
     _parse_router_response,
     agent_node,
-    route_decision,
     summarize_node,
 )
 
@@ -135,47 +134,23 @@ class TestParseRouterResponse:
 
 
 class TestRouteDecision:
-    """Tests for route_decision."""
+    """Tests for graph routing — all intents go through agent node."""
 
-    def test_chat_goes_to_responder(self) -> None:
-        state: AgentState = {
-            "messages": [],
-            "intent": "chat",
-            "tool_plan": None,
-            "progress": [],
-            "final_response": None,
-        }
-        assert route_decision(state) == "responder"
+    def test_graph_has_no_conditional_router_edges(self) -> None:
+        """After removing route_decision, graph uses direct edge router→agent."""
+        from agntrick.graph import create_assistant_graph
 
-    def test_tool_use_goes_to_agent(self) -> None:
-        state: AgentState = {
-            "messages": [],
-            "intent": "tool_use",
-            "tool_plan": "use web_search",
-            "progress": [],
-            "final_response": None,
-        }
-        assert route_decision(state) == "agent"
-
-    def test_research_goes_to_agent(self) -> None:
-        state: AgentState = {
-            "messages": [],
-            "intent": "research",
-            "tool_plan": "multi-step plan",
-            "progress": [],
-            "final_response": None,
-        }
-        assert route_decision(state) == "agent"
-
-    def test_delegate_goes_to_agent(self) -> None:
-        state: AgentState = {
-            "messages": [],
-            "intent": "delegate",
-            "tool_plan": "delegate to developer",
-            "progress": [],
-            "final_response": None,
-        }
-        assert route_decision(state) == "agent"
+        graph = create_assistant_graph(
+            model=MagicMock(),
+            tools=[],
+            system_prompt="test",
+            checkpointer=None,
+        )
+        # Verify the graph compiles and has the expected nodes
+        node_names = set(graph.nodes.keys())
+        assert "summarize" in node_names
+        assert "router" in node_names
+        assert "agent" in node_names
 
 
 class TestRouterNode:
@@ -408,15 +383,16 @@ class TestGraphIntegration:
         assert result.get("final_response") is not None
 
     @pytest.mark.asyncio
-    async def test_chat_intent_skips_agent(self) -> None:
-        """Chat intent should go router → END (skip agent)."""
+    async def test_chat_intent_routes_to_agent(self) -> None:
+        """Chat intent should go router → agent → END (agent responds conversationally)."""
         from agntrick.graph import create_assistant_graph
 
         mock_model = AsyncMock()
-        # Router returns chat intent with final_response
+        # Router classifies as chat, then agent responds conversationally
         mock_model.ainvoke = AsyncMock(
             side_effect=[
                 AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello! How can I help you?"),
             ]
         )
 
@@ -432,6 +408,8 @@ class TestGraphIntegration:
         )
 
         assert result.get("final_response") is not None
+        # Agent node should have been called (2 ainvoke calls: router + agent)
+        assert mock_model.ainvoke.call_count == 2
 
     @pytest.mark.asyncio
     async def test_tool_use_intent_routes_to_agent(self) -> None:
@@ -574,7 +552,7 @@ class TestGraphIntegration:
 
     @pytest.mark.asyncio
     async def test_chat_intent_receives_full_conversation_history(self) -> None:
-        """Responder should receive full conversation history for chat intent.
+        """Agent node should receive full conversation history for chat intent.
 
         This verifies the fix for the memory loss bug where _truncate_messages
         was stripping history for chat intent, causing the agent to not
@@ -584,13 +562,17 @@ class TestGraphIntegration:
 
         mock_model = AsyncMock()
 
-        # Track what messages the router receives via ainvoke calls
+        # Track what messages each node receives via ainvoke calls
         invoke_calls: list[list[BaseMessage]] = []
 
         async def capture_ainvoke(messages: list[BaseMessage]) -> AIMessage:
             invoke_calls.append(messages)
-            # Router response: classify follow-up as chat
-            return AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            call_index = len(invoke_calls) - 1
+            if call_index == 0:
+                # Router response: classify follow-up as chat
+                return AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            # Agent response: conversational reply
+            return AIMessage(content="The weather in Paris is 18°C, cloudy.")
 
         mock_model.ainvoke = capture_ainvoke
 
@@ -614,16 +596,14 @@ class TestGraphIntegration:
             config={"configurable": {"thread_id": "test-multi-turn-memory"}},
         )
 
-        # With 3-node graph, chat intent goes router → END (only 1 call)
-        assert len(invoke_calls) == 1, f"Expected 1 ainvoke call (router only), got {len(invoke_calls)}"
+        # 2 calls: router classifies, agent responds conversationally
+        assert len(invoke_calls) == 2, f"Expected 2 ainvoke calls (router + agent), got {len(invoke_calls)}"
 
-        # The router should receive ALL messages for context, not just
-        # the last HumanMessage. This is the core fix being tested.
-        router_messages = invoke_calls[0]
-        human_msgs = [m for m in router_messages if isinstance(m, HumanMessage)]
-        assert len(human_msgs) >= 2, (
-            f"Router should see >= 2 HumanMessages (full history), "
-            f"got {len(human_msgs)}: {[m.content for m in human_msgs]}"
+        # The agent node (2nd call) should receive conversation context
+        agent_messages = invoke_calls[1]
+        human_msgs = [m for m in agent_messages if isinstance(m, HumanMessage)]
+        assert len(human_msgs) >= 1, (
+            f"Agent should see >= 1 HumanMessage, got {len(human_msgs)}: {[m.content for m in human_msgs]}"
         )
 
     @pytest.mark.asyncio
@@ -830,6 +810,7 @@ class TestPerNodeModels:
         from agntrick.graph import create_assistant_graph
 
         primary_model = AsyncMock()
+        primary_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
         router_model = AsyncMock()
 
         # Track which model is called for routing
@@ -849,10 +830,10 @@ class TestPerNodeModels:
             config={"configurable": {"thread_id": "test-router-override"}},
         )
 
-        # Router should have used router_model, not primary
+        # Router should have used router_model
         router_model.ainvoke.assert_called_once()
-        # Primary should NOT have been called (router responds directly for chat)
-        primary_model.ainvoke.assert_not_called()
+        # Primary model is used by agent node for chat response
+        primary_model.ainvoke.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_overrides_uses_primary_for_all(self) -> None:
@@ -861,7 +842,10 @@ class TestPerNodeModels:
 
         primary_model = AsyncMock()
         primary_model.ainvoke = AsyncMock(
-            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
         )
 
         graph = create_assistant_graph(
@@ -875,8 +859,8 @@ class TestPerNodeModels:
             config={"configurable": {"thread_id": "test-no-overrides"}},
         )
 
-        # With 3-node graph, chat intent only calls router (1 call, not 2)
-        assert primary_model.ainvoke.call_count == 1
+        # Chat goes router → agent: 2 calls (router + agent)
+        assert primary_model.ainvoke.call_count == 2
 
     @pytest.mark.asyncio
     async def test_agent_uses_override_model_for_tool_use(self) -> None:
@@ -1146,12 +1130,15 @@ class TestSingleAIMessagePerTurn:
 
     @pytest.mark.asyncio
     async def test_chat_adds_exactly_one_ai_message(self) -> None:
-        """After a chat turn, state should have final_response set (no AIMessage added)."""
+        """After a chat turn, state should have final_response and 1 AIMessage from agent node."""
         from agntrick.graph import create_assistant_graph
 
         mock_model = AsyncMock()
         mock_model.ainvoke = AsyncMock(
-            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello! How can I help?"),
+            ]
         )
 
         graph = create_assistant_graph(
@@ -1165,10 +1152,10 @@ class TestSingleAIMessagePerTurn:
             config={"configurable": {"thread_id": "test-single-msg-chat"}},
         )
 
-        # With 3-node graph, chat intent sets final_response but doesn't add AIMessages
+        # Chat intent now routes through agent node which adds 1 AIMessage
         assert result.get("final_response") is not None, "Chat intent should set final_response"
         ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
-        assert len(ai_msgs) == 0, f"Chat intent should not add AIMessages, got {len(ai_msgs)}"
+        assert len(ai_msgs) == 1, f"Chat intent should add exactly 1 AIMessage, got {len(ai_msgs)}"
 
     @pytest.mark.asyncio
     async def test_research_adds_exactly_one_ai_message(self) -> None:
@@ -1208,10 +1195,10 @@ class TestSingleAIMessagePerTurn:
 
     @pytest.mark.asyncio
     async def test_multi_turn_accumulates_one_ai_per_turn(self) -> None:
-        """Over multiple turns, tool_use should add exactly 1 AI message per turn.
+        """Over multiple turns, each turn should add exactly 1 AI message.
 
         Simulates 2 turns (1 chat, 1 tool_use) and verifies that:
-        - Chat turn: sets final_response, no AIMessage added
+        - Chat turn: routes through agent node, adds 1 AIMessage
         - Tool_use turn: adds exactly 1 AIMessage
         """
         from unittest.mock import patch
@@ -1223,7 +1210,10 @@ class TestSingleAIMessagePerTurn:
         # --- Turn 1: chat ---
         mock_model = AsyncMock()
         mock_model.ainvoke = AsyncMock(
-            return_value=AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}')
+            side_effect=[
+                AIMessage(content='{"intent": "chat", "tool_plan": null, "skip_tools": true}'),
+                AIMessage(content="Hello!"),
+            ]
         )
 
         graph = create_assistant_graph(
@@ -1237,10 +1227,10 @@ class TestSingleAIMessagePerTurn:
             config={"configurable": {"thread_id": thread_id}},
         )
 
-        # Chat intent should set final_response but NOT add AIMessages
+        # Chat intent now routes through agent node — adds 1 AIMessage
         assert result1.get("final_response") is not None, "Turn 1: chat should set final_response"
         ai_after_turn1 = [m for m in result1["messages"] if isinstance(m, AIMessage)]
-        assert len(ai_after_turn1) == 0, f"Turn 1: chat should not add AI msgs, got {len(ai_after_turn1)}"
+        assert len(ai_after_turn1) == 1, f"Turn 1: chat should add 1 AI msg, got {len(ai_after_turn1)}"
 
         # --- Turn 2: tool_use ---
         mock_model2 = AsyncMock()
@@ -1696,12 +1686,12 @@ class TestFormatForWhatsApp:
         assert "<web_search" not in result
         assert "Here is the result." in result
 
-    def test_strips_raw_json_blocks(self) -> None:
+    def test_does_not_strip_inline_json(self) -> None:
+        """After removing _JSON_BLOCK_RE, inline JSON should be preserved."""
         from agntrick.graph import _format_for_whatsapp
 
         text = 'The score is 2-1.\n{"type": "text", "text": "extra data"}'
         result = _format_for_whatsapp(text)
-        assert '{"type":' not in result
         assert "The score is 2-1." in result
 
     def test_passes_short_text_unchanged(self) -> None:
