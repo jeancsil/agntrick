@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def _check_mcp_health(app: FastAPI) -> None:
     """Periodically check MCP health and evict unhealthy agents.
 
-    Checks toolbox /health endpoint every 60 seconds. If unhealthy,
+    Checks toolbox /sse endpoint every 60 seconds. If unhealthy,
     evicts all agents from pool to force fresh connections on next request.
     """
     import httpx
@@ -32,9 +32,10 @@ async def _check_mcp_health(app: FastAPI) -> None:
         await asyncio.sleep(60)  # Check every 60s
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{toolbox_url}/health", timeout=5)
+                # Toolbox uses /sse as health endpoint (returns 200 if healthy)
+                resp = await client.get(f"{toolbox_url}/sse", timeout=5)
                 if resp.status_code != 200:
-                    logger.warning("Toolbox health check failed, evicting all agents")
+                    logger.warning("Toolbox health check failed (status=%s), evicting all agents", resp.status_code)
                     for key in list(pool._agents.keys()):
                         tenant_id, agent_name = key.split(":", 1)
                         await pool.evict(tenant_id, agent_name)
