@@ -417,7 +417,7 @@ async def whatsapp_webhook(
         if allowed_mcp:
             agent_kwargs["mcp_server_names"] = allowed_mcp
 
-        # Get or create pooled agent
+        # Get or create pooled agent — retry with fresh agent on stale connections
         agent = await pool.get_or_create(
             tenant_id=tenant_id,
             agent_name=agent_name,
@@ -425,10 +425,27 @@ async def whatsapp_webhook(
             agent_kwargs=agent_kwargs,
         )
 
-        result = await asyncio.wait_for(
-            agent.run(message, config={"configurable": {"thread_id": thread_id}}),
-            timeout=300,
-        )
+        try:
+            result = await asyncio.wait_for(
+                agent.run(message, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
+            )
+        except (ValueError, ConnectionError, OSError) as e:
+            if "no active connection" not in str(e).lower() and "connection" not in str(e).lower():
+                raise
+            # Stale pooled connection — evict and retry with fresh agent
+            tenant_logger.warning("Stale connection for %s agent, evicting and retrying: %s", agent_name, e)
+            await pool.evict(tenant_id, agent_name)
+            agent = await pool.get_or_create(
+                tenant_id=tenant_id,
+                agent_name=agent_name,
+                agent_cls=agent_cls,
+                agent_kwargs=agent_kwargs,
+            )
+            result = await asyncio.wait_for(
+                agent.run(message, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
+            )
 
         # Tool errors are returned as strings prefixed with "Tool error:"
         # Return them as successful responses so the user gets feedback on WhatsApp.
