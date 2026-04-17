@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from agntrick.api.pool import TenantAgentPool
+
 
 class TestTenantAgentPool:
     """Tests for agent pooling per tenant."""
@@ -108,3 +110,91 @@ class TestTenantAgentPool:
         await pool._evict_if_needed()
 
         mock_old.cleanup.assert_called_once()
+
+
+class TestPoolWarmup:
+    @pytest.mark.asyncio
+    async def test_warmup_creates_agents_for_all_tenants(self) -> None:
+        """warmup() should pre-create agents for all specified tenant:agent pairs."""
+        pool = TenantAgentPool(max_size=10)
+
+        mock_agent = MagicMock()
+        mock_agent._ensure_initialized = AsyncMock()
+
+        mock_cls = MagicMock(return_value=mock_agent)
+
+        configs = [
+            {
+                "tenant_id": "primary",
+                "agent_name": "assistant",
+                "agent_cls": mock_cls,
+                "agent_kwargs": {"_agent_name": "assistant"},
+            },
+            {
+                "tenant_id": "leticia",
+                "agent_name": "assistant",
+                "agent_cls": mock_cls,
+                "agent_kwargs": {"_agent_name": "assistant"},
+            },
+        ]
+
+        await pool.warmup(configs)
+
+        assert len(pool) == 2
+        assert "primary:assistant" in pool._agents
+        assert "leticia:assistant" in pool._agents
+
+    @pytest.mark.asyncio
+    async def test_warmup_skips_existing_agents(self):
+        """warmup() should not recreate agents already in pool."""
+        pool = TenantAgentPool(max_size=10)
+
+        mock_agent = MagicMock()
+        mock_agent._ensure_initialized = AsyncMock()
+
+        mock_cls = MagicMock(return_value=mock_agent)
+
+        configs_create = [
+            {
+                "tenant_id": "primary",
+                "agent_name": "assistant",
+                "agent_cls": mock_cls,
+                "agent_kwargs": {"_agent_name": "assistant"},
+            },
+        ]
+        await pool.warmup(configs_create)
+        assert mock_cls.call_count == 1
+
+        await pool.warmup(configs_create)
+        assert mock_cls.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_warmup_continues_on_individual_failure(self):
+        """warmup() should log failure for one agent but continue with others."""
+        pool = TenantAgentPool(max_size=10)
+
+        mock_agent = MagicMock()
+        mock_agent._ensure_initialized = AsyncMock()
+
+        fail_cls = MagicMock(side_effect=Exception("MCP connection failed"))
+        ok_cls = MagicMock(return_value=mock_agent)
+
+        configs = [
+            {
+                "tenant_id": "primary",
+                "agent_name": "assistant",
+                "agent_cls": fail_cls,
+                "agent_kwargs": {"_agent_name": "assistant"},
+            },
+            {
+                "tenant_id": "leticia",
+                "agent_name": "assistant",
+                "agent_cls": ok_cls,
+                "agent_kwargs": {"_agent_name": "assistant"},
+            },
+        ]
+
+        await pool.warmup(configs)
+
+        assert len(pool) == 1
+        assert "leticia:assistant" in pool._agents

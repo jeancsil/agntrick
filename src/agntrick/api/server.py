@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,6 +70,54 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     AgentRegistry.discover_agents()
     app.state.agent_pool = TenantAgentPool(max_size=10)
     logger.info("Agent pool initialized (max_size=10)")
+
+    # Pre-warm agent pool for all configured tenants
+    if config.whatsapp.tenants:
+        warmup_configs: list[dict[str, Any]] = []
+        for tenant in config.whatsapp.tenants:
+            if not tenant.id:
+                continue
+            agent_name = tenant.default_agent
+            agent_cls = AgentRegistry.get(agent_name)
+            if not agent_cls:
+                logger.warning("Skipping warmup for unknown agent '%s'", agent_name)
+                continue
+
+            allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
+            tool_categories = AgentRegistry.get_tool_categories(agent_name)
+
+            thread_id = f"whatsapp:{tenant.id}:warmup"
+            tenant_db = app.state.tenant_manager.get_database(tenant.id)
+
+            agent_kwargs: dict[str, Any] = dict(
+                _agent_name=agent_name,
+                tool_categories=tool_categories,
+                model_name=config.llm.model,
+                temperature=config.llm.temperature,
+                thread_id=thread_id,
+                db_path=str(tenant_db._db_path),
+                progress_callback=lambda msg: None,
+            )
+
+            if allowed_mcp:
+                agent_kwargs["mcp_server_names"] = allowed_mcp
+
+            warmup_configs.append(
+                {
+                    "tenant_id": tenant.id,
+                    "agent_name": agent_name,
+                    "agent_cls": agent_cls,
+                    "agent_kwargs": agent_kwargs,
+                }
+            )
+
+        if warmup_configs:
+            logger.info("Warming up %d agent(s) for %d tenant(s)...", len(warmup_configs), len(config.whatsapp.tenants))
+            try:
+                await app.state.agent_pool.warmup(warmup_configs)
+                logger.info("Agent pool warmup complete (pool_size=%d)", len(app.state.agent_pool))
+            except Exception as e:
+                logger.warning("Agent pool warmup failed (agents will be created on first request): %s", e)
 
     # Warm up Playwright browser for DeepScrapeTool
     try:

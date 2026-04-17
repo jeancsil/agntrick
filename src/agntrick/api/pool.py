@@ -148,3 +148,28 @@ class TenantAgentPool:
         if agent:
             await self._safe_cleanup(agent, key)
         logger.info(f"[pool] manually evicted: {key}")
+
+    async def warmup(
+        self,
+        configs: list[dict[str, Any]],
+    ) -> None:
+        """Pre-create agents for known tenants at startup.
+
+        Creates agents eagerly so the first real request hits a warmed pool.
+        Failures are logged per-agent but don't prevent others from warming up.
+
+        Args:
+            configs: List of dicts with keys: tenant_id, agent_name, agent_cls, agent_kwargs.
+        """
+        for cfg in configs:
+            key = f"{cfg['tenant_id']}:{cfg['agent_name']}"
+            if key in self._agents:
+                logger.debug(f"[pool] warmup: skipping existing {key}")
+                continue
+            try:
+                agent = await self._create(cfg["agent_cls"], dict(cfg["agent_kwargs"]))
+                self._agents[key] = agent
+                self._access_order.append(key)
+                logger.info(f"[pool] warmed up: {key} (pool_size={len(self._agents)})")
+            except Exception as e:
+                logger.warning(f"[pool] warmup failed for {key}: {e}")
