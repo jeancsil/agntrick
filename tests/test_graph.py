@@ -25,7 +25,7 @@ class TestFilterTools:
         return tool
 
     def test_tool_use_returns_web_and_document_tools(self) -> None:
-        """tool_use intent should return web + document tools (no invoke_agent)."""
+        """tool_use intent should return web tools (no invoke_agent, no curl_fetch)."""
         from agntrick.graph import _filter_tools
 
         all_tools = [
@@ -38,7 +38,7 @@ class TestFilterTools:
         ]
         result = _filter_tools(all_tools, "tool_use")
         names = {t.name for t in result}
-        assert names == {"web_search", "web_fetch", "curl_fetch"}
+        assert names == {"web_search", "web_fetch"}
 
     def test_research_adds_hackernews_tools(self) -> None:
         """research intent should include hacker_news tools (no invoke_agent)."""

@@ -257,19 +257,18 @@ ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the
 Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": null, "skip_tools": false}
 
 Tool selection rules (CRITICAL):
-- News, current events, headlines → web_search
-- Specific URL to read → web_fetch
-- Paywalled or blocked URL → delegate to "paywall-remover"
-- API calls → curl_fetch
+- News, current events, headlines, "what's happening" → web_search
+- Specific URL the user wants to READ → web_fetch
+- Paywalled/blocked URL (globo.com, wsj.com, nyt.com, ft.com, etc.) → delegate to "paywall-remover"
+- User says "extract", "remove paywall", "get content from" a URL → delegate to "paywall-remover"
 - YouTube links → delegate to "youtube"
 - Code questions → delegate to "developer"
 
-URL handling rules (CRITICAL):
-- "news from a site" or "top news in X" → web_search (search for that site's news)
-- "read this URL" or "open this link" → web_fetch (fetch the specific URL)
-- Paywalled/blocked site (globo.com, wsj.com, nyt.com, etc.) or user says
-  "extract" or "remove paywall" → delegate to "paywall-remover"
-- If user mentions a site name/URL but asks for NEWS → web_search, NOT web_fetch
+URL handling — which tool for URLs?
+- User shares a URL and asks what it says → web_fetch (Jina Reader, fast)
+- User asks for NEWS from a site or about a topic → web_search (NOT web_fetch — returns too much text)
+- URL is a known paywalled/blocked site → delegate to "paywall-remover" (Crawl4AI with JS rendering)
+- User says "read this" a normal URL → web_fetch
 
 For "tool_use": tool_plan = exact tool name, e.g. "web_search"
 For "research": tool_plan = numbered steps, e.g. "1. web_search for topic\\n2. web_fetch top result"
@@ -484,14 +483,12 @@ _INTENT_TOOLS: dict[str, set[str]] = {
     "tool_use": {
         "web_search",
         "web_fetch",
-        "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
     },
     "research": {
         "web_search",
         "web_fetch",
-        "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
         "hacker_news_top",
