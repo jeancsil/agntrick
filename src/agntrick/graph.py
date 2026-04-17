@@ -574,6 +574,93 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
     return [t for t in tools if getattr(t, "name", "") in allowed]
 
 
+def _extract_tool_args(tool_name: str, user_message: str) -> dict[str, Any]:
+    """Extract tool arguments from the user message.
+
+    Simple heuristic extraction for common tool patterns.
+    Falls back to generic input for unrecognized tools.
+
+    Args:
+        tool_name: Name of the tool to call.
+        user_message: The user's raw message text.
+
+    Returns:
+        Dict of keyword arguments for the tool's ainvoke call.
+    """
+    if tool_name == "web_search":
+        return {"query": user_message}
+    elif tool_name == "web_fetch":
+        url_match = re.search(r"https?://\S+", user_message)
+        if url_match:
+            url = url_match.group(0).rstrip(".,;:!?)")
+            return {"url": url}
+        return {"url": user_message}
+    return {"input_str": user_message}
+
+
+async def _direct_tool_call(
+    user_message: str,
+    tool_plan: str,
+    tools: Sequence[Any],
+    model: Any,
+    system_prompt: str,
+) -> AIMessage:
+    """Execute a single tool call directly and format the response.
+
+    Bypasses the sub-agent for tool_use intent. The router already decided
+    which tool to use — calling it directly saves one LLM round-trip (~10-15s).
+
+    Args:
+        user_message: The user's raw message text.
+        tool_plan: Name of the tool to call (from router).
+        tools: Sequence of tools to search for the target.
+        model: LLM model for response formatting.
+        system_prompt: System prompt for formatting LLM call.
+
+    Returns:
+        AIMessage with the formatted response.
+    """
+    target = None
+    for t in tools:
+        if getattr(t, "name", "") == tool_plan:
+            target = _make_flat_tool(t)
+            break
+
+    if target is None:
+        return AIMessage(content=f"Error: Tool '{tool_plan}' not found.")
+
+    tool_args = _extract_tool_args(tool_plan, user_message)
+
+    start = time.monotonic()
+    try:
+        tool_result = await target.ainvoke(tool_args)
+        tool_elapsed = time.monotonic() - start
+        logger.info("[direct-tool] %s returned %d chars in %.1fs", tool_plan, len(str(tool_result)), tool_elapsed)
+    except Exception as e:
+        tool_elapsed = time.monotonic() - start
+        logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
+        tool_result = f"Error: {e}"
+
+    formatting_prompt = (
+        "You are a helpful WhatsApp assistant. Respond to the user's question "
+        "based on the tool results below. Be concise, direct, and respond in "
+        "the same language as the user.\n\n"
+        f"User asked: {user_message}\n\n"
+        f"Tool results:\n{tool_result}"
+    )
+
+    llm_start = time.monotonic()
+    response = await _log_llm_call(
+        model,
+        [SystemMessage(content=system_prompt), HumanMessage(content=formatting_prompt)],
+        node="direct-tool",
+    )
+    llm_elapsed = time.monotonic() - llm_start
+    logger.info("[direct-tool] %s LLM formatting took %.1fs", tool_plan, llm_elapsed)
+
+    return AIMessage(content=str(response.content))
+
+
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
     """Classify intent and decide strategy. For chat, respond directly."""
     # Send a budget-based window of recent messages so the router can understand
@@ -622,6 +709,7 @@ async def agent_node(
 ) -> dict:
     """Execute tool calls guided by the router's plan and format for WhatsApp."""
     intent = state.get("intent", "tool_use")
+    tool_plan = state.get("tool_plan")
 
     # Chat fast-path: respond conversationally, no tools needed.
     # Uses the full system prompt and conversation context for a natural reply.
@@ -633,10 +721,27 @@ async def agent_node(
         removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
         return {"final_response": formatted, "messages": [response] + removes}
 
+    # Direct tool execution for tool_use: skip sub-agent, call tool directly.
+    # The router already decided which tool to use — creating a sub-agent
+    # that re-decides wastes 10-15s on an LLM round-trip.
+    if intent == "tool_use" and tool_plan:
+        target_tools = [t for t in tools if getattr(t, "name", "") == tool_plan]
+        if target_tools:
+            user_msg = str(state["messages"][-1].content)
+            direct_result = await _direct_tool_call(
+                user_message=user_msg,
+                tool_plan=tool_plan,
+                tools=target_tools,
+                model=model,
+                system_prompt=system_prompt,
+            )
+            formatted = _format_for_whatsapp(str(direct_result.content))
+            removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            return {"final_response": formatted, "messages": [direct_result] + removes}
+        # If tool not found, fall through to sub-agent path (handles edge cases)
+
     if progress_callback:
         await progress_callback("Analyzing your request...")
-
-    tool_plan = state.get("tool_plan")
 
     guided_prompt = system_prompt
     if tool_plan and intent == "tool_use":

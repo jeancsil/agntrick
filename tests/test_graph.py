@@ -85,6 +85,73 @@ class TestFilterTools:
         assert result == all_tools
 
 
+class TestDirectToolExecution:
+    """Tests for direct tool call path (bypassing sub-agent)."""
+
+    def _make_tool(self, name: str) -> MagicMock:
+        tool = MagicMock(spec=["name", "description", "ainvoke", "args_schema"])
+        tool.name = name
+        tool.description = f"Mock {name}"
+        tool.ainvoke = AsyncMock(return_value="tool result data")
+        schema = MagicMock()
+        schema.model_json_schema.return_value = {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        }
+        tool.args_schema = schema
+        return tool
+
+    @pytest.mark.asyncio
+    async def test_tool_use_calls_tool_directly(self) -> None:
+        """tool_use intent should call the tool directly, not via sub-agent."""
+        from agntrick.graph import agent_node
+
+        web_search = self._make_tool("web_search")
+        web_search.ainvoke = AsyncMock(return_value="Search results here")
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Here are the search results for your query."))
+
+        state: AgentState = {
+            "messages": [HumanMessage(content="What's the news?")],
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+
+        result = await agent_node(
+            state,
+            MagicMock(),
+            model=mock_model,
+            tools=[web_search],
+            system_prompt="You are a helpful assistant.",
+        )
+
+        # Tool was called directly (not via sub-agent)
+        web_search.ainvoke.assert_called_once()
+        # A response was produced
+        assert result["final_response"] is not None
+        assert len(result["final_response"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_tool_use_web_fetch_extracts_url(self) -> None:
+        """Direct tool path should extract URL from message for web_fetch."""
+        from agntrick.graph import _extract_tool_args
+
+        args = _extract_tool_args("web_fetch", "Read this: https://example.com/article.")
+        assert args == {"url": "https://example.com/article"}
+
+    @pytest.mark.asyncio
+    async def test_tool_use_web_search_passes_query(self) -> None:
+        """Direct tool path should pass user message as query for web_search."""
+        from agntrick.graph import _extract_tool_args
+
+        args = _extract_tool_args("web_search", "What's the latest news from Brazil?")
+        assert args == {"query": "What's the latest news from Brazil?"}
+
+
 class TestAgentState:
     """Tests for AgentState TypedDict."""
 
@@ -498,7 +565,11 @@ class TestGraphIntegration:
 
     @pytest.mark.asyncio
     async def test_tool_filtering_excludes_run_shell_for_tool_use(self) -> None:
-        """Tool filtering should exclude run_shell for tool_use intent."""
+        """Tool filtering should exclude run_shell for tool_use intent.
+
+        With direct tool execution, tool_use calls the tool directly without
+        create_agent. Only web_search should be called, not run_shell or others.
+        """
         from unittest.mock import patch
 
         from agntrick.graph import create_assistant_graph
@@ -514,6 +585,7 @@ class TestGraphIntegration:
         def _make_tool(name: str) -> MagicMock:
             t = MagicMock()
             t.name = name
+            t.ainvoke = AsyncMock(return_value=f"{name} result")
             return t
 
         all_tools = [
@@ -534,21 +606,19 @@ class TestGraphIntegration:
                 system_prompt="You are a test assistant.",
             )
 
-            await graph.ainvoke(
+            result = await graph.ainvoke(
                 {"messages": [HumanMessage(content="Search for news")]},
                 config={"configurable": {"thread_id": "test-tool-filter"}},
             )
 
-        # Verify tools passed to create_agent
-        call_kwargs = mock_create.call_args[1] if mock_create.call_args else {}
-        tools_passed = call_kwargs.get("tools", [])
-        tool_names = {getattr(t, "name", None) for t in tools_passed}
-
-        # run_shell should NOT be in the filtered tools
-        assert "run_shell" not in tool_names, f"run_shell should be filtered out, got: {tool_names}"
-        # For tool_use, only the router-selected tool should be available
-        assert "web_search" in tool_names
-        assert "web_fetch" not in tool_names, f"Only the router-selected tool should be available, got: {tool_names}"
+        # Direct tool path: create_agent should NOT be called for tool_use
+        mock_create.assert_not_called()
+        # web_search should have been called directly
+        all_tools[0].ainvoke.assert_called_once()
+        # run_shell should NOT have been called
+        all_tools[2].ainvoke.assert_not_called()
+        # Result should have a final response
+        assert result.get("final_response") is not None
 
     @pytest.mark.asyncio
     async def test_chat_intent_receives_full_conversation_history(self) -> None:
@@ -966,15 +1036,16 @@ class TestMakeFlatTool:
         assert result is bare_tool
 
     @pytest.mark.asyncio
-    async def test_agent_flattens_tools_before_sub_agent(self) -> None:
-        """Agent node should flatten MCP tools before passing to sub-agent.
+    async def test_agent_flattens_tools_via_direct_tool_call(self) -> None:
+        """Agent node should flatten MCP tools in the direct tool call path.
 
-        This is the integration test: verify that when agent_node processes
-        MCP tools with structured content, the sub-agent receives flat strings.
+        With direct tool execution for tool_use, _direct_tool_call wraps the
+        tool via _make_flat_tool, so structured MCP content is flattened to
+        plain strings before being sent to the formatting LLM.
         """
         from pydantic import BaseModel
 
-        import agntrick.graph as graph_mod
+        from agntrick.graph import agent_node
 
         class SearchInput(BaseModel):
             query: str
@@ -987,57 +1058,54 @@ class TestMakeFlatTool:
         # This is what MCP returns — structured blocks
         mcp_tool.ainvoke = AsyncMock(return_value=[{"type": "text", "text": "## Results\n1. Globo news\n2. BBC world"}])
 
-        # Capture what tools the sub-agent receives
-        tools_received: list[Any] = []
-        original_create = graph_mod.create_agent
+        # Capture what the formatting LLM receives
+        llm_calls: list[list[BaseMessage]] = []
 
-        def capture_create(*args: Any, **kwargs: Any) -> Any:
-            tools_received.extend(kwargs.get("tools", []))
-            mock_sub = MagicMock()
-            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Here are the news results.")]})
-            return mock_sub
+        async def capture_llm(messages: list[BaseMessage]) -> AIMessage:
+            llm_calls.append(messages)
+            return AIMessage(content="Here are the news results.")
 
-        graph_mod.create_agent = capture_create
-        try:
-            from agntrick.graph import agent_node
+        mock_model = AsyncMock()
+        mock_model.ainvoke = capture_llm
 
-            state: AgentState = {
-                "messages": [HumanMessage(content="What's the news?")],
-                "intent": "tool_use",
-                "tool_plan": "web_search",
-                "progress": [],
-                "final_response": None,
-            }
-            await agent_node(
-                state,
-                MagicMock(),
-                model=AsyncMock(),
-                tools=[mcp_tool],
-                system_prompt="test",
-            )
+        state: AgentState = {
+            "messages": [HumanMessage(content="What's the news?")],
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+        result = await agent_node(
+            state,
+            MagicMock(),
+            model=mock_model,
+            tools=[mcp_tool],
+            system_prompt="test",
+        )
 
-            # The sub-agent should have received exactly one tool
-            assert len(tools_received) == 1, f"Expected 1 tool, got {len(tools_received)}"
+        # Tool should have been called directly
+        mcp_tool.ainvoke.assert_called_once()
+        # Result should have a final response
+        assert result["final_response"] is not None
 
-            # Verify the wrapped tool returns flat string, not structured blocks
-            wrapped_tool = tools_received[0]
-            result = await wrapped_tool.ainvoke({"query": "news"})
-            assert isinstance(result, str), f"Expected str, got {type(result)}: {result}"
-            assert "Globo news" in result
-            assert '{"type"' not in result
-        finally:
-            graph_mod.create_agent = original_create
+        # The formatting LLM should have received the flattened plain text,
+        # not structured dict wrappers
+        assert len(llm_calls) == 1
+        llm_input = str(llm_calls[0])
+        assert "Globo news" in llm_input
+        # Should NOT contain the raw dict structure
+        assert '{"type": "text", "text":' not in llm_input
 
     @pytest.mark.asyncio
-    async def test_tool_use_intent_gets_single_tool(self) -> None:
-        """For tool_use intent, only the router-selected tool should be available.
+    async def test_tool_use_intent_calls_only_selected_tool(self) -> None:
+        """For tool_use intent, only the router-selected tool should be called.
 
-        This prevents the secondary issue: LLM calling web_search twice then
-        trying web_fetch. With only one tool available, it must call once and respond.
+        With direct tool execution, web_search is called directly. Other tools
+        (web_fetch, curl_fetch) should NOT be invoked.
         """
         from pydantic import BaseModel
 
-        import agntrick.graph as graph_mod
+        from agntrick.graph import agent_node
 
         class FakeInput(BaseModel):
             query: str
@@ -1052,40 +1120,29 @@ class TestMakeFlatTool:
 
         all_tools = [make_tool("web_search"), make_tool("web_fetch"), make_tool("curl_fetch")]
 
-        tools_received: list[Any] = []
-        original_create = graph_mod.create_agent
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Results here"))
 
-        def capture_create(*args: Any, **kwargs: Any) -> Any:
-            tools_received.extend(kwargs.get("tools", []))
-            mock_sub = MagicMock()
-            mock_sub.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="Results")]})
-            return mock_sub
+        state: AgentState = {
+            "messages": [HumanMessage(content="What's the news?")],
+            "intent": "tool_use",
+            "tool_plan": "web_search",
+            "progress": [],
+            "final_response": None,
+        }
+        await agent_node(
+            state,
+            MagicMock(),
+            model=mock_model,
+            tools=all_tools,
+            system_prompt="test",
+        )
 
-        graph_mod.create_agent = capture_create
-        try:
-            from agntrick.graph import agent_node
-
-            state: AgentState = {
-                "messages": [HumanMessage(content="What's the news?")],
-                "intent": "tool_use",
-                "tool_plan": "web_search",
-                "progress": [],
-                "final_response": None,
-            }
-            await agent_node(
-                state,
-                MagicMock(),
-                model=AsyncMock(),
-                tools=all_tools,
-                system_prompt="test",
-            )
-
-            tool_names = [getattr(t, "name", "?") for t in tools_received]
-            assert tool_names == ["web_search"], (
-                f"Expected only ['web_search'], got {tool_names} — tool_use should narrow to router-selected tool"
-            )
-        finally:
-            graph_mod.create_agent = original_create
+        # Only web_search should have been called directly
+        all_tools[0].ainvoke.assert_called_once()
+        # web_fetch and curl_fetch should NOT have been called
+        all_tools[1].ainvoke.assert_not_called()
+        all_tools[2].ainvoke.assert_not_called()
 
 
 class TestSingleAIMessagePerTurn:
