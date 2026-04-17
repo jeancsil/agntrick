@@ -149,6 +149,26 @@ class TenantAgentPool:
             await self._safe_cleanup(agent, key)
         logger.info(f"[pool] manually evicted: {key}")
 
+    async def validate_connections(self) -> list[str]:
+        """Check MCP connections for all pooled agents.
+
+        Returns list of keys for agents with stale connections.
+        Does NOT evict — caller decides what to do.
+        """
+        stale: list[str] = []
+        for key, agent in list(self._agents.items()):
+            provider = getattr(agent, "_mcp_provider", None)
+            if provider is None:
+                continue
+            try:
+                tools = await provider.get_tools()
+                if not tools:
+                    logger.warning(f"[pool] {key}: MCP returned empty tool list")
+            except Exception as e:
+                logger.warning(f"[pool] {key}: stale MCP connection: {e}")
+                stale.append(key)
+        return stale
+
     async def warmup(
         self,
         configs: list[dict[str, Any]],

@@ -198,3 +198,55 @@ class TestPoolWarmup:
 
         assert len(pool) == 1
         assert "leticia:assistant" in pool._agents
+
+
+class TestConnectionValidation:
+    @pytest.mark.asyncio
+    async def test_validate_connections_detects_stale_agents(self):
+        """validate_connections() should detect agents with broken MCP connections."""
+        pool = TenantAgentPool(max_size=10)
+
+        # Agent with stale MCP provider
+        mock_agent = MagicMock()
+        mock_provider = MagicMock()
+        mock_provider.get_tools = AsyncMock(side_effect=Exception("no active connection"))
+        mock_agent._mcp_provider = mock_provider
+
+        pool._agents["primary:assistant"] = mock_agent
+        pool._access_order.append("primary:assistant")
+
+        stale = await pool.validate_connections()
+
+        assert stale == ["primary:assistant"]
+
+    @pytest.mark.asyncio
+    async def test_validate_connections_skips_agents_without_mcp(self):
+        """validate_connections() should skip agents without MCP providers."""
+        pool = TenantAgentPool(max_size=10)
+
+        mock_agent = MagicMock()
+        mock_agent._mcp_provider = None
+
+        pool._agents["primary:assistant"] = mock_agent
+        pool._access_order.append("primary:assistant")
+
+        stale = await pool.validate_connections()
+
+        assert stale == []
+
+    @pytest.mark.asyncio
+    async def test_validate_connections_returns_empty_for_healthy_agents(self):
+        """validate_connections() should return empty list when all connections are healthy."""
+        pool = TenantAgentPool(max_size=10)
+
+        mock_agent = MagicMock()
+        mock_provider = MagicMock()
+        mock_provider.get_tools = AsyncMock(return_value=[MagicMock(name="web_search")])
+        mock_agent._mcp_provider = mock_provider
+
+        pool._agents["primary:assistant"] = mock_agent
+        pool._access_order.append("primary:assistant")
+
+        stale = await pool.validate_connections()
+
+        assert stale == []

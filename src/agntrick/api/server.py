@@ -46,6 +46,25 @@ async def _check_mcp_health(app: FastAPI) -> None:
                 await pool.evict(tenant_id, agent_name)
 
 
+async def _keep_alive_pool(app: FastAPI) -> None:
+    """Periodically validate pooled agent connections and refresh stale ones.
+
+    Runs every 5 minutes. Detects stale MCP connections before user requests
+    hit them, preventing the 40s eviction+recreation penalty.
+    """
+    pool = app.state.agent_pool
+    while True:
+        await asyncio.sleep(300)  # Every 5 minutes
+        try:
+            stale = await pool.validate_connections()
+            for key in stale:
+                tenant_id, agent_name = key.split(":", 1)
+                logger.info("[keep-alive] evicting stale agent: %s", key)
+                await pool.evict(tenant_id, agent_name)
+        except Exception as e:
+            logger.warning("[keep-alive] error: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
@@ -130,12 +149,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state._health_task = asyncio.create_task(_check_mcp_health(app))
     logger.info("MCP health check task started")
 
+    # Start pool keep-alive task
+    app.state._keep_alive_task = asyncio.create_task(_keep_alive_pool(app))
+    logger.info("Pool keep-alive task started")
+
     yield
 
     # Cancel MCP health check task
     if hasattr(app.state, "_health_task"):
         app.state._health_task.cancel()
         logger.info("MCP health check task cancelled")
+
+    # Cancel pool keep-alive task
+    if hasattr(app.state, "_keep_alive_task"):
+        app.state._keep_alive_task.cancel()
+        logger.info("Pool keep-alive task cancelled")
 
     # Clean up SSE connections
     from agntrick.api.routes.whatsapp import sse_queues
