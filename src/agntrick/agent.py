@@ -103,6 +103,9 @@ class AgentBase(Agent):
         self._initial_mcp_tools = initial_mcp_tools
         self._thread_id = thread_id
         self._checkpointer = checkpointer
+        # Keep the checkpointer context manager alive so GC doesn't close
+        # the underlying SQLite connection while the agent is pooled.
+        self._checkpointer_ctx = kwargs.pop("_checkpointer_ctx", None)
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
         self._init_lock = asyncio.Lock()
