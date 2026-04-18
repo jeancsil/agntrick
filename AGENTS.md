@@ -463,18 +463,26 @@ Project-level `.claude/` contains automations for Claude Code:
 
 ### Hooks (`.claude/settings.json`)
 
+- **PreToolUse** on `Write|Edit`: blocks edits to `.bak` files and `.claude/worktrees/` copies
 - **PostToolUse** on `Write|Edit`: auto-formats `.py` files with `ruff format` + `ruff check --fix`
-- **PreToolUse** on `Write|Edit` (global): blocks `.env` file edits to prevent secret leaks
+
+### Hooks (`.claude/settings.local.json`)
+
+- **PostToolUse** on `Write|Edit`: auto-formats `.go` files with `gofmt -w`
 
 ### Skills (`.claude/skills/`)
 
 - **`/agntrick-add-agent`** — scaffolds a new agent (agent.py, prompt.md, test file, registry decorator)
 - **`/agntrick-add-tool`** — scaffolds a new tool (tool.py, test file, `__init__.py` export)
+- **`/agntrick-list-agents`** — lists all registered agents with MCP servers, tool categories, and prompt status
+- **`/release`** — end-to-end release workflow: version bump, changelog, tag, build, publish to PyPI (user-only)
 
 ### Subagents (`.claude/agents/`)
 
 - **`diagram-sync-checker`** — verifies Mermaid diagrams in this file match current code. Run when modifying `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/`
 - **`go-test-runner`** — runs Go gateway tests (`go vet`, `go fmt`, `go test`). Run when modifying `gateway/`
+- **`prompt-consistency-checker`** — cross-references agent registrations against prompt `.md` files. Run when adding/removing agents
+- **`python-dep-auditor`** — audits `pyproject.toml` dependencies against actual imports. Run when adding/removing packages
 
 ---
 

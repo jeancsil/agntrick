@@ -40,6 +40,19 @@
       "WebSearch"
     ]
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{ read -r json; f=$(echo \"$json\" | jq -r '.tool_input.file_path // .tool_response.filePath'); [[ \"$f\" == *.bak ]] && echo 'ERROR: Cannot edit .bak files' && exit 1; [[ \"$f\" == */.claude/worktrees/* ]] && echo 'ERROR: Cannot edit worktree files from main session' && exit 1; exit 0; }"
+          }
+        ]
+      }
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "context7"
