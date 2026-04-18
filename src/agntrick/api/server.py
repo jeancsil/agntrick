@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 temperature=config.llm.temperature,
                 thread_id=thread_id,
                 db_path=str(tenant_db._db_path),
-                progress_callback=lambda msg: None,
+                progress_callback=None,
             )
 
             if allowed_mcp:
@@ -131,10 +131,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
 
         if warmup_configs:
-            logger.info("Warming up %d agent(s) for %d tenant(s)...", len(warmup_configs), len(config.whatsapp.tenants))
+            logger.info("Warming up %s agent(s) for %s tenant(s)...", len(warmup_configs), len(config.whatsapp.tenants))
             try:
                 await app.state.agent_pool.warmup(warmup_configs)
-                logger.info("Agent pool warmup complete (pool_size=%d)", len(app.state.agent_pool))
+                logger.info("Agent pool warmup complete (pool_size=%s)", len(app.state.agent_pool))
             except Exception as e:
                 logger.warning("Agent pool warmup failed (agents will be created on first request): %s", e)
 
