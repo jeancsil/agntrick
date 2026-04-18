@@ -80,10 +80,16 @@ def send_chat_message(
         # Import here to avoid circular imports
         from fastapi.testclient import TestClient
 
+        from agntrick.api.pool import TenantAgentPool
         from agntrick.api.server import create_app
 
         # Create test client
         app = create_app()
+
+        # Initialize agent pool (normally done in lifespan, but TestClient doesn't run lifespan)
+        if not hasattr(app.state, "agent_pool"):
+            app.state.agent_pool = TenantAgentPool(max_size=10)
+
         client = TestClient(app)
 
         # Prepare request body
