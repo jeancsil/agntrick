@@ -70,6 +70,8 @@ make test           # pytest with coverage
 make format         # auto-format with ruff
 make install        # install dependencies (uv sync)
 make clean          # remove caches and artifacts
+make build          # build wheel and sdist
+make release VERSION=1.0.0  # tag and release package
 
 # CLI
 agntrick list                              # list registered agents
@@ -91,6 +93,11 @@ cd gateway && go fmt ./...
 cd gateway && go vet ./...
 make gateway-build
 make gateway-test
+
+# DO deployment (run on droplet)
+make deploy-do         # full deploy: build + restart + toolbox
+make deploy-do-logs    # tail service logs
+make deploy-do-stop    # stop all services
 ```
 
 ---
@@ -113,23 +120,28 @@ uv run <command>              # run in venv
 ```
 src/agntrick/
 ├── agent.py              # AgentBase — shared base class for all agents
-├── graph.py              # 4-node StateGraph (Summarize → Router → Executor → Responder)
+├── graph.py              # 3-node StateGraph (Summarize → Router → Agent)
 ├── chat_cli.py           # Local chat CLI with MCP subprocess management
 ├── cli.py                # Typer CLI entry point (list, info, run, chat, serve)
+├── cli_init.py           # `agntrick init` command — project scaffolding
 ├── config.py             # YAML config loading + AgntrickConfig model
 ├── constants.py          # BASE_DIR, LOGS_DIR, timeouts
 ├── registry.py           # Agent discovery and @AgentRegistry.register decorator
 ├── exceptions.py         # Custom exceptions
 ├── logging_config.py     # Logging setup
+├── timing.py             # Performance timing utilities
 ├── agents/               # Agent implementations
 │   ├── assistant.py      # Default generalist (orchestrates tools + agents)
 │   ├── developer.py      # Code exploration and development
 │   ├── committer.py      # Git commit automation
 │   ├── learning.py       # Educational content
 │   ├── news.py           # News aggregation
+│   ├── br_news.py        # Brazilian Portuguese news
+│   ├── es_news.py        # Spanish news
 │   ├── ollama.py         # Ollama-backed agent
 │   ├── youtube.py        # YouTube transcript extraction
-│   └── github_pr_reviewer.py  # PR review automation
+│   ├── github_pr_reviewer.py  # PR review automation
+│   └── paywall_remover.py     # Paywall bypass agent
 ├── tools/                # Tool implementations
 │   ├── agent_invocation.py   # Invoke other agents from within an agent
 │   ├── manifest.py           # Tool manifest client with circuit breaker
@@ -139,6 +151,7 @@ src/agntrick/
 │   ├── git_command.py        # Git operations
 │   ├── youtube_transcript.py # YouTube transcript fetcher
 │   ├── youtube_cache.py      # Transcript cache
+│   ├── deep_scrape.py        # Deep web page scraping with Playwright
 │   └── example.py            # Tool template
 ├── prompts/              # System prompts (loaded from .md files)
 │   ├── assistant.md
@@ -146,25 +159,29 @@ src/agntrick/
 │   ├── committer.md
 │   ├── learning.md
 │   ├── news.md
+│   ├── br-news.md
+│   ├── es-news.md
 │   ├── ollama.md
 │   ├── youtube.md
 │   ├── github_pr_reviewer.md
+│   ├── paywall_remover.md
 │   ├── generator.py       # Prompt generation utilities
-│   ├── loader.py          # Prompt loading from .md files
-│   └── templates/         # Jinja prompt templates
+│   └── loader.py          # Prompt loading from .md files
 ├── api/                  # FastAPI multi-tenant server
 │   ├── server.py         # App factory (create_app)
-│   ├── routes/           # Route handlers (WhatsApp webhook, health)
-│   ├── middleware/        # Logging, error handling, auth
-│   ├── models/           # Pydantic request/response models
-│   └── database/         # DB connection and sessions
+│   ├── pool.py           # TenantAgentPool — per-tenant agent instances with LRU eviction
+│   ├── routes/           # Route handlers (WhatsApp webhook, health, agents)
+│   ├── middleware.py      # Logging, error handling
+│   ├── auth.py           # API key authentication
+│   ├── deps.py           # FastAPI dependency injection
+│   ├── resilience.py     # Retry and circuit breaker for API calls
+│   └── security.py       # Input validation and sanitization
 ├── whatsapp/             # WhatsApp integration
-│   ├── tenant_registry.py     # Phone-to-tenant registry
-│   ├── webhook.py             # WhatsApp webhook handlers
-│   └── session_manager.py     # Session management
+│   └── registry.py            # Phone-to-tenant registry
 ├── mcp/                  # MCP integration
 │   ├── config.py         # MCP server configurations
-│   └── provider.py       # MCP connection management
+│   ├── provider.py       # MCP connection management
+│   └── interceptors.py   # MCP request/response interceptors
 ├── services/             # Shared services
 │   ├── audio_transcriber.py      # Groq-based audio transcription
 │   └── audio_transcription_cache.py  # Transcription cache
@@ -188,16 +205,27 @@ gateway/                  # Go WhatsApp gateway
 ├── message.go            # Message handling + self-message detection
 ├── http_client.go        # HTTP client for Python API
 ├── qr.go                 # QR code generation
+├── config_test.go        # Config parsing tests
+├── message_test.go       # Message handling tests
+├── session_test.go       # Session tests
 └── go.mod
 
 tests/                    # Test suite
 ├── test_graph.py         # Graph routing/intent tests
+├── test_agent.py         # Agent base class tests
 ├── test_chat_cli.py      # Chat CLI + MCP manager tests
 ├── test_agent_invocation.py
+├── test_cli.py           # CLI command tests
+├── test_cli_init.py      # `agntrick init` tests
+├── test_config.py        # Config loading tests
+├── test_pool.py          # Tenant agent pool tests
+├── test_timing.py        # Timing utilities tests
 ├── test_api/             # API route tests
 ├── test_mcp/             # MCP provider tests
 ├── test_tools/           # Tool tests
 ├── test_prompts/         # Prompt loading tests
+├── test_integration/     # End-to-end integration tests
+├── test_storage/         # Storage layer tests
 └── ...                   # Per-module test files
 ```
 
@@ -251,7 +279,7 @@ flowchart TD
     classDef blocking fill:#ff6b6b,stroke:#c0392b,color:#fff
 ```
 
-### Graph Detail (3-Node StateGraph)
+### Graph Detail (3-Node StateGraph: Summarize → Router → Agent)
 
 ```mermaid
 flowchart LR
@@ -403,7 +431,7 @@ uv run pytest tests/test_graph.py  # run specific file
 - **Never** use pip/poetry/pipenv — only `uv`
 - **Before** adding features, check if similar functionality exists
 - **Before** refactoring, ensure tests cover affected code
-- **When modifying** `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`: verify the "Execution Flow" Mermaid diagrams still reflect the current code
+- **When modifying** `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/`: verify the "Execution Flow" Mermaid diagrams still reflect the current code
 
 ---
 
@@ -445,7 +473,7 @@ Project-level `.claude/` contains automations for Claude Code:
 
 ### Subagents (`.claude/agents/`)
 
-- **`diagram-sync-checker`** — verifies Mermaid diagrams in this file match current code. Run when modifying `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`
+- **`diagram-sync-checker`** — verifies Mermaid diagrams in this file match current code. Run when modifying `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/`
 - **`go-test-runner`** — runs Go gateway tests (`go vet`, `go fmt`, `go test`). Run when modifying `gateway/`
 
 ---
