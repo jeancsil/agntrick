@@ -40,9 +40,8 @@ _MAX_WINDOW_MESSAGES = 20
 
 # Maximum messages retained in checkpointer state.
 # Prunes the oldest messages when exceeded — prevents unbounded token waste.
-# Lowered to 10 (from 20) to keep context tight for WhatsApp where
-# RemoveMessage doesn't persist in AsyncSqliteSaver.
-_MAX_STATE_MESSAGES = 10
+# Raised to 20 to preserve context for follow-up questions across turns.
+_MAX_STATE_MESSAGES = 20
 
 # Intent-specific tool call limits to prevent tool usage spirals.
 _INTENT_TOOL_LIMITS: dict[str, int] = {
@@ -303,12 +302,14 @@ class AgentState(TypedDict, total=False):
 
 
 # Token threshold above which summarization is triggered.
-# 500 tokens ≈ 10-12 short WhatsApp messages — triggers early compression
-# before context bloats and slows every LLM call.
-_SUMMARIZE_TOKEN_THRESHOLD = 500
+# 2000 tokens ≈ 40-50 short WhatsApp messages — allows enough context
+# for follow-up questions (pronouns, references) before compressing.
+# Previous value (500) was too aggressive: after 2 tool-use exchanges
+# the state was summarized, losing conversation context for follow-ups.
+_SUMMARIZE_TOKEN_THRESHOLD = 2000
 
 # Number of most-recent messages to keep unsummarized.
-_SUMMARIZE_KEEP_RECENT = 2
+_SUMMARIZE_KEEP_RECENT = 4
 
 # Maximum tokens for the summary output.
 _SUMMARY_MAX_TOKENS = 128

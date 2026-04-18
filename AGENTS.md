@@ -16,6 +16,25 @@ Do not claim done until both pass. Fix all lint errors and test failures first.
 
 ---
 
+## Deployment
+
+This project runs on bare-metal Digital Ocean Ubuntu droplets. Do NOT suggest Docker-based deployment. Always target the droplet environment directly (systemd services, Go binary builds, Python venvs). Use the `/deploy-do` skill to deploy branches to the droplet.
+
+---
+
+## Verification
+
+After making code changes that fix bugs, always verify the fix against the actual runtime before declaring it complete. What "actual runtime" means depends on what changed:
+
+- **Agent/graph changes:** `agntrick chat "test prompt" -a <agent>`
+- **API/server changes:** `agntrick serve` then `curl http://localhost:8000/health`
+- **Tool changes:** `agntrick chat` with a prompt that exercises the tool
+- **Config/prompt changes:** `agntrick list` + `agntrick chat` to verify loading
+
+Running `make check && make test` is necessary but not sufficient — it does not exercise real prompt loading, tool registration, or agent instantiation.
+
+---
+
 ## Working with agntrick-toolkit (MCP Toolbox)
 
 Agntrick works best paired with **[agntrick-toolkit](https://github.com/jeancsil/agntrick-toolbox)** — a Docker-based MCP server providing 12+ curated CLI tools (pdf, pandoc, jq, ffmpeg, ripgrep, git, etc.).
@@ -305,6 +324,12 @@ class MyAgent(AgentBase):
 
 ---
 
+## Subagents & Execution
+
+When asked to execute a plan, prefer dispatching subagents for parallel work immediately. Use subagents focused on individual tasks rather than doing everything inline. Always verify subagent output before committing.
+
+---
+
 ## Code Standards
 
 - **Type hints required** — strict mypy. All functions must have type hints.
@@ -312,7 +337,16 @@ class MyAgent(AgentBase):
 - **Async everywhere** — agent `run()` methods are async. Never call blocking sync code in async context.
 - **Tools return error strings** — never raise exceptions from tools. Return `"Error: ..."` strings.
 - **Error handling** — use try/except in tools, return user-friendly error strings.
-- **Docker preferred** — avoid installing dependencies locally when Docker works.
+- **Docker preferred for local development** — avoid installing dependencies locally when Docker works. Do NOT use Docker for production deployment (bare-metal DO droplets).
+
+---
+
+## Code Quality
+
+- Always run the full test suite (`make test` or equivalent) before committing.
+- Fix lint errors (ruff) in one pass — check noqa placement carefully.
+- Keep prompts and configs simple; do not over-engineer with unnecessary vocabulary policing or scoping rules.
+- When fixing bugs, identify root cause before writing code. Do not layer fix upon fix without understanding the underlying issue.
 
 ---
 
@@ -370,6 +404,15 @@ uv run pytest tests/test_graph.py  # run specific file
 - **Before** adding features, check if similar functionality exists
 - **Before** refactoring, ensure tests cover affected code
 - **When modifying** `agent.py`, `graph.py`, `mcp/provider.py`, `tools/manifest.py`, `api/routes/`, or `whatsapp/webhook.py`: verify the "Execution Flow" Mermaid diagrams still reflect the current code
+
+---
+
+## Git Workflow
+
+- Always confirm the current branch before committing.
+- Use feature branches with PRs for substantive changes.
+- After PR merge: pull main, remove worktree, delete branch.
+- Never include 'superpowers' docs or Claude-specific metadata in commits.
 
 ---
 
