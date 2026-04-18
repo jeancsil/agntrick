@@ -68,8 +68,9 @@ func (c *HTTPClient) SendDisconnectedStatus(tenantID string) error {
 
 // apiResponse represents the JSON response from the Python API
 type apiResponse struct {
-	Response string `json:"response"`
-	TenantID string `json:"tenant_id"`
+	Response        string `json:"response"`
+	TenantID        string `json:"tenant_id"`
+	WakeWordMatched string `json:"wake_word_matched,omitempty"` // "true" or "false" for audio messages
 }
 
 // ForwardMessage forwards a message to the Python API and returns the agent's text response.
@@ -126,8 +127,14 @@ func (c *HTTPClient) ForwardMessage(tenantID string, phone string, messageText s
 	return apiResp.Response, nil
 }
 
+// AudioResponse holds the result of forwarding an audio message.
+type AudioResponse struct {
+	Response        string
+	WakeWordMatched bool // true when the audio contained the wake word
+}
+
 // ForwardAudioMessage sends audio data to the Python API for transcription and agent processing.
-func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioData []byte, mimeType string) (string, error) {
+func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioData []byte, mimeType string) (AudioResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/channels/whatsapp/audio", c.baseURL)
 
 	// Build multipart form
@@ -137,10 +144,10 @@ func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioDat
 	// Add audio file
 	part, err := writer.CreateFormFile("audio", "voice_message.ogg")
 	if err != nil {
-		return "", fmt.Errorf("failed to create multipart form: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to create multipart form: %w", err)
 	}
 	if _, err := part.Write(audioData); err != nil {
-		return "", fmt.Errorf("failed to write audio data: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to write audio data: %w", err)
 	}
 
 	// Add metadata fields
@@ -151,7 +158,7 @@ func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioDat
 
 	req, err := http.NewRequest("POST", url, &buf)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -161,29 +168,29 @@ func (c *HTTPClient) ForwardAudioMessage(tenantID string, phone string, audioDat
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
+		return AudioResponse{}, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var apiResp apiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return "", fmt.Errorf("failed to parse API response: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to parse API response: %w", err)
 	}
 
-	if apiResp.Response == "" {
-		return "", fmt.Errorf("empty response from API")
-	}
-
-	return apiResp.Response, nil
+	wakeMatched := apiResp.WakeWordMatched != "false"
+	return AudioResponse{
+		Response:        apiResp.Response,
+		WakeWordMatched: wakeMatched,
+	}, nil
 }
 
 // post sends a POST request to the Python API

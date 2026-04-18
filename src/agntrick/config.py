@@ -142,6 +142,7 @@ class WhatsAppTenantConfig:
     default_agent: str = "developer"
     allowed_contacts: list[str] = field(default_factory=list)
     system_prompt: str | None = None
+    wake_word: str | None = None
 
 
 @dataclass
@@ -200,6 +201,7 @@ class AgntrickConfig:
                     default_agent=t.get("default_agent", "developer"),
                     allowed_contacts=t.get("allowed_contacts", []),
                     system_prompt=t.get("system_prompt"),
+                    wake_word=t.get("wake_word"),
                 )
             )
 
