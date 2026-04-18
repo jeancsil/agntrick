@@ -2,7 +2,7 @@
 
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage
@@ -1821,3 +1821,165 @@ class TestPreRouting:
 
         assert _pre_route("") is None
         assert _pre_route("   ") is None
+
+
+class TestToolRetry:
+    """Tests for transient error retry in direct tool calls."""
+
+    def test_is_transient_error_classification(self):
+        from agntrick.graph import _is_transient_error
+
+        assert _is_transient_error(ConnectionError("reset")) is True
+        assert _is_transient_error(TimeoutError("timed out")) is True
+        assert _is_transient_error(OSError("broken pipe")) is True
+        assert _is_transient_error(ValueError("invalid input")) is False
+        assert _is_transient_error(Exception("503 Service Unavailable")) is True
+        assert _is_transient_error(Exception("connection reset by peer")) is True
+        assert _is_transient_error(Exception("no active connection")) is True
+        assert _is_transient_error(Exception("404 Not Found")) is False
+
+    @pytest.mark.asyncio
+    async def test_retry_on_transient_fast_error(self):
+        """Should retry once on transient errors if first attempt was fast."""
+        from agntrick.graph import _direct_tool_call
+
+        call_count = 0
+
+        class FakeTool:
+            name = "web_search"
+            description = "Search"
+            args_schema = MagicMock()
+
+            async def ainvoke(self, args):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise ConnectionError("connection reset")
+                return "search results"
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Results here."))
+
+        fake = FakeTool()
+        with patch("agntrick.graph._make_flat_tool", return_value=fake):
+            result = await _direct_tool_call(
+                user_message="test",
+                tool_plan="web_search",
+                tools=[fake],
+                model=mock_model,
+                system_prompt="test",
+            )
+
+        assert call_count == 2
+        assert "Error" not in str(result.content)
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_non_transient_error(self):
+        """Should NOT retry on non-transient errors."""
+        from agntrick.graph import _direct_tool_call
+
+        call_count = 0
+
+        class FakeTool:
+            name = "web_search"
+            description = "Search"
+            args_schema = MagicMock()
+
+            async def ainvoke(self, args):
+                nonlocal call_count
+                call_count += 1
+                raise ValueError("invalid input")
+
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Error."))
+
+        fake = FakeTool()
+        with patch("agntrick.graph._make_flat_tool", return_value=fake):
+            result = await _direct_tool_call(
+                user_message="test",
+                tool_plan="web_search",
+                tools=[fake],
+                model=mock_model,
+                system_prompt="test",
+            )
+
+        assert call_count == 1
+        assert "Error" in str(result.content)
+
+
+class TestDelegationFastPath:
+    """Tests for direct agent delegation (bypassing thread-based invocation)."""
+
+    @pytest.mark.asyncio
+    async def test_delegate_calls_agent_directly(self):
+        """delegate intent should call the target agent directly."""
+        from agntrick.graph import agent_node
+
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.run = AsyncMock(return_value="YouTube transcript result")
+        mock_agent_instance._ensure_initialized = AsyncMock()
+        mock_cls = MagicMock(return_value=mock_agent_instance)
+
+        with (
+            patch("agntrick.registry.AgentRegistry.get", return_value=mock_cls),
+            patch("agntrick.registry.AgentRegistry.get_tool_categories", return_value=None),
+            patch("agntrick.tools.agent_invocation.DELEGATABLE_AGENTS", ["youtube"]),
+        ):
+            state: AgentState = {
+                "messages": [HumanMessage(content="Analyze https://youtube.com/watch?v=123")],
+                "intent": "delegate",
+                "tool_plan": "youtube",
+                "progress": [],
+                "final_response": None,
+            }
+
+            result = await agent_node(
+                state,
+                MagicMock(),
+                model=MagicMock(),
+                tools=[],
+                system_prompt="You are a helpful assistant.",
+            )
+
+        assert result["final_response"] is not None
+        mock_agent_instance.run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delegate_timeout_returns_error(self):
+        """delegate should return error on timeout."""
+        import asyncio as _asyncio
+
+        from agntrick.graph import agent_node
+
+        mock_agent_instance = MagicMock()
+
+        async def _slow_run(msg):
+            await _asyncio.sleep(200)
+            return "never"
+
+        mock_agent_instance.run = _slow_run
+        mock_agent_instance._ensure_initialized = AsyncMock()
+        mock_cls = MagicMock(return_value=mock_agent_instance)
+
+        with (
+            patch("agntrick.registry.AgentRegistry.get", return_value=mock_cls),
+            patch("agntrick.registry.AgentRegistry.get_tool_categories", return_value=None),
+            patch("agntrick.tools.agent_invocation.DELEGATABLE_AGENTS", ["youtube"]),
+        ):
+            state: AgentState = {
+                "messages": [HumanMessage(content="Analyze YouTube video")],
+                "intent": "delegate",
+                "tool_plan": "youtube",
+                "progress": [],
+                "final_response": None,
+            }
+
+            result = await agent_node(
+                state,
+                MagicMock(),
+                model=MagicMock(),
+                tools=[],
+                system_prompt="You are a helpful assistant.",
+            )
+
+        assert "timed out" in result["final_response"].lower()

@@ -4,6 +4,7 @@ Summarize → Router → Agent with template WhatsApp formatting.
 All intents (including chat) route through agent node for response generation.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -673,6 +674,33 @@ def _extract_tool_args(tool_name: str, user_message: str) -> dict[str, Any]:
     return {"input_str": user_message}
 
 
+_TRANSIENT_ERROR_TYPES: tuple[type[Exception], ...] = (
+    asyncio.TimeoutError,
+    TimeoutError,
+    ConnectionError,
+    OSError,
+)
+
+_TRANSIENT_ERROR_MESSAGES: tuple[str, ...] = (
+    "connection reset",
+    "broken pipe",
+    "remote protocol error",
+    "503",
+    "502",
+    "connection refused",
+    "timed out",
+    "no active connection",
+)
+
+
+def _is_transient_error(error: Exception) -> bool:
+    """Check if an error is transient and worth retrying."""
+    if isinstance(error, _TRANSIENT_ERROR_TYPES):
+        return True
+    error_str = str(error).lower()
+    return any(msg in error_str for msg in _TRANSIENT_ERROR_MESSAGES)
+
+
 async def _direct_tool_call(
     user_message: str,
     tool_plan: str,
@@ -716,8 +744,25 @@ async def _direct_tool_call(
     except Exception as e:
         tool_elapsed = time.monotonic() - start
         timing_end("tool_exec")
-        logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
-        tool_result = f"Error: {e}"
+
+        # Retry once for transient errors if first attempt was fast (<3s)
+        if _is_transient_error(e) and tool_elapsed < 3.0:
+            logger.info("[retry] %s transient error (%.1fs), retrying after 1s: %s", tool_plan, tool_elapsed, e)
+            await asyncio.sleep(1.0)
+            timing_start("tool_exec_retry")
+            try:
+                tool_result = await target.ainvoke(tool_args)
+                retry_elapsed = time.monotonic() - start
+                timing_end("tool_exec_retry")
+                logger.info("[retry] %s succeeded on retry in %.1fs", tool_plan, retry_elapsed)
+            except Exception as retry_e:
+                retry_elapsed = time.monotonic() - start
+                timing_end("tool_exec_retry")
+                logger.warning("[retry] %s failed on retry in %.1fs: %s", tool_plan, retry_elapsed, retry_e)
+                tool_result = f"Error: {retry_e}"
+        else:
+            logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
+            tool_result = f"Error: {e}"
 
     formatting_prompt = (
         "You are a helpful WhatsApp assistant. Respond to the user's question "
@@ -853,6 +898,52 @@ async def agent_node(
             timing_summary("tool_use")
             return {"final_response": formatted, "messages": [direct_result] + removes}
         # If tool not found, fall through to sub-agent path (handles edge cases)
+
+    # Delegation fast path: call target agent directly without thread/invocation tool.
+    # The router already decided which agent to delegate to — creating a sub-agent
+    # that then calls invoke_agent (which creates a thread + new event loop) wastes
+    # 2 LLM calls and blocks for up to 240s.
+    if intent == "delegate" and tool_plan:
+        from agntrick.registry import AgentRegistry as _AR
+        from agntrick.tools.agent_invocation import DELEGATABLE_AGENTS as _DA
+
+        if tool_plan in _DA:
+            agent_cls: Any = _AR.get(tool_plan)
+            if agent_cls is not None:
+                user_msg = str(state["messages"][-1].content)
+                tool_categories = _AR.get_tool_categories(tool_plan)
+                try:
+                    timing_start("delegate")
+                    delegated = agent_cls(
+                        _agent_name=tool_plan,
+                        tool_categories=tool_categories,
+                    )
+                    delegate_result = await asyncio.wait_for(
+                        delegated.run(user_msg),
+                        timeout=120,
+                    )
+                    timing_end("delegate")
+                    formatted = _format_for_whatsapp(str(delegate_result))
+                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    timing_summary("delegate")
+                    return {
+                        "final_response": formatted,
+                        "messages": [AIMessage(content=str(delegate_result))] + removes,
+                    }
+                except asyncio.TimeoutError:
+                    timing_end("delegate")
+                    logger.warning("[delegate] agent '%s' timed out after 120s", tool_plan)
+                    error_msg = f"The request to {tool_plan} timed out. Please try again."
+                    formatted = _format_for_whatsapp(error_msg)
+                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    return {
+                        "final_response": formatted,
+                        "messages": [AIMessage(content=error_msg)] + removes,
+                    }
+                except Exception as e:
+                    timing_end("delegate")
+                    logger.warning("[delegate] agent '%s' failed: %s", tool_plan, e)
+                    # Fall through to sub-agent path as fallback
 
     if progress_callback:
         await progress_callback("Analyzing your request...")
