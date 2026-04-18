@@ -516,6 +516,29 @@ _PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
         "tool_use",
         "web_fetch",
     ),
+    # YouTube URLs → delegate to youtube agent
+    (
+        re.compile(
+            r"(https?://(www\.)?(youtube\.com|youtu\.be)/\S+)"
+            r"|((?:assist|watch|veja|analyze|resum|summariz).*(?:youtube|vídeo|video))"
+            r"|((?:youtube|vídeo|video).*(?:assist|watch|veja|analyze|resum|summariz))",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "youtube",
+    ),
+    # Paywalled/blocked sites → delegate to paywall-remover
+    (
+        re.compile(
+            r"https?://(www\.)?"
+            r"(globo\.com|folha\.uol\.com\.br|estadao\.com\.br|"
+            r"wsj\.com|nytimes\.com|ft\.com|bloomberg\.com|"
+            r"washingtonpost\.com|veja\.abril\.com\.br)/\S+",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "paywall-remover",
+    ),
     # Bare URL only (message is ONLY a URL, nothing else)
     (
         re.compile(r"^https?://\S+$"),

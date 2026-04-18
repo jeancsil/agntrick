@@ -1816,6 +1816,34 @@ class TestPreRouting:
         result = _pre_route("noticias sobre https://example.com")
         assert result == {"intent": "tool_use", "tool_plan": "web_search"}
 
+    def test_youtube_url_delegates(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == {
+            "intent": "delegate",
+            "tool_plan": "youtube",
+        }
+        assert _pre_route("https://youtu.be/abc123") == {
+            "intent": "delegate",
+            "tool_plan": "youtube",
+        }
+
+    def test_paywalled_url_delegates(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("https://www.globo.com/economia/artigo") == {
+            "intent": "delegate",
+            "tool_plan": "paywall-remover",
+        }
+        assert _pre_route("https://www.folha.uol.com.br/mercado/") == {
+            "intent": "delegate",
+            "tool_plan": "paywall-remover",
+        }
+        assert _pre_route("https://www.wsj.com/articles/some-article") == {
+            "intent": "delegate",
+            "tool_plan": "paywall-remover",
+        }
+
     def test_empty_message(self):
         from agntrick.graph import _pre_route
 
