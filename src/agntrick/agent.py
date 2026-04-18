@@ -66,6 +66,7 @@ class AgentBase(Agent):
         toolbox_url: str | None = None,
         _agent_name: str | None = None,
         progress_callback: Any | None = None,
+        mcp_server_names: list[str] | None = None,
         **kwargs: Any,
     ):
         """Initialize the agent.
@@ -81,6 +82,8 @@ class AgentBase(Agent):
             toolbox_url: URL of the toolbox server for tool manifest fetching. If not provided,
                         uses TOOLBOX_URL env var or defaults to http://localhost:8080/sse.
             _agent_name: Internal agent name (set by registry when creating agents).
+            progress_callback: Optional callback for progress updates.
+            mcp_server_names: Optional list of MCP server names for persistent connections.
             **kwargs: Additional arguments (for future compatibility).
         """
         config = get_config()
@@ -100,6 +103,9 @@ class AgentBase(Agent):
         self._initial_mcp_tools = initial_mcp_tools
         self._thread_id = thread_id
         self._checkpointer = checkpointer
+        # Keep the checkpointer context manager alive so GC doesn't close
+        # the underlying SQLite connection while the agent is pooled.
+        self._checkpointer_ctx = kwargs.pop("_checkpointer_ctx", None)
         self._tools: List[Any] = list(self.local_tools())
         self._graph: Any | None = None
         self._init_lock = asyncio.Lock()
@@ -110,6 +116,7 @@ class AgentBase(Agent):
         self._toolbox_url = toolbox_url
         self._tool_manifest: ToolManifest | None = None
         self._progress_callback = progress_callback
+        self._mcp_server_names = mcp_server_names
 
     @property
     @abstractmethod
@@ -176,14 +183,13 @@ class AgentBase(Agent):
         """Resolve per-node model instances for graph nodes.
 
         Returns:
-            Dict mapping node names ("router", "executor", "responder") to
-            model instances. Only includes nodes that have explicit node-level
-            overrides configured (not the agent-level fallback).
+            Dict mapping node names ("router", "agent") to model instances.
+            Only includes nodes that have explicit overrides configured.
         """
         config = get_config()
         node_map = config.agent_models.node_overrides.get(self._agent_name, {})
         overrides: dict[str, Any] = {}
-        for node in ("router", "executor", "responder"):
+        for node in ("router", "agent"):
             node_model_name = node_map.get(node)
             if node_model_name:
                 overrides[node] = _create_model(node_model_name, config.llm.temperature)
@@ -332,7 +338,14 @@ class AgentBase(Agent):
             # Get system prompt (potentially with tools)
             system_prompt = self._get_system_prompt()
 
-            self._tools.extend(await self._load_mcp_tools())
+            # Load MCP tools — use persistent provider if mcp_server_names given
+            if self._mcp_server_names and self._mcp_provider is None:
+                self._mcp_provider = MCPProvider(server_names=self._mcp_server_names)
+                mcp_tools = await self._mcp_provider.get_tools()
+                self._tools.extend(mcp_tools)
+            else:
+                self._tools.extend(await self._load_mcp_tools())
+
             self._graph = self._create_graph(
                 model=self.model,
                 tools=self._tools,

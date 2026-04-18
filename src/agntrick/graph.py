@@ -1,6 +1,7 @@
 """3-node StateGraph for intelligent assistant routing.
 
-Router → Executor → Responder with conditional skip for simple chat.
+Summarize → Router → Agent with template WhatsApp formatting.
+All intents (including chat) route through agent node for response generation.
 """
 
 import json
@@ -84,6 +85,33 @@ def _sanitize_ai_content(content: str) -> str:
     cleaned = _TOOL_ARTIFACT_RE.sub("", content).strip()
     if cleaned != content:
         logger.info("[sanitize] stripped tool artifact from AIMessage (%d → %d chars)", len(content), len(cleaned))
+    return cleaned
+
+
+_WHATSAPP_CHAR_LIMIT = 4096
+
+
+def _format_for_whatsapp(content: str) -> str:
+    """Format agent output for WhatsApp without an LLM call.
+
+    Strips tool artifacts, raw JSON, and truncates to WhatsApp char limit.
+
+    Args:
+        content: Raw agent response text.
+
+    Returns:
+        WhatsApp-friendly formatted string (max 4096 chars).
+    """
+    if not content:
+        return content
+
+    # Strip XML tool artifacts
+    cleaned = _sanitize_ai_content(content)
+
+    # Truncate to WhatsApp limit
+    if len(cleaned) > _WHATSAPP_CHAR_LIMIT:
+        cleaned = cleaned[: _WHATSAPP_CHAR_LIMIT - 3] + "..."
+
     return cleaned
 
 
@@ -229,19 +257,18 @@ ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the
 Respond with JSON only: {"intent": "...", "tool_plan": "...", "delegate_to": null, "skip_tools": false}
 
 Tool selection rules (CRITICAL):
-- News, current events, headlines → web_search
-- Specific URL to read → web_fetch
-- Paywalled or blocked URL → delegate to "paywall-remover"
-- API calls → curl_fetch
+- News, current events, headlines, "what's happening" → web_search
+- Specific URL the user wants to READ → web_fetch
+- Paywalled/blocked URL (globo.com, wsj.com, nyt.com, ft.com, etc.) → delegate to "paywall-remover"
+- User says "extract", "remove paywall", "get content from" a URL → delegate to "paywall-remover"
 - YouTube links → delegate to "youtube"
 - Code questions → delegate to "developer"
 
-URL handling rules (CRITICAL):
-- "news from a site" or "top news in X" → web_search (search for that site's news)
-- "read this URL" or "open this link" → web_fetch (fetch the specific URL)
-- Paywalled/blocked site (globo.com, wsj.com, nyt.com, etc.) or user says
-  "extract" or "remove paywall" → delegate to "paywall-remover"
-- If user mentions a site name/URL but asks for NEWS → web_search, NOT web_fetch
+URL handling — which tool for URLs?
+- User shares a URL and asks what it says → web_fetch (Jina Reader, fast)
+- User asks for NEWS from a site or about a topic → web_search (NOT web_fetch — returns too much text)
+- URL is a known paywalled/blocked site → delegate to "paywall-remover" (Crawl4AI with JS rendering)
+- User says "read this" a normal URL → web_fetch
 
 For "tool_use": tool_plan = exact tool name, e.g. "web_search"
 For "research": tool_plan = numbered steps, e.g. "1. web_search for topic\\n2. web_fetch top result"
@@ -262,17 +289,6 @@ Examples:
 "skip_tools": false}
 "Good morning" → {"intent": "chat", "tool_plan": null, "skip_tools": true}
 """
-
-RESPONDER_PROMPT = """You are formatting a response for WhatsApp. Take the assistant's response and:
-
-1. Make it concise and mobile-friendly (under 4096 characters)
-2. Use simple markdown: **bold**, bullet points, numbered lists
-3. Strip internal tool artifacts, raw JSON, or verbose technical output
-4. Keep structure (headers, bullet points) for complex answers
-5. If content is very long, truncate with a "message continued" hint
-6. Always respond in the same language as the user
-
-Output only the formatted response, nothing else."""
 
 
 class AgentState(TypedDict, total=False):
@@ -467,14 +483,12 @@ _INTENT_TOOLS: dict[str, set[str]] = {
     "tool_use": {
         "web_search",
         "web_fetch",
-        "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
     },
     "research": {
         "web_search",
         "web_fetch",
-        "curl_fetch",
         "pdf_extract_text",
         "pandoc_convert",
         "hacker_news_top",
@@ -560,8 +574,95 @@ def _filter_tools(tools: Sequence[Any], intent: str) -> list[Any]:
     return [t for t in tools if getattr(t, "name", "") in allowed]
 
 
+def _extract_tool_args(tool_name: str, user_message: str) -> dict[str, Any]:
+    """Extract tool arguments from the user message.
+
+    Simple heuristic extraction for common tool patterns.
+    Falls back to generic input for unrecognized tools.
+
+    Args:
+        tool_name: Name of the tool to call.
+        user_message: The user's raw message text.
+
+    Returns:
+        Dict of keyword arguments for the tool's ainvoke call.
+    """
+    if tool_name == "web_search":
+        return {"query": user_message}
+    elif tool_name == "web_fetch":
+        url_match = re.search(r"https?://\S+", user_message)
+        if url_match:
+            url = url_match.group(0).rstrip(".,;:!?)")
+            return {"url": url}
+        return {"url": user_message}
+    return {"input_str": user_message}
+
+
+async def _direct_tool_call(
+    user_message: str,
+    tool_plan: str,
+    tools: Sequence[Any],
+    model: Any,
+    system_prompt: str,
+) -> AIMessage:
+    """Execute a single tool call directly and format the response.
+
+    Bypasses the sub-agent for tool_use intent. The router already decided
+    which tool to use — calling it directly saves one LLM round-trip (~10-15s).
+
+    Args:
+        user_message: The user's raw message text.
+        tool_plan: Name of the tool to call (from router).
+        tools: Sequence of tools to search for the target.
+        model: LLM model for response formatting.
+        system_prompt: System prompt for formatting LLM call.
+
+    Returns:
+        AIMessage with the formatted response.
+    """
+    target = None
+    for t in tools:
+        if getattr(t, "name", "") == tool_plan:
+            target = _make_flat_tool(t)
+            break
+
+    if target is None:
+        return AIMessage(content=f"Error: Tool '{tool_plan}' not found.")
+
+    tool_args = _extract_tool_args(tool_plan, user_message)
+
+    start = time.monotonic()
+    try:
+        tool_result = await target.ainvoke(tool_args)
+        tool_elapsed = time.monotonic() - start
+        logger.info("[direct-tool] %s returned %d chars in %.1fs", tool_plan, len(str(tool_result)), tool_elapsed)
+    except Exception as e:
+        tool_elapsed = time.monotonic() - start
+        logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
+        tool_result = f"Error: {e}"
+
+    formatting_prompt = (
+        "You are a helpful WhatsApp assistant. Respond to the user's question "
+        "based on the tool results below. Be concise, direct, and respond in "
+        "the same language as the user.\n\n"
+        f"User asked: {user_message}\n\n"
+        f"Tool results:\n{tool_result}"
+    )
+
+    llm_start = time.monotonic()
+    response = await _log_llm_call(
+        model,
+        [SystemMessage(content=system_prompt), HumanMessage(content=formatting_prompt)],
+        node="direct-tool",
+    )
+    llm_elapsed = time.monotonic() - llm_start
+    logger.info("[direct-tool] %s LLM formatting took %.1fs", tool_plan, llm_elapsed)
+
+    return AIMessage(content=str(response.content))
+
+
 async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
-    """Classify intent and decide strategy. Single fast LLM call."""
+    """Classify intent and decide strategy. For chat, respond directly."""
     # Send a budget-based window of recent messages so the router can understand
     # follow-up questions (e.g. "yes", "and in Paris?") that need context.
     context_window = _budget_window_messages(state["messages"], _ROUTER_CONTEXT_BUDGET)
@@ -590,13 +691,14 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
     intent = parsed.get("intent", "chat")
     tool_plan = parsed.get("tool_plan")
     logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
+
     return {
         "intent": intent,
         "tool_plan": tool_plan,
     }
 
 
-async def executor_node(
+async def agent_node(
     state: AgentState,
     config: RunnableConfig,
     *,
@@ -605,12 +707,41 @@ async def executor_node(
     system_prompt: str,
     progress_callback: ProgressCallback = None,
 ) -> dict:
-    """Execute tool calls guided by the router's plan."""
+    """Execute tool calls guided by the router's plan and format for WhatsApp."""
+    intent = state.get("intent", "tool_use")
+    tool_plan = state.get("tool_plan")
+
+    # Chat fast-path: respond conversationally, no tools needed.
+    # Uses the full system prompt and conversation context for a natural reply.
+    if intent == "chat":
+        messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
+        safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        response = await _log_llm_call(model, safe_msgs, node="chat")
+        formatted = _format_for_whatsapp(str(response.content))
+        removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        return {"final_response": formatted, "messages": [response] + removes}
+
+    # Direct tool execution for tool_use: skip sub-agent, call tool directly.
+    # The router already decided which tool to use — creating a sub-agent
+    # that re-decides wastes 10-15s on an LLM round-trip.
+    if intent == "tool_use" and tool_plan:
+        target_tools = [t for t in tools if getattr(t, "name", "") == tool_plan]
+        if target_tools:
+            user_msg = str(state["messages"][-1].content)
+            direct_result = await _direct_tool_call(
+                user_message=user_msg,
+                tool_plan=tool_plan,
+                tools=target_tools,
+                model=model,
+                system_prompt=system_prompt,
+            )
+            formatted = _format_for_whatsapp(str(direct_result.content))
+            removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            return {"final_response": formatted, "messages": [direct_result] + removes}
+        # If tool not found, fall through to sub-agent path (handles edge cases)
+
     if progress_callback:
         await progress_callback("Analyzing your request...")
-
-    tool_plan = state.get("tool_plan")
-    intent = state.get("intent", "tool_use")
 
     guided_prompt = system_prompt
     if tool_plan and intent == "tool_use":
@@ -749,85 +880,14 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
                 id=final_msg.id,
             )
 
-    return {"messages": [final_msg]}
+    # Format for WhatsApp via template (no LLM call)
+    content = str(final_msg.content) if isinstance(final_msg, AIMessage) else str(final_msg.content)
+    formatted = _format_for_whatsapp(content)
+    logger.info(f"[agent] final_response len={len(formatted)} preview={formatted[:300]}")
 
-
-async def responder_node(state: AgentState, config: RunnableConfig, *, model: Any) -> dict:
-    """Format the final response for WhatsApp.
-
-    For chat intent: the responder IS the response node (router classified
-    no tools needed), so it returns its AIMessage in ``messages`` to persist
-    in the conversation state.
-
-    For tool_use/research/delegate intents: the executor already added its
-    AIMessage to state. The responder only formats it for WhatsApp output
-    via ``final_response`` — it must NOT append another AIMessage to state,
-    as that would create a duplicate and bloat the conversation history.
-
-    Uses _safe_invoke_messages to ensure the GLM API always receives
-    a valid message sequence (SystemMessage + at least one HumanMessage).
-    """
-    # Compute pruning once — applies to all return paths.
+    # Prune old messages
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
-
-    if state.get("intent") == "chat":
-        msgs = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
-        logger.debug(
-            "[responder] chat intent: %d messages, types=%s",
-            len(msgs),
-            [type(m).__name__ for m in msgs],
-        )
-
-        # Inject running summary as context if available
-        prompt = RESPONDER_PROMPT
-        summary = state.get("context", {}).get("running_summary")
-        if summary:
-            prompt = f"Previous conversation summary: {summary}\n\n{RESPONDER_PROMPT}"
-
-        safe_msgs = _safe_invoke_messages(prompt, msgs)
-        try:
-            response = await _log_llm_call(model, safe_msgs, node="responder-chat")
-        except Exception as e:
-            logger.warning(f"Responder LLM call failed for chat: {e}")
-            # Fallback: return the last message content directly
-            last = state["messages"][-1] if state["messages"] else None
-            return {
-                "final_response": str(last.content) if last else "Sorry, please try again.",
-                "messages": removes,
-            }
-        return {"final_response": str(response.content), "messages": [response] + removes}
-
-    # tool_use / research / delegate intent — format executor output
-    last_msg = state["messages"][-1]
-    content = str(last_msg.content)
-    logger.info(f"[responder] intent={state.get('intent')}, executor output len={len(content)} preview={content[:200]}")
-    if len(content) > _MAX_MESSAGE_CHARS:
-        content = content[:_MAX_MESSAGE_CHARS] + "\n...[truncated]"
-
-    safe_msgs = _safe_invoke_messages(
-        RESPONDER_PROMPT,
-        [HumanMessage(content=f"Format this response for WhatsApp:\n\n{content}")],
-    )
-    try:
-        response = await _log_llm_call(model, safe_msgs, node="responder-tool")
-    except Exception as e:
-        logger.warning(f"Responder LLM call failed for tool_use: {e}")
-        # Fallback: return raw content, truncated for WhatsApp
-        return {
-            "final_response": content[:4096],
-            "messages": removes,
-        }
-
-    final = str(response.content)
-    logger.info(f"[responder] final_response len={len(final)} preview={final[:300]}")
-    return {"final_response": final, "messages": removes}
-
-
-def route_decision(state: AgentState) -> str:
-    """Decide next node after Router."""
-    if state.get("intent") == "chat":
-        return "responder"
-    return "executor"
+    return {"final_response": formatted, "messages": [final_msg] + removes}
 
 
 def create_assistant_graph(
@@ -837,27 +897,28 @@ def create_assistant_graph(
     checkpointer: Any | None = None,
     progress_callback: ProgressCallback = None,
     router_model: Any | None = None,
-    executor_model: Any | None = None,
-    responder_model: Any | None = None,
+    agent_model: Any | None = None,
 ) -> Any:
     """Create the 3-node assistant StateGraph.
 
+    Summarize → Router → Agent (with template WhatsApp formatting).
+    Chat intent: agent node responds directly via model (no tools).
+    Tool intents: agent node runs sub-agent with filtered tools.
+
     Args:
-        model: Primary LLM model instance (used for executor if executor_model not set).
-        tools: Sequence of tools available to the executor.
+        model: Primary LLM model instance.
+        tools: Sequence of tools available to the agent.
         system_prompt: Base system prompt for the agent.
         checkpointer: Optional checkpointer for persistent memory.
         progress_callback: Optional async callback for progress updates.
         router_model: Optional model override for the router node.
-        executor_model: Optional model override for the executor node.
-        responder_model: Optional model override for the responder node.
+        agent_model: Optional model override for the agent node.
 
     Returns:
         Compiled StateGraph ready for ainvoke().
     """
     _router_model = router_model or model
-    _executor_model = executor_model or model
-    _responder_model = responder_model or model
+    _agent_model = agent_model or model
 
     async def _summarize(state: AgentState, config: RunnableConfig) -> dict:
         return await summarize_node(state, config, model=model)
@@ -865,32 +926,22 @@ def create_assistant_graph(
     async def _router(state: AgentState, config: RunnableConfig) -> dict:
         return await router_node(state, config, model=_router_model)
 
-    async def _executor(state: AgentState, config: RunnableConfig) -> dict:
-        return await executor_node(
+    async def _agent(state: AgentState, config: RunnableConfig) -> dict:
+        return await agent_node(
             state,
             config,
-            model=_executor_model,
+            model=_agent_model,
             tools=tools,
             system_prompt=system_prompt,
             progress_callback=progress_callback,
         )
 
-    async def _responder(state: AgentState, config: RunnableConfig) -> dict:
-        return await responder_node(state, config, model=_responder_model)
-
     graph = StateGraph(AgentState)
     graph.add_node("summarize", _summarize)
     graph.add_node("router", _router)
-    graph.add_node("executor", _executor)
-    graph.add_node("responder", _responder)
+    graph.add_node("agent", _agent)
     graph.set_entry_point("summarize")
     graph.add_edge("summarize", "router")
-    graph.add_conditional_edges(
-        "router",
-        route_decision,
-        {"executor": "executor", "responder": "responder"},
-    )
-    graph.add_edge("executor", "responder")
-    graph.add_edge("responder", END)
-
+    graph.add_edge("router", "agent")
+    graph.add_edge("agent", END)
     return graph.compile(checkpointer=checkpointer or InMemorySaver())

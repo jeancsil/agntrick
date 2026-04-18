@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from agntrick.config import get_config
 from agntrick.logging_config import TenantLogAdapter
-from agntrick.mcp import MCPProvider
 from agntrick.registry import AgentRegistry
 from agntrick.storage.tenant_manager import TenantManager
 from agntrick.whatsapp import WhatsAppRegistry
@@ -378,58 +377,80 @@ async def whatsapp_webhook(
     # Run the tenant's configured agent
     agent_name = tenant_config.default_agent
     try:
-        AgentRegistry.discover_agents()
+        config = get_config()
+
+        # Look up MCP servers and tool categories registered for this agent
+        allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
+        tool_categories = AgentRegistry.get_tool_categories(agent_name)
+
+        # Build thread_id for persistent memory
+        thread_id = f"whatsapp:{tenant_id}:{phone}"
+        tenant_logger.info("Using persistent memory for thread: %s", thread_id)
+
+        # Get the agent pool from app state
+        pool = request.app.state.agent_pool
         agent_cls = AgentRegistry.get(agent_name)
 
         if not agent_cls:
             tenant_logger.error("Agent '%s' not found for tenant %s", agent_name, tenant_id)
             raise HTTPException(status_code=500, detail="Agent not found")
 
-        # Look up MCP servers and tool categories registered for this agent
-        allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
-        tool_categories = AgentRegistry.get_tool_categories(agent_name)
-        config = get_config()
-
-        # Build thread_id and checkpointer for persistent memory
-        thread_id = f"whatsapp:{tenant_id}:{phone}"
+        # Get tenant database for persistent memory
         tenant_manager = _get_tenant_manager()
         tenant_db = tenant_manager.get_database(tenant_id)
-        tenant_logger.info("Using persistent memory for thread: %s", thread_id)
 
-        # Get the database path to create a proper AsyncSqliteSaver
-        # (from_conn_string is an async context manager that yields the saver)
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        # Build agent kwargs (model, MCP, etc.)
+        async def _send_progress(msg: str) -> None:
+            """Log progress messages. Can be extended to send via Go gateway."""
+            tenant_logger.debug("Progress: %s", msg)
 
-        async with AsyncSqliteSaver.from_conn_string(str(tenant_db._db_path)) as checkpointer:
-            # Agent constructor args (shared between MCP and non-MCP paths)
-            async def _send_progress(msg: str) -> None:
-                """Log progress messages. Can be extended to send via Go gateway."""
-                tenant_logger.debug("Progress: %s", msg)
+        agent_kwargs: dict[str, Any] = dict(
+            _agent_name=agent_name,
+            tool_categories=tool_categories,
+            model_name=config.llm.model,
+            temperature=config.llm.temperature,
+            thread_id=thread_id,
+            db_path=str(tenant_db._db_path),  # Pass db_path for checkpointer creation
+            progress_callback=_send_progress,
+        )
 
-            agent_kwargs: dict[str, Any] = dict(
-                _agent_name=agent_name,
-                tool_categories=tool_categories,
-                model_name=config.llm.model,
-                temperature=config.llm.temperature,
-                thread_id=thread_id,
-                checkpointer=checkpointer,
-                progress_callback=_send_progress,
+        if allowed_mcp:
+            agent_kwargs["mcp_server_names"] = allowed_mcp
+
+        # Get or create pooled agent — retry with fresh agent on stale connections
+        agent = await pool.get_or_create(
+            tenant_id=tenant_id,
+            agent_name=agent_name,
+            agent_cls=agent_cls,
+            agent_kwargs=agent_kwargs,
+        )
+
+        try:
+            result = await asyncio.wait_for(
+                agent.run(message, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
+            )
+        except (ValueError, ConnectionError, OSError) as e:
+            if "no active connection" not in str(e).lower() and "connection" not in str(e).lower():
+                raise
+            # Stale pooled connection — evict and retry with fresh agent
+            tenant_logger.warning("Stale connection for %s agent, evicting and retrying: %s", agent_name, e)
+            await pool.evict(tenant_id, agent_name)
+            agent = await pool.get_or_create(
+                tenant_id=tenant_id,
+                agent_name=agent_name,
+                agent_cls=agent_cls,
+                agent_kwargs=agent_kwargs,
+            )
+            result = await asyncio.wait_for(
+                agent.run(message, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
             )
 
-            if allowed_mcp:
-                # Connect to MCP servers and inject tools (same pattern as CLI)
-                provider = MCPProvider(server_names=allowed_mcp)
-                async with provider.tool_session() as mcp_tools:
-                    agent = agent_cls(initial_mcp_tools=mcp_tools, **agent_kwargs)  # type: ignore[call-arg]
-                    result = await asyncio.wait_for(agent.run(message), timeout=300)
-            else:
-                agent = agent_cls(**agent_kwargs)  # type: ignore[call-arg]
-                result = await asyncio.wait_for(agent.run(message), timeout=300)
-
-            # Tool errors are returned as strings prefixed with "Tool error:"
-            # Return them as successful responses so the user gets feedback on WhatsApp.
-            tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
-            return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
+        # Tool errors are returned as strings prefixed with "Tool error:"
+        # Return them as successful responses so the user gets feedback on WhatsApp.
+        tenant_logger.info("Successfully processed WhatsApp message for tenant %s", tenant_id)
+        return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
 
     except asyncio.TimeoutError:
         tenant_logger.error("Agent timed out after 300s for tenant %s", tenant_id)

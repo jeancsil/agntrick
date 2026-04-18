@@ -215,8 +215,7 @@ flowchart TD
     subgraph Exec["Graph Execution <small>(graph.py)</small>"]
         SUMMARIZE["Summarize node<br/>Compress old messages"]
         ROUTER["Router node<br/>Classify intent"]
-        EXEC["Executor node<br/>Run tools / sub-agents"]
-        RESP["Responder node<br/>Format for WhatsApp"]
+        AGENT["Agent node<br/>Execute tools & format response"]
     end
 
     CLI --> REG
@@ -224,16 +223,16 @@ flowchart TD
     CHAT --> REG
     GRAPH_CREATE --> SUMMARIZE
     SUMMARIZE --> ROUTER
-    ROUTER -->|"chat"| RESP
-    ROUTER -->|"tool_use / research / delegate"| EXEC
-    EXEC -->|"agent_invocation<br/>:::blocking"| EXEC
-    EXEC --> RESP
-    RESP --> END_NODE["Response"]
+    ROUTER -->|"chat"| AGENT
+    ROUTER -->|"tool_use (direct call)"| AGENT
+    ROUTER -->|"research / delegate (sub-agent)"| AGENT
+    AGENT -->|"agent_invocation<br/>:::blocking"| AGENT
+    AGENT --> END_NODE["Response"]
 
     classDef blocking fill:#ff6b6b,stroke:#c0392b,color:#fff
 ```
 
-### Graph Detail (4-Node StateGraph)
+### Graph Detail (3-Node StateGraph)
 
 ```mermaid
 flowchart LR
@@ -243,24 +242,29 @@ flowchart LR
 
     ROUTER["<b>Router</b><br/>LLM classifies intent<br/><small>sliding window: last 5 msgs</small>"]
 
-    ROUTER -->|"chat"| RESP
-    ROUTER -->|"tool_use<br/>limit: 2 calls"| EXEC
-    ROUTER -->|"research<br/>limit: 5 calls"| EXEC
-    ROUTER -->|"delegate<br/>limit: 1 call"| EXEC
+    ROUTER -->|"chat"| AGENT
+    ROUTER -->|"tool_use<br/>DIRECT CALL<br/>limit: 1 call"| AGENT
+    ROUTER -->|"research<br/>limit: 5 calls"| AGENT
+    ROUTER -->|"delegate<br/>limit: 1 call"| AGENT
 
-    EXEC["<b>Executor</b>"]
-    EXEC --> FILT["Filter tools<br/>by intent"]
-    FILT --> SUB["create_agent()<br/><small>sync factory, fast</small>"]
+    AGENT["<b>Agent Node</b>"]
+
+    AGENT --> DT["Direct tool call<br/><small>(tool_use only)</small><br/>_direct_tool_call()"]
+    DT --> FLAT_DT["_make_flat_tool()"]
+    FLAT_DT --> LLM_FMT["LLM formatting<br/>_log_llm_call()"]
+    LLM_FMT --> WHATSAPP["_format_for_whatsapp()"]
+    WHATSAPP --> END_NODE["END"]
+
+    AGENT --> FILT["Filter tools<br/>by intent"]
+    FILT --> SUB["create_agent()<br/><small>sub-agent for<br/>research/delegate</small>"]
     SUB --> FLAT["Flatten MCP output<br/>_make_flat_tool()"]
     FLAT --> CLEAN["Sanitize artifacts<br/>_sanitize_ai_content()"]
-    CLEAN --> RESP
+    CLEAN --> WHATSAPP2["_format_for_whatsapp()"]
+    WHATSAPP2 --> END_NODE
 
-    EXEC -.->|"ReAct loop:<br/>re-classify if<br/>more tools needed"| ROUTER
+    AGENT -.->|"ReAct loop:<br/>re-classify if<br/>more tools needed"| ROUTER
 
     SUB -.- note1["⟳ Recursive: triggers<br/>full End-to-End flow<br/>via agent_invocation.py<br/>(new thread + event loop)"]:::note
-
-    RESP["<b>Responder</b><br/>Format for WhatsApp<br/><small>chat: adds msg to state<br/>tool_use: sets final_response only<br/>prunes state to 20 msgs<br/>max 15K chars</small>"]
-    RESP --> END_NODE["END"]
 
     classDef note fill:#fff3cd,stroke:#856404,color:#333,font-style:italic
 ```
@@ -271,7 +275,7 @@ flowchart LR
 |---|---|---|---|
 | `tools/agent_invocation.py:136-138` | `thread.join()` + new event loop | Blocks up to 65s on delegation | Necessary — each delegated agent needs isolated loop |
 | `mcp/provider.py:122-127` | Sequential `await stack.enter_async_context()` | N × 60s startup delay | Yes — avoids anyio "different task" cleanup bugs |
-| `graph.py:434` | `create_agent()` sync factory | Negligible (in-memory) | Yes |
+| `graph.py` `_direct_tool_call()` | Tool `ainvoke()` + 1 LLM call | 6-20s for tool_use (was 30-70s with sub-agent) | Yes — saves ~10-15s by skipping sub-agent |
 | `agent.py:266-294` | `_fetch_tool_manifest()` HTTP | 5s+ if toolbox slow | Circuit breaker + 5m cache mitigates |
 
 ### Agent Registration
@@ -294,6 +298,10 @@ class MyAgent(AgentBase):
 ### MCP Server Manager
 
 `chat_cli.py:MCPServerManager` handles the agntrick-toolkit subprocess lifecycle. Set `AGNTRICK_TOOLKIT_PATH` to auto-start the toolkit when using `agntrick chat` or `agntrick serve`.
+
+### Agent Pool
+
+`api/pool.py:TenantAgentPool` manages per-tenant agent instances with LRU eviction. At startup, `server.py` pre-warms agents for all configured tenants via `pool.warmup()`. A keep-alive task (`_keep_alive_pool`) validates MCP connections every 5 minutes and evicts stale agents before user requests hit them.
 
 ---
 

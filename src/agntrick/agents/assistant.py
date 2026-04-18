@@ -60,6 +60,5 @@ class AssistantAgent(AgentBase):
             checkpointer=checkpointer,
             progress_callback=self._progress_callback,
             router_model=node_models.get("router"),
-            executor_model=node_models.get("executor"),
-            responder_model=node_models.get("responder"),
+            agent_model=node_models.get("agent"),
         )

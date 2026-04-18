@@ -125,7 +125,7 @@ class TestGetNodeModels:
                         "assistant": "glm-5.1",
                         "assistant_nodes": {
                             "router": "glm-4.7",
-                            "responder": "glm-4.7",
+                            "agent": "glm-4.7",
                         },
                     },
                 }
@@ -148,10 +148,9 @@ class TestGetNodeModels:
             agent = TestAgent(_agent_name="assistant")
             node_models = agent._get_node_models()
 
-            # Should have router and responder, but not executor (not in overrides)
+            # Should have router and agent (from config)
             assert "router" in node_models
-            assert "responder" in node_models
-            assert "executor" not in node_models
+            assert "agent" in node_models
 
     def test_returns_empty_when_no_overrides(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should return empty dict when no node overrides configured."""
