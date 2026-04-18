@@ -21,6 +21,8 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import Annotated, TypedDict
 
+from agntrick.timing import timing_end, timing_start, timing_summary
+
 logger = logging.getLogger(__name__)
 
 # Type for progress callback
@@ -632,12 +634,15 @@ async def _direct_tool_call(
     tool_args = _extract_tool_args(tool_plan, user_message)
 
     start = time.monotonic()
+    timing_start("tool_exec")
     try:
         tool_result = await target.ainvoke(tool_args)
         tool_elapsed = time.monotonic() - start
+        timing_end("tool_exec")
         logger.info("[direct-tool] %s returned %d chars in %.1fs", tool_plan, len(str(tool_result)), tool_elapsed)
     except Exception as e:
         tool_elapsed = time.monotonic() - start
+        timing_end("tool_exec")
         logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
         tool_result = f"Error: {e}"
 
@@ -650,11 +655,13 @@ async def _direct_tool_call(
     )
 
     llm_start = time.monotonic()
+    timing_start("llm_format")
     response = await _log_llm_call(
         model,
         [SystemMessage(content=system_prompt), HumanMessage(content=formatting_prompt)],
         node="direct-tool",
     )
+    timing_end("llm_format")
     llm_elapsed = time.monotonic() - llm_start
     logger.info("[direct-tool] %s LLM formatting took %.1fs", tool_plan, llm_elapsed)
 
@@ -682,12 +689,14 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
             *context_window,
         ]
 
+    timing_start("router")
     response = await _log_llm_call(
         model,
         [SystemMessage(content=ROUTER_PROMPT), *context_window],
         node="router",
     )
     parsed = _parse_router_response(response.content)
+    timing_end("router")
     intent = parsed.get("intent", "chat")
     tool_plan = parsed.get("tool_plan")
     logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
@@ -716,9 +725,12 @@ async def agent_node(
     if intent == "chat":
         messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        timing_start("agent")
         response = await _log_llm_call(model, safe_msgs, node="chat")
+        timing_end("agent")
         formatted = _format_for_whatsapp(str(response.content))
         removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        timing_summary("chat")
         return {"final_response": formatted, "messages": [response] + removes}
 
     # Direct tool execution for tool_use: skip sub-agent, call tool directly.
@@ -728,6 +740,7 @@ async def agent_node(
         target_tools = [t for t in tools if getattr(t, "name", "") == tool_plan]
         if target_tools:
             user_msg = str(state["messages"][-1].content)
+            timing_start("tool")
             direct_result = await _direct_tool_call(
                 user_message=user_msg,
                 tool_plan=tool_plan,
@@ -735,8 +748,10 @@ async def agent_node(
                 model=model,
                 system_prompt=system_prompt,
             )
+            timing_end("tool")
             formatted = _format_for_whatsapp(str(direct_result.content))
             removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            timing_summary("tool_use")
             return {"final_response": formatted, "messages": [direct_result] + removes}
         # If tool not found, fall through to sub-agent path (handles edge cases)
 
@@ -831,10 +846,12 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
         else:
             executor_msgs = _truncate_messages(state["messages"])
 
+        timing_start("agent")
         result = await sub_agent.ainvoke(
             {"messages": executor_msgs},  # type: ignore[arg-type]
             config={"configurable": {"thread_id": f"executor-{uuid.uuid4().hex}"}},
         )
+        timing_end("agent")
     except Exception as e:
         logger.warning(f"[executor] sub-agent failed: {e}")
         return {
@@ -887,6 +904,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
 
     # Prune old messages
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+    timing_summary(intent)
     return {"final_response": formatted, "messages": [final_msg] + removes}
 
 
