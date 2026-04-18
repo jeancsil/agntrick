@@ -568,7 +568,7 @@ async def whatsapp_audio_webhook(
                 mime_type=mime_type,
                 tenant_id=tenant_id,
             )
-            tenant_logger.info("Transcribed audio (%d bytes)", len(audio_bytes))
+            tenant_logger.info("Transcribed audio (%s bytes)", len(audio_bytes))
         finally:
             import os
 
@@ -603,7 +603,7 @@ async def whatsapp_audio_webhook(
 
     # Route the cleaned text through the agent (same as text messages)
     tenant_logger.info(
-        "Wake word matched, routing to agent (%d chars)",
+        "Wake word matched, routing to agent (%s chars)",
         len(cleaned_text),
     )
     agent_name = tenant_config.default_agent if tenant_config else "developer"
