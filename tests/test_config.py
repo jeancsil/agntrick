@@ -215,3 +215,101 @@ class TestAgentModelConfig:
         assert config.agent_models.get_model_for("assistant") is None
         assert config.agent_models.models == {}
         assert config.agent_models.node_overrides == {}
+
+
+class TestWakeWordConfig:
+    """Tests for wake_word configuration."""
+
+    def test_wake_word_parsed_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Config should parse wake_word from tenant YAML."""
+        config_file = tmp_path / ".agntrick.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "whatsapp": {
+                        "tenants": [
+                            {
+                                "id": "personal",
+                                "phone": "+34611111111",
+                                "default_agent": "assistant",
+                                "wake_word": "Jarvis",
+                            },
+                        ]
+                    }
+                }
+            )
+        )
+
+        monkeypatch.setenv("AGNTRICK_CONFIG", str(config_file))
+        from agntrick.config import get_config
+
+        config = get_config(force_reload=True)
+
+        assert len(config.whatsapp.tenants) == 1
+        assert config.whatsapp.tenants[0].wake_word == "Jarvis"
+
+    def test_wake_word_default_is_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Tenant without wake_word should default to None."""
+        config_file = tmp_path / ".agntrick.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "whatsapp": {
+                        "tenants": [
+                            {
+                                "id": "personal",
+                                "phone": "+34611111111",
+                                "default_agent": "assistant",
+                            },
+                        ]
+                    }
+                }
+            )
+        )
+
+        monkeypatch.setenv("AGNTRICK_CONFIG", str(config_file))
+        from agntrick.config import get_config
+
+        config = get_config(force_reload=True)
+
+        assert config.whatsapp.tenants[0].wake_word is None
+
+    def test_wake_word_different_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Different tenants can have different wake words."""
+        config_file = tmp_path / ".agntrick.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "whatsapp": {
+                        "tenants": [
+                            {
+                                "id": "t1",
+                                "phone": "+1111111111",
+                                "default_agent": "assistant",
+                                "wake_word": "Jarvis",
+                            },
+                            {
+                                "id": "t2",
+                                "phone": "+2222222222",
+                                "default_agent": "assistant",
+                                "wake_word": "Alice",
+                            },
+                            {
+                                "id": "t3",
+                                "phone": "+3333333333",
+                                "default_agent": "assistant",
+                            },
+                        ]
+                    }
+                }
+            )
+        )
+
+        monkeypatch.setenv("AGNTRICK_CONFIG", str(config_file))
+        from agntrick.config import get_config
+
+        config = get_config(force_reload=True)
+
+        assert config.whatsapp.tenants[0].wake_word == "Jarvis"
+        assert config.whatsapp.tenants[1].wake_word == "Alice"
+        assert config.whatsapp.tenants[2].wake_word is None

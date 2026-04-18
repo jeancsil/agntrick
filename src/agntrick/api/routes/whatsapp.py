@@ -495,8 +495,6 @@ async def whatsapp_audio_webhook(
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     # Parse multipart form
-    from typing import Any
-
     form = await request.form()
     audio_file_raw = form.get("audio")
     tenant_id_raw = form.get("tenant_id", "")
@@ -579,7 +577,114 @@ async def whatsapp_audio_webhook(
             except Exception:
                 pass
 
-    # Return transcription directly — no agent processing.
-    # This endpoint exists so users who can't listen to audio can read what was said.
-    tenant_logger.info("Transcription complete for tenant %s (%d chars)", tenant_id, len(transcribed_text))
-    return {"response": transcribed_text, "tenant_id": tenant_id}
+    # Get tenant configuration for wake word check
+    tenant_config = None
+    for tenant in get_config().whatsapp.tenants:
+        if tenant.id == tenant_id:
+            tenant_config = tenant
+            break
+
+    # Wake word check
+    from agntrick.services.wake_word import check_wake_word
+
+    wake_word = tenant_config.wake_word if tenant_config else None
+    matched, cleaned_text = check_wake_word(transcribed_text, wake_word)
+
+    if not matched:
+        tenant_logger.info(
+            "Wake word '%s' not found in transcription, ignoring audio",
+            wake_word,
+        )
+        return {"response": "", "tenant_id": tenant_id, "wake_word_matched": "false"}
+
+    if not cleaned_text:
+        tenant_logger.info("Wake word matched but no text after stripping")
+        return {"response": "", "tenant_id": tenant_id, "wake_word_matched": "true"}
+
+    # Route the cleaned text through the agent (same as text messages)
+    tenant_logger.info(
+        "Wake word matched, routing to agent (%d chars)",
+        len(cleaned_text),
+    )
+    agent_name = tenant_config.default_agent if tenant_config else "developer"
+    try:
+        allowed_mcp = AgentRegistry.get_mcp_servers(agent_name)
+        tool_categories = AgentRegistry.get_tool_categories(agent_name)
+
+        thread_id = f"whatsapp:{tenant_id}:{phone}"
+
+        pool = request.app.state.agent_pool
+        agent_cls = AgentRegistry.get(agent_name)
+
+        if not agent_cls:
+            tenant_logger.error("Agent '%s' not found for tenant %s", agent_name, tenant_id)
+            raise HTTPException(status_code=500, detail="Agent not found")
+
+        # Get tenant database for persistent memory
+        tenant_manager = _get_tenant_manager()
+        tenant_db = tenant_manager.get_database(tenant_id)
+
+        async def _send_progress(msg: str) -> None:
+            """Log progress messages."""
+            tenant_logger.debug("Progress: %s", msg)
+
+        agent_kwargs: dict[str, Any] = dict(
+            _agent_name=agent_name,
+            tool_categories=tool_categories,
+            model_name=config.llm.model,
+            temperature=config.llm.temperature,
+            thread_id=thread_id,
+            db_path=str(tenant_db._db_path),
+            progress_callback=_send_progress,
+        )
+
+        if allowed_mcp:
+            agent_kwargs["mcp_server_names"] = allowed_mcp
+
+        # Get or create pooled agent -- retry with fresh agent on stale connections
+        agent = await pool.get_or_create(
+            tenant_id=tenant_id,
+            agent_name=agent_name,
+            agent_cls=agent_cls,
+            agent_kwargs=agent_kwargs,
+        )
+
+        try:
+            result = await asyncio.wait_for(
+                agent.run(cleaned_text, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
+            )
+        except (ValueError, ConnectionError, OSError) as e:
+            if "no active connection" not in str(e).lower() and "connection" not in str(e).lower():
+                raise
+            tenant_logger.warning("Stale connection for %s agent, evicting and retrying: %s", agent_name, e)
+            await pool.evict(tenant_id, agent_name)
+            agent = await pool.get_or_create(
+                tenant_id=tenant_id,
+                agent_name=agent_name,
+                agent_cls=agent_cls,
+                agent_kwargs=agent_kwargs,
+            )
+            result = await asyncio.wait_for(
+                agent.run(cleaned_text, config={"configurable": {"thread_id": thread_id}}),
+                timeout=300,
+            )
+
+        tenant_logger.info("Successfully processed audio for tenant %s", tenant_id)
+        return {"response": str(result) if result is not None else "", "tenant_id": tenant_id}
+
+    except asyncio.TimeoutError:
+        tenant_logger.error("Agent timed out after 300s for tenant %s", tenant_id)
+        raise HTTPException(status_code=504, detail="Agent response timed out. Please try again.")
+    except Exception as e:
+
+        def _unwrap_exception_group(exc: BaseException, depth: int = 0) -> str:
+            if hasattr(exc, "exceptions") and exc.exceptions:
+                inner = [_unwrap_exception_group(sub, depth + 1) for sub in exc.exceptions]
+                prefix = "  " * depth
+                return f"{prefix}{type(exc).__name__}:\n" + "\n".join(inner)
+            return f"{'  ' * depth}{type(exc).__name__}: {exc}"
+
+        error_detail = _unwrap_exception_group(e)
+        tenant_logger.error("Failed to process WhatsApp audio for tenant %s:\n%s", tenant_id, error_detail)
+        raise HTTPException(status_code=500, detail="Internal error processing message")

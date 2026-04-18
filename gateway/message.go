@@ -151,8 +151,15 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 	// Forward to Python API with progress logging
 	var response string
 	var err error
+	var wakeWordMatched bool = true // default true for text messages
 	if len(audioData) > 0 {
-		response, err = forwardAudioToPythonAPI(eh, audioData, audioMimeType, logger)
+		audioResp, audioErr := forwardAudioToPythonAPI(eh, audioData, audioMimeType, logger)
+		if audioErr != nil {
+			err = audioErr
+		} else {
+			response = audioResp.Response
+			wakeWordMatched = audioResp.WakeWordMatched
+		}
 	} else {
 		response, err = forwardToPythonAPI(eh, messageText, logger)
 	}
@@ -169,6 +176,15 @@ func handleMessage(eh *EventHandler, msg *events.Message) {
 			Msg("Failed to forward message to Python API")
 		if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
 			logger.Warn().Err(err).Msg("Failed to clear typing indicator after error")
+		}
+		return
+	}
+
+	// Skip sending response when wake word was not matched (audio only)
+	if !wakeWordMatched {
+		logger.Info().Msg("Wake word not matched, skipping response")
+		if err := eh.session.SendChatPresence(context.Background(), targetJID, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
+			logger.Warn().Err(err).Msg("Failed to clear typing indicator (no wake word)")
 		}
 		return
 	}
@@ -363,10 +379,10 @@ func forwardToPythonAPI(eh *EventHandler, messageText string, logger zerolog.Log
 }
 
 // forwardAudioToPythonAPI forwards audio data to the Python API for transcription.
-func forwardAudioToPythonAPI(eh *EventHandler, audioData []byte, mimeType string, logger zerolog.Logger) (string, error) {
+func forwardAudioToPythonAPI(eh *EventHandler, audioData []byte, mimeType string, logger zerolog.Logger) (AudioResponse, error) {
 	tenant, err := eh.manager.config.GetTenantByID(eh.tenantID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get tenant config: %w", err)
+		return AudioResponse{}, fmt.Errorf("failed to get tenant config: %w", err)
 	}
 
 	progressCtx, cancelProgress := context.WithCancel(context.Background())
@@ -377,19 +393,20 @@ func forwardAudioToPythonAPI(eh *EventHandler, audioData []byte, mimeType string
 
 	logger.Info().Msg("Forwarding audio message to Python API (waiting for transcription and LLM response)")
 
-	response, err := eh.manager.httpClient.ForwardAudioMessage(eh.tenantID, tenant.Phone, audioData, mimeType)
+	audioResp, err := eh.manager.httpClient.ForwardAudioMessage(eh.tenantID, tenant.Phone, audioData, mimeType)
 
 	cancelProgress()
 
 	if err != nil {
-		return "", err
+		return AudioResponse{}, err
 	}
 
 	logger.Info().
 		Dur("elapsed", time.Since(startTime)).
+		Bool("wake_word_matched", audioResp.WakeWordMatched).
 		Msg("Audio message processed")
 
-	return response, nil
+	return audioResp, nil
 }
 
 // logLLMProgress logs periodic INFO-level status updates while waiting for an LLM response.
