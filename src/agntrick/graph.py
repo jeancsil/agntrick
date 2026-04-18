@@ -485,6 +485,72 @@ def _parse_router_response(content: str) -> dict[str, Any]:
         return {"intent": "chat", "tool_plan": None, "skip_tools": True}
 
 
+_PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
+    # Greetings (Portuguese + English) — message starts with greeting
+    (
+        re.compile(
+            r"^(oi|ola|olá|hey|hi|bom dia|boa tarde|boa noite|"
+            r"good morning|good afternoon|good evening|good night|"
+            r"hello|e a[ií]|fala|salve|ciao|tudo bem|td bem)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Help / capabilities
+    (
+        re.compile(
+            r"^(help|ajuda|o que voc[eê] (pode|faz)|what can you do|comandos|commands)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # "read/extract this URL" — explicit instruction with URL
+    (
+        re.compile(
+            r"(leia|read|extrair|extract|fetch|abra|open|acesse|access)\s+https?://\S+",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_fetch",
+    ),
+    # Bare URL only (message is ONLY a URL, nothing else)
+    (
+        re.compile(r"^https?://\S+$"),
+        "tool_use",
+        "web_fetch",
+    ),
+    # News queries (Portuguese + English)
+    (
+        re.compile(
+            r"(not[ií]cia|news|[uú]ltima|[uú]ltimos|"
+            r"o que (est[aá]|t[aá]) acontecendo|"
+            r"what'?s happening|latest|manchete|headline|"
+            r"tem algo novo|algo novo)",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+]
+
+
+def _pre_route(message: str) -> dict[str, Any] | None:
+    """Check message against pre-routing patterns.
+
+    Returns intent + tool_plan if matched, None if no match (fall through to LLM router).
+    """
+    text = message.strip()
+    if not text:
+        return None
+    for pattern, intent, tool_plan in _PRE_ROUTE_PATTERNS:
+        if pattern.search(text):
+            logger.info("[pre-route] match: intent=%s tool_plan=%s", intent, tool_plan)
+            return {"intent": intent, "tool_plan": tool_plan}
+    return None
+
+
 # Tool names allowed per intent. Reduces the 19-tool set to prevent
 # smaller models from getting confused by irrelevant tools.
 _INTENT_TOOLS: dict[str, set[str]] = {
@@ -699,6 +765,12 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         len(context_window),
         "yes" if state.get("context", {}).get("running_summary") else "no",
     )
+
+    # Pre-route: bypass LLM for obvious patterns (saves 15-30s)
+    pre_routed = _pre_route(str(last_message.content))
+    if pre_routed is not None:
+        logger.info("[router] pre-routed: intent=%s plan=%s", pre_routed["intent"], pre_routed.get("tool_plan"))
+        return pre_routed
 
     # Inject running summary as context prefix if available
     summary = state.get("context", {}).get("running_summary")

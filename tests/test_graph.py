@@ -470,7 +470,7 @@ class TestGraphIntegration:
         )
 
         result = await graph.ainvoke(
-            {"messages": [HumanMessage(content="Hello")]},
+            {"messages": [HumanMessage(content="Tell me about quantum physics")]},
             config={"configurable": {"thread_id": "test-chat-integration"}},
         )
 
@@ -896,7 +896,7 @@ class TestPerNodeModels:
         )
 
         await graph.ainvoke(
-            {"messages": [HumanMessage(content="Hi")]},
+            {"messages": [HumanMessage(content="Explain recursion in programming")]},
             config={"configurable": {"thread_id": "test-router-override"}},
         )
 
@@ -925,7 +925,7 @@ class TestPerNodeModels:
         )
 
         await graph.ainvoke(
-            {"messages": [HumanMessage(content="Hi")]},
+            {"messages": [HumanMessage(content="What is the meaning of life?")]},
             config={"configurable": {"thread_id": "test-no-overrides"}},
         )
 
@@ -1762,3 +1762,62 @@ class TestFormatForWhatsApp:
         from agntrick.graph import _format_for_whatsapp
 
         assert _format_for_whatsapp("") == ""
+
+
+class TestPreRouting:
+    """Tests for regex pre-routing filter."""
+
+    def test_greetings_portuguese(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("bom dia") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("oi") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("boa noite") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("tudo bem?") == {"intent": "chat", "tool_plan": None}
+
+    def test_greetings_english(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("hello") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("hi") == {"intent": "chat", "tool_plan": None}
+
+    def test_help_queries(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("help") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("ajuda") == {"intent": "chat", "tool_plan": None}
+
+    def test_bare_url(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("https://example.com") == {"intent": "tool_use", "tool_plan": "web_fetch"}
+
+    def test_read_url(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("leia https://example.com/article") == {"intent": "tool_use", "tool_plan": "web_fetch"}
+
+    def test_news_queries(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("noticias sobre Brasil") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("latest news") == {"intent": "tool_use", "tool_plan": "web_search"}
+
+    def test_ambiguous_falls_through(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("what do you think about AI?") is None
+        assert _pre_route("can you help me with a recipe?") is None
+
+    def test_url_in_context_not_matched_as_bare(self):
+        """A URL embedded in a sentence should NOT match bare URL pattern."""
+        from agntrick.graph import _pre_route
+
+        result = _pre_route("noticias sobre https://example.com")
+        assert result == {"intent": "tool_use", "tool_plan": "web_search"}
+
+    def test_empty_message(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("") is None
+        assert _pre_route("   ") is None
