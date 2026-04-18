@@ -428,6 +428,12 @@ class AgentBase(Agent):
             raise RuntimeError("Agent graph failed to initialize.")
 
         try:
+            effective_thread = (
+                (config or {}).get("configurable", {}).get("thread_id", self._thread_id)
+                if isinstance(config, dict)
+                else self._thread_id
+            )
+            logger.info("[context] agent.run: agent=%s thread_id=%s", self._agent_name, effective_thread)
             result = await self._graph.ainvoke(
                 {"messages": self._normalize_messages(input_data)},
                 config=config or self._default_config(),

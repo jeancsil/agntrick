@@ -349,6 +349,12 @@ async def summarize_node(
         Empty dict if no summarization needed (no-op).
     """
     messages = state.get("messages", [])
+    logger.info(
+        "[context] summarize_node: msgs=%d tokens=%d threshold=%d",
+        len(messages),
+        count_tokens_approximately(messages),
+        max_tokens,
+    )
     if not messages:
         logger.debug("[summarize] no messages, skipping")
         return {}
@@ -681,6 +687,18 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         query_preview,
     )
 
+    # Context loss diagnostic
+    all_msgs = state.get("messages", [])
+    cfg_thread = config.get("configurable", {}) if isinstance(config, dict) else {}
+    thread_id = cfg_thread.get("thread_id", "unknown")
+    logger.info(
+        "[context] thread_id=%s state_msgs=%d window_msgs=%d has_summary=%s",
+        thread_id,
+        len(all_msgs),
+        len(context_window),
+        "yes" if state.get("context", {}).get("running_summary") else "no",
+    )
+
     # Inject running summary as context prefix if available
     summary = state.get("context", {}).get("running_summary")
     if summary:
@@ -717,6 +735,14 @@ async def agent_node(
     progress_callback: ProgressCallback = None,
 ) -> dict:
     """Execute tool calls guided by the router's plan and format for WhatsApp."""
+    # Context loss diagnostic
+    all_msgs = state.get("messages", [])
+    logger.info(
+        "[context] agent_node: intent=%s state_msgs=%d msg_types=%s",
+        state.get("intent", "unknown"),
+        len(all_msgs),
+        [type(m).__name__ for m in all_msgs[-5:]],
+    )
     intent = state.get("intent", "tool_use")
     tool_plan = state.get("tool_plan")
 
