@@ -6,6 +6,7 @@ with MCP tool integration and LLM provider abstraction.
 
 import asyncio
 import logging
+import time
 from abc import abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -331,6 +332,8 @@ class AgentBase(Agent):
             if self._graph is not None:
                 return
 
+            start = time.monotonic()
+
             # Fetch tool manifest if categories specified
             if self._tool_manifest is None and self._tool_categories:
                 self._tool_manifest = await self._fetch_tool_manifest()
@@ -352,6 +355,9 @@ class AgentBase(Agent):
                 system_prompt=system_prompt,
                 checkpointer=self._checkpointer or InMemorySaver(),
             )
+
+            elapsed = time.monotonic() - start
+            logger.info("[timing] agent_init=%.1fs agent=%s", elapsed, self._agent_name)
 
     def _create_graph(
         self,
@@ -422,6 +428,12 @@ class AgentBase(Agent):
             raise RuntimeError("Agent graph failed to initialize.")
 
         try:
+            effective_thread = (
+                (config or {}).get("configurable", {}).get("thread_id", self._thread_id)
+                if isinstance(config, dict)
+                else self._thread_id
+            )
+            logger.info("[context] agent.run: agent=%s thread_id=%s", self._agent_name, effective_thread)
             result = await self._graph.ainvoke(
                 {"messages": self._normalize_messages(input_data)},
                 config=config or self._default_config(),

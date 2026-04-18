@@ -4,6 +4,7 @@ Summarize → Router → Agent with template WhatsApp formatting.
 All intents (including chat) route through agent node for response generation.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -20,6 +21,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import Annotated, TypedDict
+
+from agntrick.timing import timing_end, timing_start, timing_summary
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +351,12 @@ async def summarize_node(
         Empty dict if no summarization needed (no-op).
     """
     messages = state.get("messages", [])
+    logger.info(
+        "[context] summarize_node: msgs=%d tokens=%d threshold=%d",
+        len(messages),
+        count_tokens_approximately(messages),
+        max_tokens,
+    )
     if not messages:
         logger.debug("[summarize] no messages, skipping")
         return {}
@@ -477,6 +486,95 @@ def _parse_router_response(content: str) -> dict[str, Any]:
         return {"intent": "chat", "tool_plan": None, "skip_tools": True}
 
 
+_PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
+    # Greetings (Portuguese + English) — message starts with greeting
+    (
+        re.compile(
+            r"^(oi|ola|olá|hey|hi|bom dia|boa tarde|boa noite|"
+            r"good morning|good afternoon|good evening|good night|"
+            r"hello|e a[ií]|fala|salve|ciao|tudo bem|td bem)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Help / capabilities
+    (
+        re.compile(
+            r"^(help|ajuda|o que voc[eê] (pode|faz)|what can you do|comandos|commands)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # "read/extract this URL" — explicit instruction with URL
+    (
+        re.compile(
+            r"(leia|read|extrair|extract|fetch|abra|open|acesse|access)\s+https?://\S+",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_fetch",
+    ),
+    # YouTube URLs → delegate to youtube agent
+    (
+        re.compile(
+            r"(https?://(www\.)?(youtube\.com|youtu\.be)/\S+)"
+            r"|((?:assist|watch|veja|analyze|resum|summariz).*(?:youtube|vídeo|video))"
+            r"|((?:youtube|vídeo|video).*(?:assist|watch|veja|analyze|resum|summariz))",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "youtube",
+    ),
+    # Paywalled/blocked sites → delegate to paywall-remover
+    (
+        re.compile(
+            r"https?://(www\.)?"
+            r"(globo\.com|folha\.uol\.com\.br|estadao\.com\.br|"
+            r"wsj\.com|nytimes\.com|ft\.com|bloomberg\.com|"
+            r"washingtonpost\.com|veja\.abril\.com\.br)/\S+",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "paywall-remover",
+    ),
+    # Bare URL only (message is ONLY a URL, nothing else)
+    (
+        re.compile(r"^https?://\S+$"),
+        "tool_use",
+        "web_fetch",
+    ),
+    # News queries (Portuguese + English)
+    (
+        re.compile(
+            r"(not[ií]cia|news|[uú]ltima|[uú]ltimos|"
+            r"o que (est[aá]|t[aá]) acontecendo|"
+            r"what'?s happening|latest|manchete|headline|"
+            r"tem algo novo|algo novo)",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+]
+
+
+def _pre_route(message: str) -> dict[str, Any] | None:
+    """Check message against pre-routing patterns.
+
+    Returns intent + tool_plan if matched, None if no match (fall through to LLM router).
+    """
+    text = message.strip()
+    if not text:
+        return None
+    for pattern, intent, tool_plan in _PRE_ROUTE_PATTERNS:
+        if pattern.search(text):
+            logger.info("[pre-route] match: intent=%s tool_plan=%s", intent, tool_plan)
+            return {"intent": intent, "tool_plan": tool_plan}
+    return None
+
+
 # Tool names allowed per intent. Reduces the 19-tool set to prevent
 # smaller models from getting confused by irrelevant tools.
 _INTENT_TOOLS: dict[str, set[str]] = {
@@ -599,6 +697,33 @@ def _extract_tool_args(tool_name: str, user_message: str) -> dict[str, Any]:
     return {"input_str": user_message}
 
 
+_TRANSIENT_ERROR_TYPES: tuple[type[Exception], ...] = (
+    asyncio.TimeoutError,
+    TimeoutError,
+    ConnectionError,
+    OSError,
+)
+
+_TRANSIENT_ERROR_MESSAGES: tuple[str, ...] = (
+    "connection reset",
+    "broken pipe",
+    "remote protocol error",
+    "503",
+    "502",
+    "connection refused",
+    "timed out",
+    "no active connection",
+)
+
+
+def _is_transient_error(error: Exception) -> bool:
+    """Check if an error is transient and worth retrying."""
+    if isinstance(error, _TRANSIENT_ERROR_TYPES):
+        return True
+    error_str = str(error).lower()
+    return any(msg in error_str for msg in _TRANSIENT_ERROR_MESSAGES)
+
+
 async def _direct_tool_call(
     user_message: str,
     tool_plan: str,
@@ -633,14 +758,34 @@ async def _direct_tool_call(
     tool_args = _extract_tool_args(tool_plan, user_message)
 
     start = time.monotonic()
+    timing_start("tool_exec")
     try:
         tool_result = await target.ainvoke(tool_args)
         tool_elapsed = time.monotonic() - start
+        timing_end("tool_exec")
         logger.info("[direct-tool] %s returned %d chars in %.1fs", tool_plan, len(str(tool_result)), tool_elapsed)
     except Exception as e:
         tool_elapsed = time.monotonic() - start
-        logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
-        tool_result = f"Error: {e}"
+        timing_end("tool_exec")
+
+        # Retry once for transient errors if first attempt was fast (<3s)
+        if _is_transient_error(e) and tool_elapsed < 3.0:
+            logger.info("[retry] %s transient error (%.1fs), retrying after 1s: %s", tool_plan, tool_elapsed, e)
+            await asyncio.sleep(1.0)
+            timing_start("tool_exec_retry")
+            try:
+                tool_result = await target.ainvoke(tool_args)
+                retry_elapsed = time.monotonic() - start
+                timing_end("tool_exec_retry")
+                logger.info("[retry] %s succeeded on retry in %.1fs", tool_plan, retry_elapsed)
+            except Exception as retry_e:
+                retry_elapsed = time.monotonic() - start
+                timing_end("tool_exec_retry")
+                logger.warning("[retry] %s failed on retry in %.1fs: %s", tool_plan, retry_elapsed, retry_e)
+                tool_result = f"Error: {retry_e}"
+        else:
+            logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
+            tool_result = f"Error: {e}"
 
     formatting_prompt = (
         "You are a helpful WhatsApp assistant. Respond to the user's question "
@@ -651,11 +796,13 @@ async def _direct_tool_call(
     )
 
     llm_start = time.monotonic()
+    timing_start("llm_format")
     response = await _log_llm_call(
         model,
         [SystemMessage(content=system_prompt), HumanMessage(content=formatting_prompt)],
         node="direct-tool",
     )
+    timing_end("llm_format")
     llm_elapsed = time.monotonic() - llm_start
     logger.info("[direct-tool] %s LLM formatting took %.1fs", tool_plan, llm_elapsed)
 
@@ -675,6 +822,24 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
         query_preview,
     )
 
+    # Context loss diagnostic
+    all_msgs = state.get("messages", [])
+    cfg_thread = config.get("configurable", {}) if isinstance(config, dict) else {}
+    thread_id = cfg_thread.get("thread_id", "unknown")
+    logger.info(
+        "[context] thread_id=%s state_msgs=%d window_msgs=%d has_summary=%s",
+        thread_id,
+        len(all_msgs),
+        len(context_window),
+        "yes" if state.get("context", {}).get("running_summary") else "no",
+    )
+
+    # Pre-route: bypass LLM for obvious patterns (saves 15-30s)
+    pre_routed = _pre_route(str(last_message.content))
+    if pre_routed is not None:
+        logger.info("[router] pre-routed: intent=%s plan=%s", pre_routed["intent"], pre_routed.get("tool_plan"))
+        return pre_routed
+
     # Inject running summary as context prefix if available
     summary = state.get("context", {}).get("running_summary")
     if summary:
@@ -683,12 +848,14 @@ async def router_node(state: AgentState, config: RunnableConfig, *, model: Any) 
             *context_window,
         ]
 
+    timing_start("router")
     response = await _log_llm_call(
         model,
         [SystemMessage(content=ROUTER_PROMPT), *context_window],
         node="router",
     )
     parsed = _parse_router_response(response.content)
+    timing_end("router")
     intent = parsed.get("intent", "chat")
     tool_plan = parsed.get("tool_plan")
     logger.info(f"[router] output: intent={intent}, plan={str(tool_plan)[:200] if tool_plan else 'None'}")
@@ -709,6 +876,14 @@ async def agent_node(
     progress_callback: ProgressCallback = None,
 ) -> dict:
     """Execute tool calls guided by the router's plan and format for WhatsApp."""
+    # Context loss diagnostic
+    all_msgs = state.get("messages", [])
+    logger.info(
+        "[context] agent_node: intent=%s state_msgs=%d msg_types=%s",
+        state.get("intent", "unknown"),
+        len(all_msgs),
+        [type(m).__name__ for m in all_msgs[-5:]],
+    )
     intent = state.get("intent", "tool_use")
     tool_plan = state.get("tool_plan")
 
@@ -717,9 +892,12 @@ async def agent_node(
     if intent == "chat":
         messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        timing_start("agent")
         response = await _log_llm_call(model, safe_msgs, node="chat")
+        timing_end("agent")
         formatted = _format_for_whatsapp(str(response.content))
         removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        timing_summary("chat")
         return {"final_response": formatted, "messages": [response] + removes}
 
     # Direct tool execution for tool_use: skip sub-agent, call tool directly.
@@ -729,6 +907,7 @@ async def agent_node(
         target_tools = [t for t in tools if getattr(t, "name", "") == tool_plan]
         if target_tools:
             user_msg = str(state["messages"][-1].content)
+            timing_start("tool")
             direct_result = await _direct_tool_call(
                 user_message=user_msg,
                 tool_plan=tool_plan,
@@ -736,10 +915,58 @@ async def agent_node(
                 model=model,
                 system_prompt=system_prompt,
             )
+            timing_end("tool")
             formatted = _format_for_whatsapp(str(direct_result.content))
             removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            timing_summary("tool_use")
             return {"final_response": formatted, "messages": [direct_result] + removes}
         # If tool not found, fall through to sub-agent path (handles edge cases)
+
+    # Delegation fast path: call target agent directly without thread/invocation tool.
+    # The router already decided which agent to delegate to — creating a sub-agent
+    # that then calls invoke_agent (which creates a thread + new event loop) wastes
+    # 2 LLM calls and blocks for up to 240s.
+    if intent == "delegate" and tool_plan:
+        from agntrick.registry import AgentRegistry as _AR
+        from agntrick.tools.agent_invocation import DELEGATABLE_AGENTS as _DA
+
+        if tool_plan in _DA:
+            agent_cls: Any = _AR.get(tool_plan)
+            if agent_cls is not None:
+                user_msg = str(state["messages"][-1].content)
+                tool_categories = _AR.get_tool_categories(tool_plan)
+                try:
+                    timing_start("delegate")
+                    delegated = agent_cls(
+                        _agent_name=tool_plan,
+                        tool_categories=tool_categories,
+                    )
+                    delegate_result = await asyncio.wait_for(
+                        delegated.run(user_msg),
+                        timeout=120,
+                    )
+                    timing_end("delegate")
+                    formatted = _format_for_whatsapp(str(delegate_result))
+                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    timing_summary("delegate")
+                    return {
+                        "final_response": formatted,
+                        "messages": [AIMessage(content=str(delegate_result))] + removes,
+                    }
+                except asyncio.TimeoutError:
+                    timing_end("delegate")
+                    logger.warning("[delegate] agent '%s' timed out after 120s", tool_plan)
+                    error_msg = f"The request to {tool_plan} timed out. Please try again."
+                    formatted = _format_for_whatsapp(error_msg)
+                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    return {
+                        "final_response": formatted,
+                        "messages": [AIMessage(content=error_msg)] + removes,
+                    }
+                except Exception as e:
+                    timing_end("delegate")
+                    logger.warning("[delegate] agent '%s' failed: %s", tool_plan, e)
+                    # Fall through to sub-agent path as fallback
 
     if progress_callback:
         await progress_callback("Analyzing your request...")
@@ -832,10 +1059,12 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
         else:
             executor_msgs = _truncate_messages(state["messages"])
 
+        timing_start("agent")
         result = await sub_agent.ainvoke(
             {"messages": executor_msgs},  # type: ignore[arg-type]
             config={"configurable": {"thread_id": f"executor-{uuid.uuid4().hex}"}},
         )
+        timing_end("agent")
     except Exception as e:
         logger.warning(f"[executor] sub-agent failed: {e}")
         return {
@@ -888,6 +1117,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
 
     # Prune old messages
     removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+    timing_summary(intent)
     return {"final_response": formatted, "messages": [final_msg] + removes}
 
 
