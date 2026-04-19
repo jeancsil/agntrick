@@ -215,6 +215,26 @@ def _build_prune_removes(
     return [RemoveMessage(id=m.id) for m in to_remove if m.id is not None]
 
 
+def _safe_prune(
+    state_messages: list[BaseMessage],
+    existing_removes: list[RemoveMessage] | None = None,
+) -> list[RemoveMessage]:
+    """Build prune RemoveMessages, deduplicated against any existing removes by id.
+
+    Args:
+        state_messages: Current state messages to evaluate for pruning.
+        existing_removes: Optional list of RemoveMessage objects already queued,
+            e.g. from summarize_node. Deduplicated by id to avoid reducer errors.
+
+    Returns:
+        Merged list of RemoveMessage objects. Empty if no pruning needed.
+    """
+    prune = _build_prune_removes(state_messages, _MAX_STATE_MESSAGES)
+    if not existing_removes:
+        return prune
+    return list({r.id: r for r in (existing_removes + prune)}.values())
+
+
 def _safe_invoke_messages(
     system_prompt: str,
     messages: list[BaseMessage],
@@ -368,6 +388,9 @@ async def summarize_node(
             token_count,
             max_tokens,
         )
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Split messages: old ones to summarize vs recent to keep
@@ -376,6 +399,9 @@ async def summarize_node(
 
     if not old_messages:
         logger.debug("[summarize] no old messages to compress, skipping")
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Filter out AI meta-responses (self-referential messages about capabilities)
@@ -404,6 +430,9 @@ async def summarize_node(
         )
     if not filtered_messages:
         logger.info("[summarize] all old messages were meta-responses, skipping")
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Build summarization prompt
@@ -449,10 +478,15 @@ async def summarize_node(
         new_summary = str(response.content).strip()
     except Exception as e:
         logger.warning("[summarize] LLM summarization failed: %s", e)
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
-    # Build RemoveMessage directives for ALL old messages (including filtered ones)
-    removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+    # Build RemoveMessage directives for ALL old messages (including filtered ones),
+    # then merge with prune removes — deduplicated by id via _safe_prune.
+    summarize_removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+    removes = _safe_prune(messages, existing_removes=summarize_removes)
 
     logger.info(
         "[summarize] compressed %d messages (%d tokens) into %d-char summary",
@@ -896,7 +930,7 @@ async def agent_node(
         response = await _log_llm_call(model, safe_msgs, node="chat")
         timing_end("agent")
         formatted = _format_for_whatsapp(str(response.content))
-        removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        removes = _safe_prune(state["messages"])
         timing_summary("chat")
         return {"final_response": formatted, "messages": [response] + removes}
 
@@ -917,7 +951,7 @@ async def agent_node(
             )
             timing_end("tool")
             formatted = _format_for_whatsapp(str(direct_result.content))
-            removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            removes = _safe_prune(state["messages"])
             timing_summary("tool_use")
             return {"final_response": formatted, "messages": [direct_result] + removes}
         # If tool not found, fall through to sub-agent path (handles edge cases)
@@ -947,7 +981,7 @@ async def agent_node(
                     )
                     timing_end("delegate")
                     formatted = _format_for_whatsapp(str(delegate_result))
-                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    removes = _safe_prune(state["messages"])
                     timing_summary("delegate")
                     return {
                         "final_response": formatted,
@@ -958,7 +992,7 @@ async def agent_node(
                     logger.warning("[delegate] agent '%s' timed out after 120s", tool_plan)
                     error_msg = f"The request to {tool_plan} timed out. Please try again."
                     formatted = _format_for_whatsapp(error_msg)
-                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    removes = _safe_prune(state["messages"])
                     return {
                         "final_response": formatted,
                         "messages": [AIMessage(content=error_msg)] + removes,
@@ -1116,7 +1150,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
     logger.info(f"[agent] final_response len={len(formatted)} preview={formatted[:300]}")
 
     # Prune old messages
-    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+    removes = _safe_prune(state["messages"])
     timing_summary(intent)
     return {"final_response": formatted, "messages": [final_msg] + removes}
 
