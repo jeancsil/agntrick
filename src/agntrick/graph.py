@@ -597,6 +597,120 @@ _PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
         "tool_use",
         "web_fetch",
     ),
+    # Farewells (PT + EN)
+    (
+        re.compile(
+            r"^(tchau|bye|adeus|até logo|até mais|falou|xau|see you|goodbye|good bye|cya)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Thanks (PT + EN)
+    (
+        re.compile(
+            r"^(obrigad[ao]|obg|valeu|thanks|thank you|muito obrigad[ao]|thanks?\s+a\s+lot)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Short standalone affirmations / negations
+    (
+        re.compile(
+            r"^(sim|não|nao|yes|no|claro|ok|certo|exato|sure|yep|nope|correto|"
+            r"perfeito|ótimo|otimo|beleza|pode ser)\s*[!?.]?$",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Translation requests (exclude philosophical questions)
+    (
+        re.compile(
+            r"(traduz|translate|como se diz|how do you say|how do i say|"
+            r"o que significa\b(?!\s+(of\s+)?life|meaning|philosophy)|"
+            r"(?<!the\s)meaning of\s+\w+\s+(in|en|na|em)\b|"
+            r"what does .{1,40} mean)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Simple math / calculations
+    (
+        re.compile(
+            r"^(quanto[s]?\s+[eé]|calcul[ae]|calculate|soma de|what['\s]+\d[\d\s\+\-\*\/]+\d|how much is \d)",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Time / date queries — model knows the date from injected context
+    (
+        re.compile(
+            r"^(que horas|what time is it|que dia|what day|"
+            r"what['\s]+the (date|time)|what['\s]+today|"
+            r"hoje[eé] (que dia|quantos))\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Weather queries
+    (
+        re.compile(
+            r"(tempo em|clima em|weather in|weather for|previsão do tempo|"
+            r"forecast for|temperatura em|como está o tempo)\b",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Prices / crypto / currency
+    (
+        re.compile(
+            r"(preço d[ao]\b|quanto custa\b|price of\b|cost of\b|"
+            r"cotação d[oa]\b|bitcoin|ethereum|\bbtc\b|\beth\b|"
+            r"dólar (hoje|agora)|dollar (today|now))",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Sports scores
+    (
+        re.compile(
+            r"(placar d[ao]\b|resultado d[ao] jogo|who won|quem ganhou|escore d[ao])\b",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Factual "what is / who is" lookups (concrete topics, not philosophical)
+    (
+        re.compile(
+            r"^(what is |what are |who is |who are |o que [eé] |quem [eé] |define |"
+            r"significado de |história d[ao] )"
+            r"(?!.*\b(life|meaning|purpose|sense|love|happiness|faith|believe|think|"
+            r"opinion|value|point)\b)",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Code how-to → developer agent
+    (
+        re.compile(
+            r"(how (do|can) i (code|implement|write|build|create)\b|"
+            r"como (implementar|escrever|criar|fazer em)\b.*?"
+            r"(python|javascript|js|typescript|go|rust|java)\b|"
+            r"como (fazer|criar) um? (script|function|api|endpoint|bot)\b)",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "developer",
+    ),
     # News queries (Portuguese + English)
     (
         re.compile(

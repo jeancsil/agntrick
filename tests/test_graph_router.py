@@ -225,3 +225,91 @@ class TestPreRouting:
 
         assert _pre_route("") is None
         assert _pre_route("   ") is None
+
+    def test_farewells(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("tchau") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("bye") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("até logo") == {"intent": "chat", "tool_plan": None}
+
+    def test_thanks(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("obrigado") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("valeu") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("thanks") == {"intent": "chat", "tool_plan": None}
+
+    def test_affirmations_negations(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("sim") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("não") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("ok") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("sure") == {"intent": "chat", "tool_plan": None}
+        # sentence with these words should NOT match (pattern requires end-of-string)
+        assert _pre_route("sim, me fala mais") is None
+
+    def test_translation_requests(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("traduz isso para inglês") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("translate this to portuguese") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("como se diz hello em português") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("o que significa ephemeral") == {"intent": "chat", "tool_plan": None}
+
+    def test_simple_math(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("quanto é 5 + 3") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("calcule 100 / 4") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("calculate 12 * 8") == {"intent": "chat", "tool_plan": None}
+
+    def test_time_date_queries(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("que horas são?") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("what time is it?") == {"intent": "chat", "tool_plan": None}
+        assert _pre_route("what day is today") == {"intent": "chat", "tool_plan": None}
+
+    def test_weather_queries(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("tempo em Lisboa") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("weather in London") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("previsão do tempo para amanhã") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("forecast for Tokyo") == {"intent": "tool_use", "tool_plan": "web_search"}
+
+    def test_price_queries(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("preço do bitcoin") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("price of ETH") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("cotação do dólar") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("quanto custa o iPhone") == {"intent": "tool_use", "tool_plan": "web_search"}
+
+    def test_sports_scores(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("placar do jogo") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("who won yesterday") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("resultado do jogo do Barça") == {"intent": "tool_use", "tool_plan": "web_search"}
+
+    def test_factual_lookups(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("what is quantum computing") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("who is Linus Torvalds") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("o que é machine learning") == {"intent": "tool_use", "tool_plan": "web_search"}
+        assert _pre_route("quem é Elon Musk") == {"intent": "tool_use", "tool_plan": "web_search"}
+        # should NOT match general "what" question
+        assert _pre_route("what do you think about this?") is None
+        # should NOT match philosophical questions
+        assert _pre_route("what is the meaning of life?") is None
+
+    def test_code_howto_delegates(self):
+        from agntrick.graph import _pre_route
+
+        assert _pre_route("how do I implement a REST API in Python") == {"intent": "delegate", "tool_plan": "developer"}
+        assert _pre_route("como implementar autenticação em Go") == {"intent": "delegate", "tool_plan": "developer"}
+        assert _pre_route("como criar um script em JavaScript") == {"intent": "delegate", "tool_plan": "developer"}
