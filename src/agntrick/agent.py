@@ -128,7 +128,7 @@ class AgentBase(Agent):
         """
 
     def _get_system_prompt(self) -> str:
-        """Get system prompt with dynamic tool documentation.
+        """Get system prompt with complete tool documentation.
 
         Combines the agent's base system_prompt with tool documentation
         fetched from the toolbox server (if tool_categories are specified).

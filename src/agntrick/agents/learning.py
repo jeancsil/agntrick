@@ -28,11 +28,7 @@ class LearningAgent(AgentBase):
     @property
     def system_prompt(self) -> str:
         """System prompt for the learning agent."""
-        from datetime import datetime
-
-        date_context = f"Current date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-
-        return date_context + load_prompt("learning")
+        return load_prompt("learning")
 
     def local_tools(self) -> Sequence[Any]:
         """Learning agent uses only MCP tools for web research."""
