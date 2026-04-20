@@ -1,7 +1,11 @@
+from typing import Any
 from unittest.mock import patch
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 
 from agntrick.agent import AgentBase
 from agntrick.storage.database import Database
@@ -23,64 +27,72 @@ class SimpleAgent(AgentBase):
         return "You are a helpful assistant. Keep your answers very short."
 
 
-async def mock_ainvoke(*args, **kwargs):
-    # args[0] is self when patched on a class? No, side_effect on instance method patch...
-    # Let's look at the traceback: args = ([SystemMessage(...), ...], {config})
-    # So args[0] is the messages list.
-    messages = args[0]
-    content = messages[-1].content
-    if "name is" in content:
-        name = content.split("name is")[-1].strip(".")
-        return AIMessage(content=f"Hello {name}!")
-    elif "What is my name" in content:
-        # In a real scenario, the LLM would see previous messages in the history.
-        # LangGraph passes the full history to the model.
-        # We can check if the history contains the name.
-        names = [m.content.split("name is")[-1].strip(".") for m in messages if "name is" in m.content]
-        if names:
-            return AIMessage(content=f"Your name is {names[0]}.")
-        return AIMessage(content="I don't know your name.")
-    elif "favorite color is" in content:
-        color = content.split("favorite color is")[-1].strip(".")
-        return AIMessage(content=f"I remembered your favorite color is {color}.")
-    elif "What is my favorite color" in content:
-        colors = [
-            m.content.split("favorite color is")[-1].strip(".") for m in messages if "favorite color is" in m.content
-        ]
-        if colors:
-            return AIMessage(content=f"Your favorite color is {colors[0]}.")
-        return AIMessage(content="I don't know your favorite color.")
-    return AIMessage(content="I am a mock response.")
+class _ContextAwareFakeLLM(BaseChatModel):
+    """Provider-agnostic fake LLM that returns deterministic responses based on message content.
+
+    Subclassing BaseChatModel ensures full compatibility with LangChain's
+    create_agent() and bind_tools() internals without hitting any real API.
+    """
+
+    @property
+    def _llm_type(self) -> str:
+        return "fake"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        content = messages[-1].content if messages else ""
+        if "name is" in content:
+            name = content.split("name is")[-1].strip(".")
+            reply = f"Hello {name}!"
+        elif "What is my name" in content:
+            names = [m.content.split("name is")[-1].strip(".") for m in messages if "name is" in m.content]
+            reply = f"Your name is {names[0]}." if names else "I don't know your name."
+        elif "favorite color is" in content:
+            color = content.split("favorite color is")[-1].strip(".")
+            reply = f"I remembered your favorite color is {color}."
+        elif "What is my favorite color" in content:
+            colors = [
+                m.content.split("favorite color is")[-1].strip(".")
+                for m in messages
+                if "favorite color is" in m.content
+            ]
+            reply = f"Your favorite color is {colors[0]}." if colors else "I don't know."
+        else:
+            reply = "I am a mock response."
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=reply))])
 
 
 @pytest.mark.asyncio
 async def test_agent_persistence(db, db_path):
     """Test that an agent can remember context across different instances using the same DB."""
     thread_id = "test-session-123"
+    fake_llm = _ContextAwareFakeLLM()
 
-    with patch("langchain_openai.ChatOpenAI.ainvoke", side_effect=mock_ainvoke):
-        # 1. First session: Introduce ourselves
+    with patch("agntrick.agent._create_model", return_value=fake_llm):
         async with await db.get_async_checkpointer() as checkpointer1:
             agent1 = SimpleAgent(thread_id=thread_id, checkpointer=checkpointer1)
             response1 = await agent1.run("My name is Agntrick Test.")
             assert "Agntrick Test" in str(response1)
 
-        # 2. Simulate "process restart"
+        # Simulate "process restart" with a fresh DB instance on the same file
         db2 = Database(db_path)
         async with await db2.get_async_checkpointer() as checkpointer2:
             agent2 = SimpleAgent(thread_id=thread_id, checkpointer=checkpointer2)
-
-            # 3. Second session: Ask who we are
             response2 = await agent2.run("What is my name?")
-
-            # The agent should remember the name from the first session
             assert "Agntrick Test" in str(response2)
 
 
 @pytest.mark.asyncio
 async def test_different_threads_isolation(db):
     """Test that different thread IDs have isolated memories."""
-    with patch("langchain_openai.ChatOpenAI.ainvoke", side_effect=mock_ainvoke):
+    fake_llm = _ContextAwareFakeLLM()
+
+    with patch("agntrick.agent._create_model", return_value=fake_llm):
         async with await db.get_async_checkpointer() as checkpointer:
             agent_a = SimpleAgent(thread_id="thread-a", checkpointer=checkpointer)
             await agent_a.run("My favorite color is Blue.")
@@ -91,9 +103,7 @@ async def test_different_threads_isolation(db):
             resp_a = await agent_a.run("What is my favorite color?")
             resp_b = await agent_b.run("What is my favorite color?")
 
-            resp_a_str = str(resp_a).lower()
-            resp_b_str = str(resp_b).lower()
-            assert "blue" in resp_a_str
-            assert "red" in resp_b_str
-            assert "red" not in resp_a_str
-            assert "blue" not in resp_b_str
+            assert "blue" in str(resp_a).lower()
+            assert "red" in str(resp_b).lower()
+            assert "red" not in str(resp_a).lower()
+            assert "blue" not in str(resp_b).lower()

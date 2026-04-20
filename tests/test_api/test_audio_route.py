@@ -83,8 +83,8 @@ class TestAudioWakeWord:
     """Tests for wake word routing in the audio endpoint."""
 
     @patch("agntrick.api.routes.whatsapp.AgentRegistry")
-    @patch("agntrick.services.audio_transcription_cache.AudioTranscriptionCache")
-    @patch("agntrick.services.audio_transcriber.AudioTranscriber")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriptionCache")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriber")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_audio_with_wake_word_routes_to_agent(
         self,
@@ -150,8 +150,8 @@ class TestAudioWakeWord:
         call_args = mock_agent_instance.run.call_args
         assert call_args[0][0] == "what's the weather"
 
-    @patch("agntrick.services.audio_transcription_cache.AudioTranscriptionCache")
-    @patch("agntrick.services.audio_transcriber.AudioTranscriber")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriptionCache")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriber")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_audio_without_wake_word_returns_empty(
         self,
@@ -203,8 +203,8 @@ class TestAudioWakeWord:
         assert data["wake_word_matched"] == "false"
 
     @patch("agntrick.api.routes.whatsapp.AgentRegistry")
-    @patch("agntrick.services.audio_transcription_cache.AudioTranscriptionCache")
-    @patch("agntrick.services.audio_transcriber.AudioTranscriber")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriptionCache")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriber")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_audio_no_wake_word_configured_routes_to_agent(
         self,
@@ -265,8 +265,8 @@ class TestAudioWakeWord:
         assert data["response"] == "Hi!"
         mock_agent_instance.run.assert_called_once()
 
-    @patch("agntrick.services.audio_transcription_cache.AudioTranscriptionCache")
-    @patch("agntrick.services.audio_transcriber.AudioTranscriber")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriptionCache")
+    @patch("agntrick.api.routes.whatsapp.AudioTranscriber")
     @patch("agntrick.api.routes.whatsapp.get_config")
     def test_audio_only_wake_word_returns_empty(
         self,
