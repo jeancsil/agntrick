@@ -8,7 +8,6 @@ import asyncio
 import logging
 import time
 from abc import abstractmethod
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Union
 
@@ -141,10 +140,6 @@ class AgentBase(Agent):
         Returns:
             The complete system prompt string.
         """
-        # Add current date/time at the beginning of all prompts
-        now = datetime.now(timezone.utc)
-        date_header = f"## CURRENT DATE/TIME\n\nCurrent UTC date and time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n"
-
         base_prompt = self.system_prompt
 
         # Check for custom system prompt template from config or file
@@ -173,12 +168,12 @@ class AgentBase(Agent):
                     categories=self._tool_categories,
                     base_prompt=effective_prompt,
                 )
-                return date_header + full_prompt
+                return full_prompt
             except Exception as e:
                 logger.warning(f"Failed to generate system prompt with tools: {e}")
 
         # Use custom prompt if available, otherwise use agent's base prompt
-        return date_header + (custom_prompt if custom_prompt is not None else base_prompt)
+        return custom_prompt if custom_prompt is not None else base_prompt
 
     def _get_node_models(self) -> dict[str, Any]:
         """Resolve per-node model instances for graph nodes.
