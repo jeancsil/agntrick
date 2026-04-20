@@ -138,12 +138,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as e:
                 logger.warning("Agent pool warmup failed (agents will be created on first request): %s", e)
 
-    # Warm up Playwright browser for DeepScrapeTool
-    try:
-        await DeepScrapeTool.warmup()
-        logger.info("Playwright browser warmed up successfully")
-    except Exception as e:
-        logger.warning("Failed to warm up Playwright browser: %s", e)
+    # Warm up Playwright browser for DeepScrapeTool (skip when PLAYWRIGHT_PERSISTENT=false)
+    if DeepScrapeTool.is_persistent():
+        try:
+            await DeepScrapeTool.warmup()
+            logger.info("Playwright browser warmed up successfully")
+        except Exception as e:
+            logger.warning("Failed to warm up Playwright browser: %s", e)
+    else:
+        logger.info("Playwright browser warmup skipped (PLAYWRIGHT_PERSISTENT=false)")
 
     # Start MCP health check task
     app.state._health_task = asyncio.create_task(_check_mcp_health(app))
