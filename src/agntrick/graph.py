@@ -10,6 +10,7 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
@@ -267,6 +268,23 @@ def _safe_invoke_messages(
         ]
 
     return [SystemMessage(content=system_prompt), *safe]
+
+
+def _inject_date_into_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Prepend current UTC date to the last HumanMessage in the list.
+
+    Called after _safe_invoke_messages() so the static system prompt prefix
+    stays identical across requests (enabling OpenAI prompt caching), while
+    the model still receives an up-to-date timestamp in the user turn.
+    """
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    result = list(messages)
+    for i in range(len(result) - 1, -1, -1):
+        if isinstance(result[i], HumanMessage):
+            content = str(result[i].content)
+            result[i] = HumanMessage(content=f"[{date_str}]\n\n{content}")
+            break
+    return result
 
 
 ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the user's message:
@@ -821,10 +839,12 @@ async def _direct_tool_call(
             logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
             tool_result = f"Error: {e}"
 
+    _date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     formatting_prompt = (
         "You are a helpful WhatsApp assistant. Respond to the user's question "
         "based on the tool results below. Be concise, direct, and respond in "
         "the same language as the user.\n\n"
+        f"Current date: {_date_str}\n\n"
         f"User asked: {user_message}\n\n"
         f"Tool results:\n{tool_result}"
     )
@@ -926,6 +946,7 @@ async def agent_node(
     if intent == "chat":
         messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        safe_msgs = _inject_date_into_messages(safe_msgs)
         timing_start("agent")
         response = await _log_llm_call(model, safe_msgs, node="chat")
         timing_end("agent")
