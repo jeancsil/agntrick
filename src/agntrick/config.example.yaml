@@ -19,3 +19,4 @@ api:
 #     - id: personal
 #       phone: "+5511999999999"
 #       default_agent: assistant
+#       wake_word: "Jarvis"     # Only respond to voice messages containing this word

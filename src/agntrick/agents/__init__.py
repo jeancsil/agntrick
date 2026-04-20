@@ -7,6 +7,7 @@ from .learning import LearningAgent
 from .news import NewsAgent
 from .ollama import OllamaAgent
 from .paywall_remover import PaywallRemoverAgent
+from .recipe import RecipeAgent
 from .youtube import YouTubeAgent
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "NewsAgent",
     "OllamaAgent",
     "PaywallRemoverAgent",
+    "RecipeAgent",
     "YouTubeAgent",
 ]

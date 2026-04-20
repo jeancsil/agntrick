@@ -10,6 +10,7 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Sequence
 
 from langchain.agents import create_agent
@@ -31,6 +32,9 @@ ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 
 # Maximum chars of message content to send to the LLM to avoid 400 errors
 _MAX_MESSAGE_CHARS = 15_000
+
+# Date format string for injecting current UTC timestamp into messages
+_DATE_FORMAT = "%Y-%m-%d %H:%M UTC"
 
 # Character budget for router context (~1K tokens — router only classifies intent)
 _ROUTER_CONTEXT_BUDGET = 4_000
@@ -215,6 +219,26 @@ def _build_prune_removes(
     return [RemoveMessage(id=m.id) for m in to_remove if m.id is not None]
 
 
+def _safe_prune(
+    state_messages: list[BaseMessage],
+    existing_removes: list[RemoveMessage] | None = None,
+) -> list[RemoveMessage]:
+    """Build prune RemoveMessages, deduplicated against any existing removes by id.
+
+    Args:
+        state_messages: Current state messages to evaluate for pruning.
+        existing_removes: Optional list of RemoveMessage objects already queued,
+            e.g. from summarize_node. Deduplicated by id to avoid reducer errors.
+
+    Returns:
+        Merged list of RemoveMessage objects. Empty if no pruning needed.
+    """
+    prune = _build_prune_removes(state_messages, _MAX_STATE_MESSAGES)
+    if not existing_removes:
+        return prune
+    return list({r.id: r for r in (existing_removes + prune)}.values())
+
+
 def _safe_invoke_messages(
     system_prompt: str,
     messages: list[BaseMessage],
@@ -247,6 +271,23 @@ def _safe_invoke_messages(
         ]
 
     return [SystemMessage(content=system_prompt), *safe]
+
+
+def _inject_date_into_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Prepend current UTC date to the last HumanMessage in the list.
+
+    Called after _safe_invoke_messages() so the static system prompt prefix
+    stays identical across requests (enabling OpenAI prompt caching), while
+    the model still receives an up-to-date timestamp in the user turn.
+    """
+    date_str = datetime.now(timezone.utc).strftime(_DATE_FORMAT)
+    result = list(messages)
+    for i in range(len(result) - 1, -1, -1):
+        if isinstance(result[i], HumanMessage):
+            content = str(result[i].content)
+            result[i] = HumanMessage(content=f"[{date_str}]\n\n{content}")
+            break
+    return result
 
 
 ROUTER_PROMPT = """You are a query router for a WhatsApp assistant. Classify the user's message:
@@ -368,6 +409,9 @@ async def summarize_node(
             token_count,
             max_tokens,
         )
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Split messages: old ones to summarize vs recent to keep
@@ -376,6 +420,9 @@ async def summarize_node(
 
     if not old_messages:
         logger.debug("[summarize] no old messages to compress, skipping")
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Filter out AI meta-responses (self-referential messages about capabilities)
@@ -404,6 +451,9 @@ async def summarize_node(
         )
     if not filtered_messages:
         logger.info("[summarize] all old messages were meta-responses, skipping")
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
     # Build summarization prompt
@@ -449,10 +499,15 @@ async def summarize_node(
         new_summary = str(response.content).strip()
     except Exception as e:
         logger.warning("[summarize] LLM summarization failed: %s", e)
+        prune_removes = _safe_prune(messages)
+        if prune_removes:
+            return {"messages": prune_removes}
         return {}
 
-    # Build RemoveMessage directives for ALL old messages (including filtered ones)
-    removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+    # Build RemoveMessage directives for ALL old messages (including filtered ones),
+    # then merge with prune removes — deduplicated by id via _safe_prune.
+    summarize_removes = [RemoveMessage(id=m.id) for m in old_messages if m.id is not None]
+    removes = _safe_prune(messages, existing_removes=summarize_removes)
 
     logger.info(
         "[summarize] compressed %d messages (%d tokens) into %d-char summary",
@@ -544,6 +599,119 @@ _PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
         re.compile(r"^https?://\S+$"),
         "tool_use",
         "web_fetch",
+    ),
+    # Farewells (PT + EN)
+    (
+        re.compile(
+            r"^(tchau|bye|adeus|até logo|até mais|falou|xau|see you|goodbye|good bye|cya)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Thanks (PT + EN)
+    (
+        re.compile(
+            r"^(obrigad[ao]|obg|valeu|thanks|thank you|muito obrigad[ao]|thanks?\s+a\s+lot)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Short standalone affirmations / negations
+    (
+        re.compile(
+            r"^(sim|não|nao|yes|no|claro|ok|certo|exato|sure|yep|nope|correto|"
+            r"perfeito|ótimo|otimo|beleza|pode ser)\s*[!?.]?$",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Translation requests (exclude philosophical questions)
+    (
+        re.compile(
+            r"(traduz|translate|como se diz|how do you say|how do i say|"
+            r"o que significa\b(?!\s+(of\s+)?life|meaning|philosophy)|"
+            r"(?<!the\s)meaning of\s+\w+\s+(in|en|na|em)\b|"
+            r"what does .{1,40} mean)\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Simple math / calculations
+    (
+        re.compile(
+            r"^(quanto[s]?\s+[eé]|calcul[ae]|calculate|soma de|what['\s]+\d[\d\s\+\-\*\/]+\d|how much is \d)",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Time / date queries — model knows the date from injected context
+    (
+        re.compile(
+            r"^(que horas|what time is it|que dia|what day|"
+            r"what['\s]+the (date|time)|what['\s]+today|"
+            r"hoje[eé] (que dia|quantos))\b",
+            re.IGNORECASE,
+        ),
+        "chat",
+        None,
+    ),
+    # Weather queries
+    (
+        re.compile(
+            r"(tempo em|clima em|weather in|weather for|previsão do tempo|"
+            r"forecast for|temperatura em|como está o tempo)\b",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Prices / crypto / currency
+    (
+        re.compile(
+            r"(preço d[ao]\b|quanto custa\b|price of\b|cost of\b|"
+            r"cotação d[oa]\b|bitcoin|ethereum|\bbtc\b|\beth\b|"
+            r"dólar (hoje|agora)|dollar (today|now))",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Sports scores
+    (
+        re.compile(
+            r"(placar d[ao]\b|resultado d[ao] jogo|who won|quem ganhou|escore d[ao])\b",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Factual "what is / who is" lookups
+    (
+        re.compile(
+            r"^(what is |what are |who is |who are |o que [eé] |quem [eé] |define |"
+            r"significado de |história d[ao] )"
+            r"(?!.*\b(you|your|the time|the date|meaning|purpose|sense|life|love|happiness|faith)\b)",
+            re.IGNORECASE,
+        ),
+        "tool_use",
+        "web_search",
+    ),
+    # Code how-to → developer agent
+    (
+        re.compile(
+            r"(how (do|can) i (code|implement|write|build|create)\b.{0,60}"
+            r"(python|javascript|js|typescript|go|rust|java|api|endpoint|script|function|bot|cli)\b|"
+            r"como (implementar|escrever|criar|fazer em).{0,60}(python|javascript|js|typescript|go|rust|java)\b|"
+            r"como (fazer|criar) um? (script|function|api|endpoint|bot)\b)",
+            re.IGNORECASE,
+        ),
+        "delegate",
+        "developer",
     ),
     # News queries (Portuguese + English)
     (
@@ -787,10 +955,12 @@ async def _direct_tool_call(
             logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
             tool_result = f"Error: {e}"
 
+    _date_str = datetime.now(timezone.utc).strftime(_DATE_FORMAT)
     formatting_prompt = (
         "You are a helpful WhatsApp assistant. Respond to the user's question "
         "based on the tool results below. Be concise, direct, and respond in "
         "the same language as the user.\n\n"
+        f"Current date: {_date_str}\n\n"
         f"User asked: {user_message}\n\n"
         f"Tool results:\n{tool_result}"
     )
@@ -892,11 +1062,12 @@ async def agent_node(
     if intent == "chat":
         messages = _budget_window_messages(state["messages"], _RESPONDER_CHAT_BUDGET)
         safe_msgs = _safe_invoke_messages(system_prompt, messages)
+        safe_msgs = _inject_date_into_messages(safe_msgs)
         timing_start("agent")
         response = await _log_llm_call(model, safe_msgs, node="chat")
         timing_end("agent")
         formatted = _format_for_whatsapp(str(response.content))
-        removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+        removes = _safe_prune(state["messages"])
         timing_summary("chat")
         return {"final_response": formatted, "messages": [response] + removes}
 
@@ -917,7 +1088,7 @@ async def agent_node(
             )
             timing_end("tool")
             formatted = _format_for_whatsapp(str(direct_result.content))
-            removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+            removes = _safe_prune(state["messages"])
             timing_summary("tool_use")
             return {"final_response": formatted, "messages": [direct_result] + removes}
         # If tool not found, fall through to sub-agent path (handles edge cases)
@@ -947,7 +1118,7 @@ async def agent_node(
                     )
                     timing_end("delegate")
                     formatted = _format_for_whatsapp(str(delegate_result))
-                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    removes = _safe_prune(state["messages"])
                     timing_summary("delegate")
                     return {
                         "final_response": formatted,
@@ -958,7 +1129,7 @@ async def agent_node(
                     logger.warning("[delegate] agent '%s' timed out after 120s", tool_plan)
                     error_msg = f"The request to {tool_plan} timed out. Please try again."
                     formatted = _format_for_whatsapp(error_msg)
-                    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+                    removes = _safe_prune(state["messages"])
                     return {
                         "final_response": formatted,
                         "messages": [AIMessage(content=error_msg)] + removes,
@@ -1058,6 +1229,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
             executor_msgs = [m for m in executor_msgs if isinstance(m, (HumanMessage, AIMessage))]
         else:
             executor_msgs = _truncate_messages(state["messages"])
+        executor_msgs = _inject_date_into_messages(executor_msgs)
 
         timing_start("agent")
         result = await sub_agent.ainvoke(
@@ -1116,7 +1288,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
     logger.info(f"[agent] final_response len={len(formatted)} preview={formatted[:300]}")
 
     # Prune old messages
-    removes = _build_prune_removes(state["messages"], _MAX_STATE_MESSAGES)
+    removes = _safe_prune(state["messages"])
     timing_summary(intent)
     return {"final_response": formatted, "messages": [final_msg] + removes}
 
