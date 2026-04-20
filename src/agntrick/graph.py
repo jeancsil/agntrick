@@ -33,6 +33,9 @@ ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 # Maximum chars of message content to send to the LLM to avoid 400 errors
 _MAX_MESSAGE_CHARS = 15_000
 
+# Date format string for injecting current UTC timestamp into messages
+_DATE_FORMAT = "%Y-%m-%d %H:%M UTC"
+
 # Character budget for router context (~1K tokens — router only classifies intent)
 _ROUTER_CONTEXT_BUDGET = 4_000
 
@@ -277,7 +280,7 @@ def _inject_date_into_messages(messages: list[BaseMessage]) -> list[BaseMessage]
     stays identical across requests (enabling OpenAI prompt caching), while
     the model still receives an up-to-date timestamp in the user turn.
     """
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    date_str = datetime.now(timezone.utc).strftime(_DATE_FORMAT)
     result = list(messages)
     for i in range(len(result) - 1, -1, -1):
         if isinstance(result[i], HumanMessage):
@@ -687,13 +690,12 @@ _PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
         "tool_use",
         "web_search",
     ),
-    # Factual "what is / who is" lookups (concrete topics, not philosophical)
+    # Factual "what is / who is" lookups
     (
         re.compile(
             r"^(what is |what are |who is |who are |o que [eé] |quem [eé] |define |"
             r"significado de |história d[ao] )"
-            r"(?!.*\b(life|meaning|purpose|sense|love|happiness|faith|believe|think|"
-            r"opinion|value|point)\b)",
+            r"(?!.*\b(you|your|the time|the date|meaning|purpose|sense|life|love|happiness|faith)\b)",
             re.IGNORECASE,
         ),
         "tool_use",
@@ -702,9 +704,9 @@ _PRE_ROUTE_PATTERNS: list[tuple[re.Pattern[str], str, str | None]] = [
     # Code how-to → developer agent
     (
         re.compile(
-            r"(how (do|can) i (code|implement|write|build|create)\b|"
-            r"como (implementar|escrever|criar|fazer em)\b.*?"
-            r"(python|javascript|js|typescript|go|rust|java)\b|"
+            r"(how (do|can) i (code|implement|write|build|create)\b.{0,60}"
+            r"(python|javascript|js|typescript|go|rust|java|api|endpoint|script|function|bot|cli)\b|"
+            r"como (implementar|escrever|criar|fazer em).{0,60}(python|javascript|js|typescript|go|rust|java)\b|"
             r"como (fazer|criar) um? (script|function|api|endpoint|bot)\b)",
             re.IGNORECASE,
         ),
@@ -953,7 +955,7 @@ async def _direct_tool_call(
             logger.warning("[direct-tool] %s failed in %.1fs: %s", tool_plan, tool_elapsed, e)
             tool_result = f"Error: {e}"
 
-    _date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    _date_str = datetime.now(timezone.utc).strftime(_DATE_FORMAT)
     formatting_prompt = (
         "You are a helpful WhatsApp assistant. Respond to the user's question "
         "based on the tool results below. Be concise, direct, and respond in "
@@ -1227,6 +1229,7 @@ NEVER retry invoke_agent on failure — you only get ONE attempt.
             executor_msgs = [m for m in executor_msgs if isinstance(m, (HumanMessage, AIMessage))]
         else:
             executor_msgs = _truncate_messages(state["messages"])
+        executor_msgs = _inject_date_into_messages(executor_msgs)
 
         timing_start("agent")
         result = await sub_agent.ainvoke(

@@ -260,8 +260,10 @@ class TestAgentMessageIsolation:
             assert len(human_msgs) >= 1, (
                 f"Expected at least 1 HumanMessage, got {len(human_msgs)}: {[m.content for m in human_msgs]}"
             )
-            # Last HumanMessage must be the current query
-            assert human_msgs[-1].content == "What are the top news in g1.globo.com?"
+            # Last HumanMessage must be the current query (with injected date prefix)
+            assert human_msgs[-1].content.endswith("What are the top news in g1.globo.com?"), (
+                f"Expected message to end with query, got: {human_msgs[-1].content}"
+            )
 
 
 class TestCreateAssistantGraph:

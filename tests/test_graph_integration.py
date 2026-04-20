@@ -152,8 +152,10 @@ class TestGraphIntegration:
         # Should include at least the last HumanMessage (context window, not single)
         human_msgs = [m for m in messages_sent if isinstance(m, HumanMessage)]
         assert len(human_msgs) >= 1
-        # The last HumanMessage must be the current query
-        assert human_msgs[-1].content == "What are the top news in g1.globo.com?"
+        # The last HumanMessage must be the current query (with injected date prefix)
+        assert human_msgs[-1].content.endswith("What are the top news in g1.globo.com?"), (
+            f"Expected message to end with query, got: {human_msgs[-1].content}"
+        )
 
     @pytest.mark.asyncio
     async def test_tool_filtering_excludes_run_shell_for_tool_use(self) -> None:
