@@ -159,6 +159,12 @@ class DeepScrapeTool(Tool):
         self._firecrawl_api_key = os.environ.get("FIRECRAWL_API_KEY", "")
         self._firecrawl_url = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev/v2")
         self._crawl4ai_enabled = os.environ.get("CRAWL4AI_ENABLED", "true").lower() == "true"
+        self._persistent = os.environ.get("PLAYWRIGHT_PERSISTENT", "true").lower() == "true"
+
+    @classmethod
+    def is_persistent(cls) -> bool:
+        """Return True if the browser should be kept alive between requests."""
+        return os.environ.get("PLAYWRIGHT_PERSISTENT", "true").lower() == "true"
 
     @classmethod
     async def warmup(cls) -> None:
@@ -375,12 +381,21 @@ class DeepScrapeTool(Tool):
         run_config = CrawlerRunConfig(markdown_generator=md_generator)
 
         try:
-            crawler = await self._get_crawler()
-            # Add timeout to prevent hangs
-            result = await asyncio.wait_for(
-                crawler.arun(url=url, config=run_config),
-                timeout=_CRAWL4AI_TIMEOUT,
-            )
+            if self._persistent:
+                crawler = await self._get_crawler()
+                result = await asyncio.wait_for(
+                    crawler.arun(url=url, config=run_config),
+                    timeout=_CRAWL4AI_TIMEOUT,
+                )
+            else:
+                # Ephemeral: create and destroy browser per request (~540 MB saved at idle)
+                from crawl4ai import AsyncWebCrawler
+
+                async with AsyncWebCrawler(config=self._get_browser_config()) as crawler:
+                    result = await asyncio.wait_for(
+                        crawler.arun(url=url, config=run_config),
+                        timeout=_CRAWL4AI_TIMEOUT,
+                    )
         except asyncio.TimeoutError:
             return DeepScrapeResult(
                 url=url,
