@@ -17,8 +17,7 @@ from agntrick import (
 def test_agntrick_version():
     """Test package version."""
     # Version is read from pyproject.toml via importlib.metadata
-    # Python normalizes "1.0.0-beta" to "1.0.0b0"
-    assert __version__ == "1.0.0b0"
+    assert __version__ == "1.0.0"
 
 
 def test_agntrick_imports():
