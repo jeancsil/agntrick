@@ -4,11 +4,12 @@
 # Stops, pulls, builds, and starts all services.
 #
 # Usage:
-#   bash deploy.sh              # full deploy (pull + build + start)
-#   bash deploy.sh status       # show service status
-#   bash deploy.sh stop         # stop all services
-#   bash deploy.sh restart      # restart without pulling/building
-#   bash deploy.sh logs         # tail all logs
+#   bash deploy-do.sh              # full deploy (pull + build + start)
+#   bash deploy-do.sh deploy       # alias for full deploy
+#   bash deploy-do.sh status       # show service status
+#   bash deploy-do.sh stop         # stop all services
+#   bash deploy-do.sh restart      # restart without pulling/building
+#   bash deploy-do.sh logs         # tail all logs
 
 set -euo pipefail
 
@@ -206,6 +207,6 @@ case "${1:-}" in
     logs)    tail -f "$TOOLKIT_LOG" "$API_LOG" "$GATEWAY_LOG" ;;
     pull)    pull ;;
     build)   build ;;
-    '')      stop_all; pull; build; start_all ;;
-    *)       echo "Usage: $0 [start|stop|restart|status|logs|pull|build]" ;;
+    deploy|'') stop_all; pull; build; start_all ;;
+    *)       echo "Usage: $0 [deploy|start|stop|restart|status|logs|pull|build]" ;;
 esac
